@@ -5,8 +5,8 @@ loading and rendering truetype fonts using freetype, and drawing GUI elements in
 Create a window:
 ```
 Window("window1",/** handle for the window, so we can look for it later **/
-       true, /** create the window is the handle does not exist **/
-       WindowState(0,0,500,500) /** window star position and dimensions **/
+       true, /** create the window if the handle does not exist **/
+       WindowState(0,0,500,500) /** window start position and dimensions **/
        );
 Window("window1").makeCurrent(); /// make this the current window **/
 Window().setTitle("GLUI"); /// Window(), called without a handle, returns the current window **/
@@ -35,7 +35,7 @@ Window().poll();
 ```
 Polling needs to happen recurrently of course. If you are using the widget code, then the 
 WidgetRoot class will take care of polling automatically (and will also put the thread to 
-sleep if the pollig frequency is too high).
+sleep if the polling frequency is too high).
 
 ###Widgets
 __See example.d for widgets usage.__
