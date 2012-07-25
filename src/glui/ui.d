@@ -1275,7 +1275,7 @@ class WidgetText : WidgetWindow
             if (delay == m_caretBlinkDelay)
             {
                 m_drawCaret = !m_drawCaret;
-               // needRender;
+                needRender;
             }
         }
 

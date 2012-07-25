@@ -408,12 +408,14 @@ version(Windows)
             /**
             * The CTRL key pressed can make ascii == 0, even when it should
             * return an actual ascii value (like CTRL + TAB).
-            * The following is a kludge to fix this.
+            * The following is an ugly kludge to fix this.
             */
             if ((m_keyState.keys[KEY.KC_CTRL_LEFT] ||
                  m_keyState.keys[KEY.KC_CTRL_RIGHT]) &&
-                vk < 32)
-                ascii = cast(ushort)vk;
+                vk < 127)
+            {
+                ascii = cast(ushort) (vk + 32);
+            }
 
             if (ascii != 0)
                 return cast(KEY)ascii;
@@ -427,6 +429,7 @@ version(Windows)
                        WPARAM wParam,
                        LPARAM lParam)
         {
+
             switch (message)
             {
                 case WM_PAINT:
