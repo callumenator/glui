@@ -892,6 +892,12 @@ version(Posix)
 
                 switch (_event.type)
                 {
+                    case X.EventType.ExposeEvent:
+                    {
+                        event.emit(Event(WindowPaint()));
+                        break;
+                    }
+
                     case X.EventType.KeyPress:
                     {
                         auto sym = interpretKey(_event.xkey);

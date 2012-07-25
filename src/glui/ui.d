@@ -520,10 +520,7 @@ class WidgetRoot : Widget
             m_window.poll();
 
             if (m_needRender)
-            {
-                m_needRender = false;
                 render();
-            }
 
             // Check to see if timer events need to be issued
             long ctime = m_eventTimer.peek().msecs;
@@ -600,6 +597,7 @@ class WidgetRoot : Widget
 
             glPopAttrib();
             m_window.swapBuffers();
+            m_needRender = false;
         }
 
         // Update the viewport and root clip box to reflect current window size
@@ -617,46 +615,44 @@ class WidgetRoot : Widget
         // Inject an event into the heirarchy
         int injectEvent(Event event)
         {
-            // Check for window paint message
-            if (event.type == EventType.WINDOWPAINT)
+            switch(event.type) with(EventType)
             {
-                render();
-                return 0;
-            }
-
-            // Check for CTRL-TAB to change focus
-            if (event.type == EventType.KEYPRESS)
-            {
-                if (event.get!KeyPress.key == KEY.KC_TAB && ctrlIsDown)
+                case WINDOWPAINT:
                 {
-                    cycleFocus();
+                    // Check for window paint message, need to rerender
+                    render();
+                    return 0;
                 }
+                case KEYPRESS:
+                {
+                    // Check for CTRL-TAB to change focus
+                    if (event.get!KeyPress.key == KEY.KC_TAB && ctrlIsDown)
+                        cycleFocus();
+                    break;
+                }
+                case WINDOWRESIZE:
+                {
+                    setViewport();
+                    break;
+                }
+                case MOUSEMOVE:
+                {
+                    checkHover(event.get!MouseMove.pos);
+                    checkDrag(event);
+                    break;
+                }
+                case MOUSECLICK:
+                {
+                    // Mouseclick could potentially change the focus, so check
+                    checkFocus(event);
 
-            }
+                    // And check for dragging
+                    if ( (m_focused !is null) && m_focused.isInside(event.get!MouseClick.pos))
+                        m_dragging = m_focused.requestDrag(event.get!MouseClick.pos);
 
-            if (event.type == EventType.WINDOWRESIZE)
-                setViewport();
-
-            if (event.type == EventType.MOUSEMOVE)
-            {
-                checkHover(event.get!MouseMove.pos);
-                checkDrag(event);
-            }
-
-            // Mouseclick could potentially change the focus, so check
-            if (event.type == EventType.MOUSECLICK)
-            {
-                checkFocus(event);
-
-                if ( (m_focused !is null) && m_focused.isInside(event.get!MouseClick.pos))
-                    m_dragging = m_focused.requestDrag(event.get!MouseClick.pos);
-            }
-
-            if (event.type == EventType.MOUSERELEASE)
-            {
-                m_dragging = false;
-                m_resizing = false;
-                checkHover(event.get!MouseRelease.pos);
+                    break;
+                }
+                default:
             }
 
             // Sort the widget list.. prob dont need this every event!

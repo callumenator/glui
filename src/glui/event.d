@@ -52,6 +52,8 @@ struct MouseState
     }
 }
 
+
+// Types of events we know about
 enum EventType
 {
     KEYPRESS,
@@ -66,6 +68,8 @@ enum EventType
     WINDOWRESIZE,
     WINDOWFOCUSLOST
 }
+
+/**** KEY EVENTS ****/
 
 struct KeyPress
 {
@@ -114,6 +118,9 @@ struct KeyHold
     private:
         KEY m_key;
 }
+
+
+/**** MOUSE EVENTS ****/
 
 struct MouseMove
 {
@@ -203,7 +210,6 @@ struct MouseRelease
         int[2] m_pos;
 }
 
-
 struct MouseWheel
 {
     public:
@@ -233,6 +239,8 @@ struct MouseWheel
 }
 
 
+/**** WINDOW EVENTS ****/
+
 struct WindowMove
 {
     @property EventType type() { return EventType.WINDOWMOVE; }
@@ -261,6 +269,9 @@ struct WindowFocusLost
 {
     @property EventType type() { return EventType.WINDOWFOCUSLOST; }
 }
+
+
+/**** THE EVENT ****/
 
 struct Event
 {
