@@ -405,6 +405,16 @@ version(Windows)
             uint vk = MapVirtualKeyEx(scode, 3, m_layout);
             ToAsciiEx(vk, scode, state.ptr, &ascii, 0, m_layout);
 
+            /**
+            * The CTRL key pressed can make ascii == 0, even when it should
+            * return an actual ascii value (like CTRL + TAB).
+            * The following is a kludge to fix this.
+            */
+            if ((m_keyState.keys[KEY.KC_CTRL_LEFT] ||
+                 m_keyState.keys[KEY.KC_CTRL_RIGHT]) &&
+                vk < 32)
+                ascii = cast(ushort)vk;
+
             if (ascii != 0)
                 return cast(KEY)ascii;
             else
@@ -430,16 +440,16 @@ version(Windows)
                 {
                     auto sym = interpretKey(wParam);
                     if (m_keyState.keys[sym] != KeyState.STATE.PRESSED)
-                        {
-                            if (sym != KEY.KC_SHIFT_LEFT &&
-                                sym != KEY.KC_SHIFT_RIGHT &&
-                                sym != KEY.KC_CTRL_LEFT &&
-                                sym != KEY.KC_CTRL_RIGHT ) // don't count shift and ctrl (for repeats)
-                                m_keyState.keysDown ++;
+                    {
+                        if (sym != KEY.KC_SHIFT_LEFT &&
+                            sym != KEY.KC_SHIFT_RIGHT &&
+                            sym != KEY.KC_CTRL_LEFT &&
+                            sym != KEY.KC_CTRL_RIGHT ) // don't count shift and ctrl (for repeats)
+                            m_keyState.keysDown ++;
 
-                            m_keyState.keys[sym] = KeyState.STATE.PRESSED;
-                            event.emit(Event(KeyPress(sym)));
-                        }
+                        m_keyState.keys[sym] = KeyState.STATE.PRESSED;
+                        event.emit(Event(KeyPress(sym)));
+                    }
                     break;
                 }
 

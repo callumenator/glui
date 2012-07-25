@@ -623,7 +623,10 @@ class WidgetRoot : Widget
             if (event.type == EventType.KEYPRESS)
             {
                 if (event.get!KeyPress.key == KEY.KC_TAB && ctrlIsDown)
+                {
                     cycleFocus();
+                }
+
             }
 
             if (event.type == EventType.WINDOWRESIZE)
@@ -692,17 +695,40 @@ class WidgetRoot : Widget
             if (m_children.length <= 1)
                 return;
 
-            foreach(index, widget; m_children)
+            // First find the currently focused widget in the list
+            uint index = 0;
+            foreach(i, widget; m_children)
             {
                 if (widget is m_focused)
                 {
-                    if (index == m_children.length-1)
-                        changeFocus(m_children[0]);
-                    else
-                        changeFocus(m_children[index+1]);
-
+                    index = i;
                     break;
                 }
+            }
+
+            while(true)
+            {
+                ++index;
+
+                // Go back to start of the list if necessary
+                if (index == m_children.length - 1)
+                    index = 0;
+
+                /**
+                * If we have cycled back to the currently focused widget,
+                * there are no more widgets which could be focused, so
+                * don't change focus.
+                */
+                if (m_children[index] is m_focused)
+                    break;
+
+                // We only want top-level widgets (widgets with root as parent)
+                if (m_children[index].parent == this && m_children[index].visible)
+                {
+                    changeFocus(m_children[index]);
+                    break;
+                }
+
             }
         }
 
@@ -715,6 +741,8 @@ class WidgetRoot : Widget
             // Got a new focus, so alert the previously focused widget
             if (m_focused !is null)
                 m_focused.lostFocus();
+
+            writeln(newFocus, ", got focused");
 
             // Set the newly focused widget and alert it
             m_focused = newFocus;
