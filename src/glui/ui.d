@@ -22,7 +22,8 @@ import
     std.signals,
     core.thread,
     std.math,
-    std.format;
+    std.format,
+    std.array;
 
 import
     derelict.freetype.ft,
@@ -206,6 +207,7 @@ abstract class Widget
         @property int[4] clip() const { return m_clip; }
         @property bool showing() const { return m_showing; }
         @property bool visible() const { return m_visible; }
+        @property bool blocking() const { return m_blocking; }
         @property WidgetRoot root() { return m_root; }
         @property Widget parent() { return m_parent; }
         @property Widget[] children() { return m_children; }
@@ -216,6 +218,7 @@ abstract class Widget
         // Set
         @property void canDrag(bool v) { m_canDrag = v; }
         @property void canResize(bool v) { m_canResize = v; }
+        @property void blocking(bool v) { m_blocking = v; }
         @property void showing(bool v) { m_showing = v; }
         @property void root(WidgetRoot root) { m_root = root; }
 
@@ -263,6 +266,18 @@ abstract class Widget
             geometryChanged(GeometryChangeFlag.DIMENSION);
         }
 
+        // Print out the hierarchy
+        void print(ref Appender!(char[]) buf, ref string prefix)
+        {
+            buf.put(prefix ~ this.to!string ~ "\n");
+            prefix = "  " ~ prefix;
+
+            foreach(child; m_children)
+                child.print(buf, prefix);
+
+            if (prefix.length > 2)
+                prefix = prefix[2..$];
+        }
 
     protected:
 
@@ -431,13 +446,20 @@ abstract class Widget
             m_children ~= w;
         }
 
+        // Remove all children
+        void clearChildren()
+        {
+            m_children.clear;
+        }
+
+
         // Delete a child from this widget's list of children
         void delChild(Widget w)
         {
             foreach(index, child; m_children)
             {
                 if (child is w)
-                    m_children.remove(index);
+                    m_children = m_children.remove(index);
             }
         }
 
@@ -484,6 +506,7 @@ abstract class Widget
         bool m_visible = true; // this decides wether or not widget _will_ be shown, based on parent's visibility
         bool m_canDrag = false;
         bool m_canResize = false;
+        bool m_blocking = false; // blocking widgets don't lose focus
         long m_lastFocused = 0;
         int m_cornerRadius = 10;
 
@@ -627,7 +650,11 @@ class WidgetRoot : Widget
                 {
                     // Check for CTRL-TAB to change focus
                     if (event.get!KeyPress.key == KEY.KC_TAB && ctrlIsDown)
-                        cycleFocus();
+                    {
+                        // Can't cycle focus away from a blocking widget
+                        if (m_focused !is null && !m_focused.blocking)
+                            cycleFocus();
+                    }
                     break;
                 }
                 case WINDOWRESIZE:
@@ -671,6 +698,9 @@ class WidgetRoot : Widget
         // Check for a change of focus
         void checkFocus(Event event)
         {
+            if (m_focused !is null && m_focused.blocking)
+                return;
+
             auto pos = event.get!MouseClick.pos;
 
             Widget newFocus = null;
@@ -812,6 +842,58 @@ class WidgetRoot : Widget
             sortWidgetList();
             needRender;
             return newWidget;
+        }
+
+        // Destroy a widget, recursively destroying its child hierarchy
+        void destroy(Widget w)
+        {
+            destroyRecurse(w);
+
+            if (m_focused is w)
+                m_focused = null;
+
+            if (m_hovered is w)
+                m_hovered = null;
+
+            if (w.parent !is null)
+                w.parent.delChild(w);
+
+            sortWidgetList();
+            needRender;
+        }
+
+        void destroyRecurse(Widget w)
+        {
+            bool found = false;
+            foreach(i, wid; m_widgetList)
+            {
+                if (wid is w)
+                {
+                    m_widgetList = m_widgetList.remove(i);
+                    found = true;
+                    break;
+                }
+            }
+
+            foreach(i, child; w.children)
+            {
+                writeln(w, " DESTROYING CHILD ", i, ": ", child);
+                destroyRecurse(child);
+            }
+
+            w.clearChildren();
+        }
+
+
+        void print()
+        {
+            Appender!(char[]) buf;
+            buf.put(this.to!string ~ "\n");
+            string prefix = "|_";
+            foreach(child; m_children)
+                child.print(buf, prefix);
+
+            writeln(buf.data);
         }
 
         // Sort the widget list by scene depth

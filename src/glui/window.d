@@ -414,7 +414,10 @@ version(Windows)
                  m_keyState.keys[KEY.KC_CTRL_RIGHT]) &&
                 vk < 127)
             {
-                ascii = cast(ushort) (vk + 32);
+                if (vk >= 65 && vk <= 122)
+                    ascii = cast(ushort) (vk + 32);
+                else
+                    ascii = cast(ushort)vk;
             }
 
             if (ascii != 0)
