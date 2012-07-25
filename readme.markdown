@@ -1,6 +1,8 @@
 This repo contains routines for creating and managing windows, handling window events,
 loading and rendering truetype fonts using freetype, and drawing GUI elements in openGL.
 
+There is a screenshot on the wiki https://github.com/callumenator/glui/wiki.
+
 ###Windows:
 Create a window:
 ```
