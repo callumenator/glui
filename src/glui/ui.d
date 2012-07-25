@@ -34,8 +34,6 @@ import
     glui.window,
     glui.truetype;
 
-
-
 public
 {
 
@@ -619,7 +617,14 @@ class WidgetRoot : Widget
         // Inject an event into the heirarchy
         int injectEvent(Event event)
         {
-            // CHeck for CTRL-TAB to change focus
+            // Check for window paint message
+            if (event.type == EventType.WINDOWPAINT)
+            {
+                render();
+                return 0;
+            }
+
+            // Check for CTRL-TAB to change focus
             if (event.type == EventType.KEYPRESS)
             {
                 if (event.get!KeyPress.key == KEY.KC_TAB && ctrlIsDown)
@@ -1274,7 +1279,7 @@ class WidgetText : WidgetWindow
             if (delay == m_caretBlinkDelay)
             {
                 m_drawCaret = !m_drawCaret;
-                needRender;
+               // needRender;
             }
         }
 

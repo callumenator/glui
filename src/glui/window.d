@@ -429,6 +429,12 @@ version(Windows)
         {
             switch (message)
             {
+                case WM_PAINT:
+                {
+                    event.emit(Event(WindowPaint()));
+                    goto default;
+                }
+
                 case WM_KILLFOCUS:
                 {
                     m_keyState.keysDown = 0;

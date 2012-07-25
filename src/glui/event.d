@@ -61,6 +61,7 @@ enum EventType
     MOUSECLICK,
     MOUSERELEASE,
     MOUSEWHEEL,
+    WINDOWPAINT,
     WINDOWMOVE,
     WINDOWRESIZE,
     WINDOWFOCUSLOST
@@ -235,6 +236,11 @@ struct MouseWheel
 struct WindowMove
 {
     @property EventType type() { return EventType.WINDOWMOVE; }
+}
+
+struct WindowPaint
+{
+    @property EventType type() { return EventType.WINDOWPAINT; }
 }
 
 struct WindowResize
