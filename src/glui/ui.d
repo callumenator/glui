@@ -742,8 +742,6 @@ class WidgetRoot : Widget
             if (m_focused !is null)
                 m_focused.lostFocus();
 
-            writeln(newFocus, ", got focused");
-
             // Set the newly focused widget and alert it
             m_focused = newFocus;
             m_focused.applyFocus(Clock.currSystemTick.length);
