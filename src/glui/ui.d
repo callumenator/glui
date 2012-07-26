@@ -1290,7 +1290,8 @@ class WidgetText : WidgetWindow
             write(args, "\n");
         }
 
-        mixin PrioritySignal!(KEY) characterInsert;
+        mixin PrioritySignal!(Widget, KEY) insertEvent;
+        mixin PrioritySignal!(Widget) returnEvent;
 
     protected:
 
@@ -1428,7 +1429,7 @@ class WidgetText : WidgetWindow
                 {
                     auto lines = split(m_text.text, "\n").length;
                     auto height = lines * m_font.m_lineHeight;
-                    yoffset = cast(float)m_dim.y/2 - height/2 - m_font.m_lineHeight/2;
+                    yoffset = m_dim.y/2.0f + m_font.m_maxHoss/2.0f - height/2.0f - m_font.m_lineHeight/2.0f;
 
                     if (yoffset < 0) yoffset = 0;
                     break;
@@ -1600,6 +1601,7 @@ class WidgetText : WidgetWindow
                         m_text.insert("\n");
                         m_drawCaret = true;
                         m_refreshCache = true;
+                        returnEvent.emit(this);
                         needRender;
                     }
                     break;
@@ -1620,11 +1622,12 @@ class WidgetText : WidgetWindow
                     if (m_editable)
                     {
                         m_text.insert(to!string(cast(char)key));
-                        characterInsert.emit(key);
+                        insertEvent.emit(this, key);
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender;
                     }
+
                     break;
                 }
 
@@ -1667,6 +1670,29 @@ class WidgetText : WidgetWindow
 
         GLuint m_cacheId = 0; // display list for caching
         bool m_refreshCache = true;
+}
+
+
+// Convenience class for static text
+class WidgetLabel : WidgetText
+{
+    protected:
+        this(WidgetRoot root,
+             Widget parent,
+             string text,
+             Font font,
+             int x, int y, int w, int h,
+             RGBA bgColor = RGBA(0,0,0,0),
+             RGBA borderColor = RGBA(0,0,0,0))
+        {
+            super(root, parent, font);
+            m_text.set(text);
+            setPos(x,y);
+            setDim(w,h);
+            this.bgColor = bgColor;
+            this.borderColor = borderColor;
+        }
+
 }
 
 
@@ -1890,6 +1916,15 @@ class TextArea
             return cpos;
         }
 
+        // Clear all text
+        void clear()
+        {
+            m_text.clear;
+            m_offset = 0;
+            m_row = 0;
+            m_column = 0;
+            m_seekColumn = 0;
+        }
 
 
     private:
