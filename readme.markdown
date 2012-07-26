@@ -6,10 +6,10 @@ There is a screenshot on the wiki https://github.com/callumenator/glui/wiki.
 ###Windows:
 Create a window:
 ```
-Window("window1",/** handle for the window, so we can look for it later **/
-       true, /** create the window if the handle does not exist **/
-       WindowState(0,0,500,500) /** window start position and dimensions **/
-       );
+Window("window1",/** handle for the window, so we can look for it later **/       
+       WindowState(0,0,500,500) /** window start position and dimensions **
+       Flag!"Create".yes, /** create the window if the handle does not exist (this is true by default) **//
+       Flag!"Show".yes /** show the window (also true by default) **/ );
 Window("window1").makeCurrent(); /// make this the current window **/
 Window().setTitle("GLUI"); /// Window(), called without a handle, returns the current window **/
 ```
