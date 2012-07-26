@@ -19,6 +19,9 @@ import
     std.datetime,
     std.regex;
 
+public import
+    std.typecons;
+
 import
     derelict.opengl.gl,
     derelict.opengl.wgl,
@@ -135,9 +138,9 @@ abstract class Window
         * show = if we need to create the Window, show or hide based on this flag
         */
         static opCall(in string name,
-                      in bool create = false,
                       in WindowState ws = WindowState(),
-                      in bool show = true)
+                      in Flag!"Create" create = Flag!"Create".yes,
+                      in Flag!"Show" show = Flag!"Show".yes,                      )
         {
             auto ptr = (name in m_windows);
             if (ptr is null) // Window was not found.

@@ -23,8 +23,8 @@ import
 int main()
 {
 
-	Window("window1", true, WindowState(0,0,1000,700));
-    	Window.makeCurrent("window1");
+	Window("window1", WindowState(0,0,1000,700), Flag!"Create".yes, Flag!"Show".yes);
+    Window.makeCurrent("window1");
 	Window().setTitle("GLUI");
 
 	Font courier = createFont("../media/fonts/Courier_New.ttf", 11);
