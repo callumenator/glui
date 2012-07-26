@@ -224,6 +224,7 @@ abstract class Widget
         @property void blocking(bool v) { m_blocking = v; }
         @property void showing(bool v) { m_showing = v; }
         @property void root(WidgetRoot root) { m_root = root; }
+        @property void cornerRadius(int v) { m_cornerRadius = v; }
 
         @property void parent(Widget newParent)
         {
@@ -486,7 +487,7 @@ abstract class Widget
             return [m_screenPos.x - 1,
                     m_root.window.windowState.ypix - m_screenPos.y - m_dim.y,
                     m_dim.x + 1,
-                    m_dim.y];
+                    m_dim.y + 1];
         }
 
         // Override this to set a custom clip box for the widget's children
@@ -511,7 +512,7 @@ abstract class Widget
         bool m_canResize = false;
         bool m_blocking = false; // blocking widgets don't lose focus
         long m_lastFocused = 0;
-        int m_cornerRadius = 10;
+        int m_cornerRadius = 0;
 
         string m_type = "WIDGET";
 }
@@ -745,7 +746,7 @@ class WidgetRoot : Widget
                 ++index;
 
                 // Go back to start of the list if necessary
-                if (index == m_children.length - 1)
+                if (index >= m_children.length - 1)
                     index = 0;
 
                 /**
@@ -1402,6 +1403,7 @@ class WidgetText : WidgetWindow
         {
             glPushMatrix();
                 glLoadIdentity();
+                glTranslatef(m_parent.screenPos.x, m_parent.screenPos.y, 0);
                 setCoords();
                 glTranslatef(m_caretPos[0], m_caretPos[1], 0);
                 glScalef(1,-1,1);
@@ -1425,8 +1427,8 @@ class WidgetText : WidgetWindow
                 case CENTER:
                 {
                     auto lines = split(m_text.text, "\n").length;
-                    auto height = lines * m_font.m_maxHeight;
-                    yoffset = cast(float)m_dim.y/2 - height/2 - m_font.m_maxHeight/2;
+                    auto height = lines * m_font.m_lineHeight;
+                    yoffset = cast(float)m_dim.y/2 - height/2 - m_font.m_lineHeight/2;
 
                     if (yoffset < 0) yoffset = 0;
                     break;
@@ -1434,7 +1436,7 @@ class WidgetText : WidgetWindow
                 case BOTTOM:
                 {
                     auto lines = split(m_text.text, "\n").length;
-                    auto height = lines * m_font.m_maxHeight;
+                    auto height = lines * m_font.m_lineHeight;
                     yoffset = (cast(float)m_dim.y - height)/2;
                     if (yoffset < 0) yoffset = 0;
                     break;
@@ -1446,7 +1448,7 @@ class WidgetText : WidgetWindow
                 }
             }
 
-            glTranslatef(m_pos.x + 5, m_pos.y + yoffset + m_font.m_maxHeight, 0);
+            glTranslatef(m_pos.x + 5, m_pos.y + yoffset + m_font.m_lineHeight, 0);
 
             // Translate by the scroll amounts as well...
             if (m_allowHScroll)

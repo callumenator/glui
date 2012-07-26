@@ -31,7 +31,7 @@ public
     {
         FT_Face m_face;
         float m_ptSize = 0;
-        float[] m_wids;
+        float[] m_wids, m_xoffs;
         GLfloat[] m_vertices; // vertex, texcoord, vertex, texcoord, etc.
         GLushort[] m_indices;
 
@@ -140,6 +140,7 @@ public
         glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
         glColor4fv(color.ptr);
+        glTranslatef(font.m_xoffs[index], 0, 0);
         glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
         unbindFontBuffers(font);
@@ -167,10 +168,11 @@ public
             {
                 auto index = (cast(uint)c) - 32;
 
+                glTranslatef(font.m_xoffs[index], 0, 0);
                 glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
                 xoffset += font.m_wids[index];
-                glTranslatef(font.m_wids[index], 0, 0);
+                glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
             }
         }
 
@@ -203,10 +205,11 @@ public
                 glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
                 glColor4fv(color.ptr);
+                glTranslatef(font.m_xoffs[index], 0, 0);
                 glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
                 xoffset += font.m_wids[index];
-                glTranslatef(font.m_wids[index], 0, 0);
+                glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
             }
         }
 
@@ -308,9 +311,11 @@ private
                 }
 
                 //font.m_wids[aindex]=cast(float)(face.glyph.advance.x >> 6);
+                font.m_xoffs[aindex]=cast(float)(face.glyph.metrics.horiBearingX >> 6);
                 font.m_wids[aindex]=cast(float)(face.glyph.metrics.horiAdvance >> 6);
+
                 auto hoss = cast(float)((face.glyph.metrics.horiBearingY -
-                                    face.glyph.metrics.height) >> 6);
+                                         face.glyph.metrics.height) >> 6);
 
                 vxlo = 0;
                 vxhi = bitmap.width;
@@ -398,9 +403,8 @@ private
 	{
 	    char i;
 	    font.m_ptSize = fg.m_ptSize;
-	    font.m_lineHeight = fg.m_face.height >> 6;
-
         font.m_wids.length = 96;
+        font.m_xoffs.length = 96;
         glGenTextures(1, &font.m_texture);
 	    font.m_vertices.length = 96 * 16; // 4*2 vtx + 4*2 tex
 	    font.m_indices.length = 96 * 4;
@@ -431,7 +435,8 @@ private
 	    }
 
         createFontTextures(fg, font, maxWidth, maxHeight);
-	    font.m_lineHeight = font.m_maxHeight + font.m_maxHoss;
+	    font.m_lineHeight = 1.2*font.m_maxHeight;
+
 
         glGenBuffers(1, &font.m_vertexBuffer);
         glBindBuffer(GL_ARRAY_BUFFER, font.m_vertexBuffer);
