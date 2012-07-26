@@ -211,6 +211,7 @@ abstract class Widget
         @property bool showing() const { return m_showing; }
         @property bool visible() const { return m_visible; }
         @property bool blocking() const { return m_blocking; }
+        @property bool clipped() const { return m_clipped; }
         @property WidgetRoot root() { return m_root; }
         @property Widget parent() { return m_parent; }
         @property Widget[] children() { return m_children; }
@@ -221,8 +222,9 @@ abstract class Widget
         // Set
         @property void canDrag(bool v) { m_canDrag = v; }
         @property void canResize(bool v) { m_canResize = v; }
+        @property void clipped(bool v) { m_clipped = v; }
         @property void blocking(bool v) { m_blocking = v; }
-        @property void showing(bool v) { m_showing = v; }
+        @property void showing(bool v) { m_showing = v; needRender; }
         @property void root(WidgetRoot root) { m_root = root; }
         @property void cornerRadius(int v) { m_cornerRadius = v; }
 
@@ -508,6 +510,7 @@ abstract class Widget
 
         bool m_showing = true; // this decides whether or not widget _should_ be shown
         bool m_visible = true; // this decides wether or not widget _will_ be shown, based on parent's visibility
+        bool m_clipped = true;
         bool m_canDrag = false;
         bool m_canResize = false;
         bool m_blocking = false; // blocking widgets don't lose focus
@@ -615,7 +618,10 @@ class WidgetRoot : Widget
 
                 // Translate to parents coord, and set clip box
                 glLoadIdentity();
-                glScissor(widget.clip[0], widget.clip[1], widget.clip[2], widget.clip[3]);
+                if (widget.clipped)
+                    glScissor(widget.clip[0], widget.clip[1], widget.clip[2], widget.clip[3]);
+                else
+                    glScissor(0,0,m_dim.x,m_dim.y);
                 glTranslatef(widget.parent.screenPos.x, widget.parent.screenPos.y, 0);
 
                 // Draw the widget
@@ -1276,6 +1282,13 @@ class WidgetText : WidgetWindow
         @property void halign(HAlign v) { m_hAlign = v; }
         @property void valign(VAlign v) { m_vAlign = v; }
 
+        @property void text(string v)
+        {
+            m_text.set(v);
+            m_refreshCache = true;
+            needRender;
+        }
+
         void write(T...)(T args)
         {
             string s;
@@ -1283,6 +1296,8 @@ class WidgetText : WidgetWindow
             s ~= to!string(arg);
 
             m_text.insert(s);
+            m_refreshCache = true;
+            needRender;
         }
 
         void writeln(T...)(T args)
@@ -1292,6 +1307,7 @@ class WidgetText : WidgetWindow
 
         mixin PrioritySignal!(Widget, KEY) insertEvent;
         mixin PrioritySignal!(Widget) returnEvent;
+        mixin PrioritySignal!(Widget, char) deleteEvent;
 
     protected:
 
@@ -1588,7 +1604,9 @@ class WidgetText : WidgetWindow
                 }
                 case KC_DELETE: // del
                 {
+                    char deleted = m_text.rightText();
                     m_text.del();
+                    deleteEvent.emit(this, deleted);
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender;
@@ -1610,7 +1628,9 @@ class WidgetText : WidgetWindow
                 {
                     if (m_editable)
                     {
+                        char deleted = m_text.leftText();
                         m_text.backspace();
+                        deleteEvent.emit(this, deleted);
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender;
@@ -1714,6 +1734,14 @@ class TextArea
                 return cast(char)0;
 
             return m_text[m_offset-1];
+        }
+
+        @property char rightText()
+        {
+            if (m_offset + 1 > m_text.length)
+                return cast(char)0;
+
+            return m_text[m_offset+1];
         }
 
         void set(string s)
