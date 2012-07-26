@@ -9,7 +9,6 @@
 */
 module glui.window;
 
-
 import
     std.conv,
     std.math,
@@ -66,6 +65,7 @@ abstract class Window
         bool m_visible = true; // True if the window is visible.
         bool m_destroyed = false; // True if the window has been destroyed.
 
+        // Store the current state of the keyboard, mouse, and window
         KeyState m_keyState;
         MouseState m_mouseState;
         WindowState m_windowState;
