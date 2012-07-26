@@ -35,7 +35,7 @@ int main()
 
     WidgetRoot root = new WidgetRoot(Window("window1"));
 
-    auto textl = root.create!WidgetText(null, courier, true, true, false);
+    auto textl = root.create!WidgetText(null, courier, Flag!"Editable".yes, Flag!"Vscroll".yes, Flag!"Hscroll".no);
     textl.setDim(480, 680);
     textl.setPos(10, 10);
     textl.bgColor = RGBA(0,0,0,1);
@@ -53,30 +53,30 @@ int main()
 
     foreach(i; 0..5)
     {
-        auto branch = layout.root.create!WidgetText(null, lacuna, false, false, false);
+        auto branch = layout.root.create!WidgetText(null, lacuna);
         branch.setDim(200, 25);
         branch.bgColor = RGBA(97,48,145,255);
         branch.valign = WidgetText.VAlign.CENTER;
         branch.text.set("Level 0, Item " ~ i.to!string);
-        layout.add(null, branch, true);
+        layout.add(null, branch, Flag!"NoUpdate".yes);
 
         foreach(j; 0..5)
         {
-            auto lab = layout.root.create!WidgetText(null, courier, false, false, false);
+            auto lab = layout.root.create!WidgetText(null, courier);
             lab.setDim(200, 20);
             lab.bgColor = RGBA(96,159,214,255);
             lab.valign = WidgetText.VAlign.CENTER;
             lab.text.set("Level 1, Item " ~ j.to!string);
-            layout.add(branch, lab, true);
+            layout.add(branch, lab, Flag!"NoUpdate".yes);
 
             foreach(k; 0..5)
             {
-                auto leaf = layout.root.create!WidgetText(null, lacuna, false, false, false);
+                auto leaf = layout.root.create!WidgetText(null, lacuna);
                 leaf.setDim(200, 25);
                 leaf.bgColor = RGBA(153,31,131,255);
                 leaf.valign = WidgetText.VAlign.CENTER;
                 leaf.text.set("Level 2, Item " ~ k.to!string);
-                layout.add(lab, leaf, true);
+                layout.add(lab, leaf, Flag!"NoUpdate".yes);
             }
         }
     }

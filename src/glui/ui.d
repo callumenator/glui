@@ -25,6 +25,9 @@ import
     std.format,
     std.array;
 
+public import /// import publicly so users can call Flag!
+    std.typecons;
+
 import
     derelict.freetype.ft,
     derelict.opengl.gl,
@@ -1088,6 +1091,7 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
         }
     }
     return s;
+
 } // roundedBox
 
 
@@ -1290,9 +1294,10 @@ class WidgetText : WidgetWindow
     protected:
 
         this(WidgetRoot root, Widget parent,
-             Font font, bool editable = false,
-             bool vscroll = true,
-             bool hscroll = true)
+             Font font,
+             Flag!"Editable" editable = Flag!"Editable".no,
+             Flag!"Vscroll" vscroll = Flag!"Vscroll".no,
+             Flag!"Hscroll" hscroll = Flag!"Hscroll".no)
         {
             super(root, parent);
             m_type = "WIDGETTEXT";
@@ -2169,7 +2174,9 @@ class WidgetTree : WidgetWindow
 {
     public:
 
-        void add(Widget wparent, Widget widget, bool noUpdate = false)
+        void add(Widget wparent,
+                 Widget widget,
+                 Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
         {
             widget.parent = this;
 
