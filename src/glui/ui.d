@@ -19,7 +19,6 @@ import
     std.datetime,
     std.range,
     std.string,
-    std.signals,
     core.thread,
     std.math,
     std.format,
@@ -117,12 +116,14 @@ float distance(int[2] p1, int[2] p2)
     return sqrt( cast(float)((p1.x - p2.x)*(p1.x - p2.x) + (p1.y - p2.y)*(p1.y - p2.y)));
 }
 
-// Check if a given point is within a widgets (clipped) boundary
+// Check if a given point is within a widgets boundary
 bool isInside(Widget w, int[2] point)
 {
-    // Clip is in screen coords, need to convert to gui coords
-    auto clip = w.clip;
+    int[4] clip = w.clip;
+
     auto radius = min(w.cornerRadius, w.dim.x/2, w.dim.y/2);  // TODO: is this a slow point?
+
+    // Clip is in screen coords, need to convert to gui coords
     clip[1] = w.root.window.windowState.ypix - (clip[1] + clip[3]);
 
     // First check for point inside one of the two sqaures which cover the non-rounded corners
@@ -192,6 +193,7 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
     childbox[2] = cbox[2] - cbox[0];
     childbox[3] = cbox[3] - cbox[1];
 }
+
 
 
 
@@ -284,6 +286,8 @@ abstract class Widget
             if (prefix.length > 2)
                 prefix = prefix[2..$];
         }
+
+        mixin PrioritySignal!(Widget, int, int, int, int) widgetDragEvent;
 
     protected:
 
@@ -814,6 +818,7 @@ class WidgetRoot : Widget
 
                     m_hovered = widget;
                     m_hovered.gainedHover();
+                    writeln(m_hovered, ", got hover");
                     return;
                 }
             }
@@ -894,7 +899,7 @@ class WidgetRoot : Widget
             w.clearChildren();
         }
 
-
+        // Print out the widget hierarchy
         void print()
         {
             Appender!(char[]) buf;
@@ -1285,6 +1290,8 @@ class WidgetText : WidgetWindow
         @property void text(string v)
         {
             m_text.set(v);
+            if (m_allowVScroll)
+                m_vscroll.current = 0;
             m_refreshCache = true;
             needRender;
         }
@@ -1305,9 +1312,9 @@ class WidgetText : WidgetWindow
             write(args, "\n");
         }
 
-        mixin PrioritySignal!(Widget, KEY) insertEvent;
-        mixin PrioritySignal!(Widget) returnEvent;
-        mixin PrioritySignal!(Widget, char) deleteEvent;
+        PrioritySignal!(Widget, KEY) insertEvent;
+        PrioritySignal!(Widget) returnEvent;
+        PrioritySignal!(Widget, char) deleteEvent;
 
     protected:
 
@@ -2016,7 +2023,7 @@ class WidgetScroll : WidgetWindow
                 m_current = v;
         }
 
-        mixin PrioritySignal!(int) scrollEvent;
+        PrioritySignal!(int) scrollEvent;
 
     protected:
 

@@ -14,7 +14,6 @@ import
     std.math,
     std.stdio,
     std.string,
-    std.signals,
     std.datetime,
     std.regex;
 
@@ -101,7 +100,7 @@ abstract class Window
         bool visible() { return m_visible; }
 
          // Event signal.
-        mixin PrioritySignal!(Event) event;
+        PrioritySignal!(Event) event;
 
         // Create a window and OpenGL context.
         int create(in WindowState ws, in bool show);

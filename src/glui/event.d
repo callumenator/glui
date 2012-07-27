@@ -10,11 +10,13 @@
 module glui.event;
 
 import
-    std.signals,
     std.algorithm,
     std.stdio,
     std.variant,
     std.conv;
+
+public import
+    std.signals;
 
 
 
@@ -305,12 +307,22 @@ enum PRIORITY
 
 
 /**
+* I wrap the PSignal in a struct so that classes which have signals and inheriting
+* from other classes which define signals work - basically giving the signal a scope.
+*/
+struct PrioritySignal(T...)
+{
+    mixin PSignal!(T) signal;
+    alias signal this;
+}
+
+/**
 * This is a modified version of the std.signals signal. It allows associating
 * a priority with a slot, and also for slots to return a non-zero integer to stop
 * further event processing (i.e. stop the signal being sent to the rest of the
 * slots in the list).
 */
-template PrioritySignal(T1...)
+template PSignal(T1...)
 {
     /// Delegates must return an integer: 0 to continue event signalling, -1 to stop.
     alias int delegate(T1) slot_t;
