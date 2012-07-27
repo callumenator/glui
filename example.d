@@ -17,7 +17,7 @@ import
     glui.window,
     glui.event,
     glui.truetype,
-    glui.ui;
+    glui.widget.base;
 
 
 int main()
