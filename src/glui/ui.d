@@ -214,6 +214,7 @@ abstract class Widget
         @property bool visible() const { return m_visible; }
         @property bool blocking() const { return m_blocking; }
         @property bool clipped() const { return m_clipped; }
+        @property bool focusable() const { return m_focusable; }
         @property WidgetRoot root() { return m_root; }
         @property Widget parent() { return m_parent; }
         @property Widget[] children() { return m_children; }
@@ -225,6 +226,7 @@ abstract class Widget
         @property void canDrag(bool v) { m_canDrag = v; }
         @property void canResize(bool v) { m_canResize = v; }
         @property void clipped(bool v) { m_clipped = v; }
+        @property void focusable(bool v) { m_focusable = v; }
         @property void blocking(bool v) { m_blocking = v; }
         @property void showing(bool v) { m_showing = v; needRender; }
         @property void root(WidgetRoot root) { m_root = root; }
@@ -287,11 +289,15 @@ abstract class Widget
                 prefix = prefix[2..$];
         }
 
-        mixin PrioritySignal!(Widget, int, int, int, int) widgetDragEvent;
+        // All widgets can send these events to registered listeners
+        PrioritySignal!(Widget, int, int, int, int) widgetDragEvent;
+        PrioritySignal!(Widget, Flag!"Focused") widgetFocusEvent;
+        PrioritySignal!(Widget, Flag!"Hovered") widgetHoverEvent;
+
 
     protected:
 
-        @property bool amIFocused() const { return m_root.amIFocused(this); }
+        @property bool amIFocused() const { return m_root.isFocused(this); }
 
         @property bool isAChildFocused() const
         {
@@ -305,7 +311,7 @@ abstract class Widget
             return focused;
         }
 
-        @property bool amIHovered() const { return m_root.amIHovered(this); }
+        @property bool amIHovered() const { return m_root.isHovered(this); }
 
         @property bool isAChildHovered() const
         {
@@ -319,8 +325,8 @@ abstract class Widget
             return hovered;
         }
 
-        @property bool amIDragging() const { return m_root.amIDragging(this); }
-        @property bool amIResizing() const { return m_root.amIResizing(this); }
+        @property bool amIDragging() const { return m_root.isDragging(this); }
+        @property bool amIResizing() const { return m_root.isResizing(this); }
 
         // Current elapsed time in milliseconds
         @property long timerMsecs() const { return m_root.timerMsecs; }
@@ -387,6 +393,9 @@ abstract class Widget
 
             // Flag the change in geometry
             geometryChanged(GeometryChangeFlag.POSITION);
+
+            // Signal event
+            widgetDragEvent.emit(this, pos.x, pos.y, delta.x, delta.y);
         }
 
         // Override these to control resizing of your widget
@@ -407,7 +416,7 @@ abstract class Widget
         bool focus(int[2] pos, ref Widget finalFocus)
         {
             // If click was inside my bounds, list me as focused
-            if (m_visible && this.isInside(pos))
+            if (m_visible && this.isInside(pos) && m_focusable)
             {
                 finalFocus = this;
 
@@ -482,7 +491,7 @@ abstract class Widget
             // Child can only be visible if parent is visible
             m_visible = m_parent.visible && m_showing;
 
-            smallestBox(m_clip, parent.getChildClipBox(this));
+            if (m_clipped) smallestBox(m_clip, parent.getChildClipBox(this));
             foreach(child; m_children)
                 child.updateScreenInfo();
         }
@@ -515,6 +524,7 @@ abstract class Widget
         bool m_showing = true; // this decides whether or not widget _should_ be shown
         bool m_visible = true; // this decides wether or not widget _will_ be shown, based on parent's visibility
         bool m_clipped = true;
+        bool m_focusable = true; // can deactivate widgets this way
         bool m_canDrag = false;
         bool m_canResize = false;
         bool m_blocking = false; // blocking widgets don't lose focus
@@ -622,10 +632,7 @@ class WidgetRoot : Widget
 
                 // Translate to parents coord, and set clip box
                 glLoadIdentity();
-                if (widget.clipped)
-                    glScissor(widget.clip[0], widget.clip[1], widget.clip[2], widget.clip[3]);
-                else
-                    glScissor(0,0,m_dim.x,m_dim.y);
+                glScissor(widget.clip[0], widget.clip[1], widget.clip[2], widget.clip[3]);
                 glTranslatef(widget.parent.screenPos.x, widget.parent.screenPos.y, 0);
 
                 // Draw the widget
@@ -728,10 +735,7 @@ class WidgetRoot : Widget
             }
 
             // If we get to here, no widget was clicked on, set m_focused to null
-            if (m_focused !is null)
-                m_focused.lostFocus();
-
-            m_focused = null;
+            changeFocus(null);
         }
 
         // Cycle the focus amongst top level children !! TODO this doesn't respect visibility
@@ -783,14 +787,27 @@ class WidgetRoot : Widget
             if (newFocus is m_focused)
                 return;
 
-            // Got a new focus, so alert the previously focused widget
-            if (m_focused !is null)
-                m_focused.lostFocus();
+            Widget oldFocus = m_focused;
 
             // Set the newly focused widget and alert it
             m_focused = newFocus;
-            m_focused.applyFocus(Clock.currSystemTick.length);
-            m_focused.gainedFocus();
+            if (newFocus !is null)
+            {
+                m_focused.applyFocus(Clock.currSystemTick.length);
+                m_focused.gainedFocus();
+                m_focused.widgetFocusEvent.emit(m_focused, Flag!"Focused".yes);
+            }
+
+            // Got a new focus, so alert the previously focused widget
+            if (oldFocus !is null)
+            {
+                oldFocus.lostFocus();
+                oldFocus.widgetFocusEvent.emit(oldFocus, Flag!"Focused".no);
+            }
+
+            // Fire a global focus change event
+            globalFocusEvent.emit(newFocus, oldFocus);
+
             sortWidgetList();
             needRender;
         }
@@ -818,7 +835,6 @@ class WidgetRoot : Widget
 
                     m_hovered = widget;
                     m_hovered.gainedHover();
-                    writeln(m_hovered, ", got hover");
                     return;
                 }
             }
@@ -918,16 +934,19 @@ class WidgetRoot : Widget
         }
 
         // Widgets can check if they have focus
-        const bool amIFocused(const Widget w) const { return m_focused is w; }
+        const bool isFocused(const Widget w) const { return m_focused is w; }
+
+        // Widgets can check if one of their children has focus
+        const bool isAChildFocused(const Widget w) const { return w.isAChildFocused; }
 
         // Widgets can check if they are being dragged
-        const bool amIDragging(const Widget w) const { return ( (m_focused is w) && m_dragging); }
+        const bool isDragging(const Widget w) const { return ( (m_focused is w) && m_dragging); }
 
         // Widgets can check if they are being resized
-        const bool amIResizing(const Widget w) const { return ( (m_focused is w) && m_resizing); }
+        const bool isResizing(const Widget w) const { return ( (m_focused is w) && m_resizing); }
 
         // Widgets can check if they hovered
-        const bool amIHovered(const Widget w) const { return m_hovered is w; }
+        const bool isHovered(const Widget w) const { return m_hovered is w; }
 
         // Widgets can register for timer callbacks. By default they are one-off.
         void requestTimer(Widget widget, long delay_msecs, void delegate(long) callback, bool recurring = false)
@@ -966,6 +985,9 @@ class WidgetRoot : Widget
 
         // Flag that a widget needs to be rendered
         @property void needRender() { m_needRender = true; }
+
+        // Signal whenever the focus changes
+        PrioritySignal!(Widget /*gained focus*/, Widget /*lost focus*/) globalFocusEvent;
 
     private:
         Window m_window;
@@ -1312,9 +1334,9 @@ class WidgetText : WidgetWindow
             write(args, "\n");
         }
 
-        PrioritySignal!(Widget, KEY) insertEvent;
-        PrioritySignal!(Widget) returnEvent;
-        PrioritySignal!(Widget, char) deleteEvent;
+        PrioritySignal!(Widget, KEY)  widgetTextInsertEvent;
+        PrioritySignal!(Widget, char) widgetTextDeleteEvent;
+        PrioritySignal!(Widget)       widgetTextReturnEvent;
 
     protected:
 
@@ -1613,7 +1635,7 @@ class WidgetText : WidgetWindow
                 {
                     char deleted = m_text.rightText();
                     m_text.del();
-                    deleteEvent.emit(this, deleted);
+                    widgetTextDeleteEvent.emit(this, deleted);
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender;
@@ -1624,9 +1646,9 @@ class WidgetText : WidgetWindow
                     if (m_editable)
                     {
                         m_text.insert("\n");
+                        widgetTextReturnEvent.emit(this);
                         m_drawCaret = true;
                         m_refreshCache = true;
-                        returnEvent.emit(this);
                         needRender;
                     }
                     break;
@@ -1637,7 +1659,7 @@ class WidgetText : WidgetWindow
                     {
                         char deleted = m_text.leftText();
                         m_text.backspace();
-                        deleteEvent.emit(this, deleted);
+                        widgetTextDeleteEvent.emit(this, deleted);
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender;
@@ -1649,7 +1671,7 @@ class WidgetText : WidgetWindow
                     if (m_editable)
                     {
                         m_text.insert(to!string(cast(char)key));
-                        insertEvent.emit(this, key);
+                        widgetTextInsertEvent.emit(this, key);
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender;
