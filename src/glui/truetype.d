@@ -217,6 +217,20 @@ public
     }
 
 
+    // get the horizontal length in screen coords of the line of text
+    float getLineLength(string text, Font font)
+    {
+        float length = 0;
+        foreach(char c; text)
+        {
+            int idx = (cast(int)c) - 32;
+            if (idx >= 0)
+                length += font.m_wids[idx];
+        }
+        return length;
+    }
+
+
 } // public functions
 
 
