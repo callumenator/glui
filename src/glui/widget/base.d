@@ -40,77 +40,74 @@ public import
     glui.event,
     glui.widget.text;
 
-public
+
+// Treat 2-element static arrays as (x,y) pairs
+T x(T)(T[2] v) { return v[0]; }
+T y(T)(T[2] v) { return v[1]; } // ditto
+ref T x(T)(ref T[2] v) { return v[0]; }
+ref T y(T)(ref T[2] v) { return v[1]; } // ditto
+
+// Treat 4-element static arrays as (r,g,b,a) colors
+T r(T)(T[4] v) { return v[0]; }
+T g(T)(T[4] v) { return v[1]; }
+T b(T)(T[4] v) { return v[2]; }
+T a(T)(T[4] v) { return v[3]; }
+ref T r(T)(ref T[4] v) { return v[0]; }
+ref T g(T)(ref T[4] v) { return v[1]; }
+ref T b(T)(ref T[4] v) { return v[2]; }
+ref T a(T)(ref T[4] v) { return v[3]; }
+
+struct RGBA
 {
-
-    // Treat 2-element static arrays as (x,y) pairs
-    T x(T)(T[2] v) { return v[0]; }
-    T y(T)(T[2] v) { return v[1]; } // ditto
-    ref T x(T)(ref T[2] v) { return v[0]; }
-    ref T y(T)(ref T[2] v) { return v[1]; } // ditto
-
-    // Treat 4-element static arrays as (r,g,b,a) colors
-    T r(T)(T[4] v) { return v[0]; }
-    T g(T)(T[4] v) { return v[1]; }
-    T b(T)(T[4] v) { return v[2]; }
-    T a(T)(T[4] v) { return v[3]; }
-    ref T r(T)(ref T[4] v) { return v[0]; }
-    ref T g(T)(ref T[4] v) { return v[1]; }
-    ref T b(T)(ref T[4] v) { return v[2]; }
-    ref T a(T)(ref T[4] v) { return v[3]; }
-
-    struct RGBA
+    static RGBA opCall(float r, float g, float b, float a)
     {
-        static RGBA opCall(float r, float g, float b, float a)
+        RGBA o;
+
+        /**
+        * If any of the values are greater than 1, assume we have been
+        * given ints, which need to be converted to floats.
+        */
+        if (r > 1 || g > 1 || b > 1 || a > 1)
         {
-            RGBA o;
-
-            /**
-            * If any of the values are greater than 1, assume we have been
-            * given ints, which need to be converted to floats.
-            */
-            if (r > 1 || g > 1 || b > 1 || a > 1)
-            {
-                o.r = r/255.;
-                o.g = g/255.;
-                o.b = b/255.;
-                o.a = a/255.;
-            }
-            else
-            {
-                o.r = r;
-                o.g = g;
-                o.b = b;
-                o.a = a;
-            }
-            return o;
+            o.r = r/255.;
+            o.g = g/255.;
+            o.b = b/255.;
+            o.a = a/255.;
         }
-
-        static RGBA opCall(float[4] v)
+        else
         {
-            return RGBA(v[0], v[1], v[2], v[3]);
+            o.r = r;
+            o.g = g;
+            o.b = b;
+            o.a = a;
         }
-
-        // Stored internally as floats [0..1]
-        union
-        {
-            struct
-            {
-                float r = 0;
-                float g = 0;
-                float b = 0;
-                float a = 0;
-            }
-
-            float[4] v;
-        }
-
-        alias v this;
-
+        return o;
     }
 
-    enum arcResolution = 10;
+    static RGBA opCall(float[4] v)
+    {
+        return RGBA(v[0], v[1], v[2], v[3]);
+    }
+
+    // Stored internally as floats [0..1]
+    union
+    {
+        struct
+        {
+            float r = 0;
+            float g = 0;
+            float b = 0;
+            float a = 0;
+        }
+        float[4] v;
+    }
+
+    alias v this;
+
 }
+
+enum arcResolution = 10;
+
 
 
 // Distance between two points
@@ -195,6 +192,19 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
     childbox[1] = cbox[1];
     childbox[2] = cbox[2] - cbox[0];
     childbox[3] = cbox[3] - cbox[1];
+}
+
+
+KeyVal!T arg(T)(string k, T t)
+{
+    KeyVal!T kv = {k, t};
+    return kv;
+}
+
+struct KeyVal(T)
+{
+    string key;
+    T val;
 }
 
 
