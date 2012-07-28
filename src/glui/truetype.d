@@ -44,8 +44,14 @@ public
     }
 
     // Create a font from the given file, with the given size
-    Font createFont(string filename, int pointSize)
+    Font loadFont(string filename, int pointSize)
     {
+        // See if it is already loaded
+        auto keyname = baseName(filename) ~ pointSize.to!string;
+        auto fontPtr = keyname in m_loadedFonts;
+        if (fontPtr !is null)
+            return *fontPtr;
+
         Font font = new Font;
         string fontName = baseName(baseName(filename)) ~ to!string(pointSize);
         FontGlyph glyph = loadFontGlyph(filename, pointSize);
@@ -59,11 +65,15 @@ public
 
         font.m_face = glyph.m_face;
         int ret = createFont(glyph, font);
+
+        // Store the loaded font
+        m_loadedFonts[keyname] = font;
+
         return font;
     }
 
     // Create a set of fonts from a list of files, with the given sizes
-    void createFonts(string[] filenames, int[] pointSizes)
+    void loadFonts(string[] filenames, int[] pointSizes)
     in
     {
         assert(filenames.length == pointSizes.length);
@@ -72,7 +82,7 @@ public
     {
         foreach(idx, file; filenames)
         {
-            createFont(file, pointSizes[idx]);
+            loadFont(file, pointSizes[idx]);
         }
     }
 
@@ -253,6 +263,9 @@ public
 
 private
 {
+
+    // Static AA for remembering loaded fonts and retrieving by name
+    Font[string] m_loadedFonts;
 
     // Handle for a font glyph
     struct FontGlyph

@@ -27,8 +27,8 @@ int main()
     Window.makeCurrent("window1");
 	Window().setTitle("GLUI");
 
-	Font courier = createFont("../media/fonts/Courier_New.ttf", 11);
-	Font lacuna = createFont("../media/fonts/lacuna.ttf", 14);
+	Font courier = loadFont("../media/fonts/Courier_New.ttf", 11);
+	Font lacuna = loadFont("../media/fonts/lacuna.ttf", 14);
 
 	glViewport(0,0,1000,700);
 	glClearColor(0,0,0,1);
