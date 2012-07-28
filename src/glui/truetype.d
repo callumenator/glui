@@ -47,8 +47,8 @@ public
     Font loadFont(string filename, int pointSize)
     {
         // See if it is already loaded
-        auto keyname = baseName(filename) ~ pointSize.to!string;
-        auto fontPtr = keyname in m_loadedFonts;
+        auto keyname = genKey(filename, pointSize);
+        auto fontPtr = (keyname in m_loadedFonts);
         if (fontPtr !is null)
             return *fontPtr;
 
@@ -84,6 +84,28 @@ public
         {
             loadFont(file, pointSizes[idx]);
         }
+    }
+
+    // Create a set of fonts from a a single font file and a list of sizes
+    void loadFontSizes(string filename, int[] pointSizes)
+    {
+        foreach(size; pointSizes)
+        {
+            loadFont(filename, size);
+        }
+    }
+
+    // Return a font if it is already loaded, else assert
+    Font font(string filename, int pointSize)
+    {
+        // See if it is already loaded
+        auto keyname = genKey(filename, pointSize);
+        auto fontPtr = (keyname in m_loadedFonts);
+        if (fontPtr !is null)
+            return *fontPtr;
+        else
+            assert(false, "Font " ~ filename ~ " at size " ~ pointSize.to!string
+                   ~ " has not been loaded!");
     }
 
     // Get kerning info
@@ -266,6 +288,12 @@ private
 
     // Static AA for remembering loaded fonts and retrieving by name
     Font[string] m_loadedFonts;
+
+    // Generate a key for the static lookup table from a filename and point size
+    string genKey(string filepath, int size)
+    {
+        return stripExtension(baseName(filepath)) ~ size.to!string;
+    }
 
     // Handle for a font glyph
     struct FontGlyph
