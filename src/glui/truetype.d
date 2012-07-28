@@ -27,7 +27,7 @@ import
 public
 {
     // Structure to store everything associated with a particular font and size
-    struct Font
+    class Font
     {
         FT_Face m_face;
         float m_ptSize = 0;
@@ -46,7 +46,7 @@ public
     // Create a font from the given file, with the given size
     Font createFont(string filename, int pointSize)
     {
-        Font font;
+        Font font = new Font;
         string fontName = baseName(baseName(filename)) ~ to!string(pointSize);
         FontGlyph glyph = loadFontGlyph(filename, pointSize);
 
@@ -95,6 +95,9 @@ public
     // Call before rendering characters from a given font
     void bindFontBuffers(ref const(Font) font)
     {
+        if (font is null)
+            return;
+
         // Bind the vertex buffer
         glBindBuffer(GL_ARRAY_BUFFER, font.m_vertexBuffer);
         // Enable VBO
@@ -114,6 +117,9 @@ public
     // Call after rendering characters from a given font
     void unbindFontBuffers(ref const(Font) font)
     {
+        if (font is null)
+            return;
+
         // Bind the zero buffer, to re-enable non-VBO drawing.
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -128,7 +134,7 @@ public
     void renderCharacter(ref const(Font) font, char c, float[4] color, float[4] bgcolor)
     in
     {
-        assert (cast(uint)c >= 32 && cast(uint)c <= 126);
+        assert (cast(uint)c >= 32 && cast(uint)c <= 126 && font !is null);
     }
     body
     {
@@ -149,6 +155,9 @@ public
     // Render a string of characters at the current position
     void renderCharacters(ref const(Font) font, string text, float[4] color)
     {
+        if (font is null)
+            return;
+
         bindFontBuffers(font);
         glColor4fv(color.ptr);
 
@@ -183,6 +192,9 @@ public
     // Render a string of characters at the current position, with a background color
     void renderCharacters(ref const(Font) font, string text, float[4] color, float[4] bgcolor)
     {
+        if (font is null)
+            return;
+
         bindFontBuffers(font);
 
         float xoffset = 0;
@@ -220,6 +232,9 @@ public
     // get the horizontal length in screen coords of the line of text
     float getLineLength(string text, Font font)
     {
+        if (font is null)
+            return 0.0;
+
         float length = 0;
         foreach(char c; text)
         {

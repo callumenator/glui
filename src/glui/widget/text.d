@@ -84,26 +84,89 @@ class WidgetText : WidgetWindow
         PrioritySignal!(Widget)       widgetTextReturnEvent;
 
     package
-        this(WidgetRoot root, Widget parent,
-             Font font,
-             Flag!"Editable" editable = Flag!"Editable".no,
-             Flag!"Vscroll" vscroll = Flag!"Vscroll".no,
-             Flag!"Hscroll" hscroll = Flag!"Hscroll".no)
+        this(WidgetRoot root, Widget parent)
         {
             super(root, parent);
+        }
+
+
+    public:
+
+        void set(KeyVal...)(Font font, KeyVal args)
+        {
+            super.set(args);
+
             m_type = "WIDGETTEXT";
+            m_cacheId = glGenLists(1);
+            m_text = new TextArea;
 
             m_font = font;
-            m_editable = editable;
-            m_allowVScroll = vscroll;
-            m_allowHScroll = hscroll;
-            m_text = new TextArea;
-            m_cacheId = glGenLists(1);
+            m_repeatDelayTime = -1;
+            m_repeatHoldTime = -1;
+            m_caretBlinkDelay = -1;
+            foreach(arg; args)
+            {
+
+                switch(arg.key.toLower)
+                {
+                    case "editable":
+                        static if (arg.type == "bool")
+                            m_editable= arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    case "vscroll":
+                        static if (arg.type == "bool")
+                            m_allowVScroll= arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    case "hscroll":
+                        static if (arg.type == "bool")
+                            m_allowHScroll= arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    case "repeatdelay":
+                        static if (arg.type == "int")
+                            m_repeatDelayTime = arg.val;
+                        else arg.error("int", "Widget");
+                        break;
+
+                    case "repeathold":
+                        static if (arg.type == "int")
+                            m_repeatHoldTime = arg.val;
+                        else arg.error("int", "Widget");
+                        break;
+
+                    case "caretblinkdelay":
+                        static if (arg.type == "int")
+                            m_caretBlinkDelay = arg.val;
+                        else arg.error("int", "Widget");
+                        break;
+
+                    case "valign":
+                    case "verticalalign":
+                        static if (arg.type == VAlign.stringof)
+                            m_vAlign = arg.val;
+                        else arg.error(VAlign.stringof, "Widget");
+                        break;
+
+                    case "halign":
+                    case "horizontalalign":
+                        static if (arg.type == HAlign.stringof)
+                            m_hAlign = arg.val;
+                        else arg.error(HAlign.stringof, "Widget");
+                        break;
+
+                    default:
+                }
+            }
 
             // Set some reasonable defaults
-            m_repeatDelayTime = 20;
-            m_repeatHoldTime = 500;
-            m_caretBlinkDelay = 400;
+            if (m_repeatDelayTime == -1) m_repeatDelayTime = 20;
+            if (m_repeatHoldTime == -1)  m_repeatHoldTime = 500;
+            if (m_caretBlinkDelay == -1) m_caretBlinkDelay = 400;
 
             // Request recurrent timer event from root for blinking the caret
             if (m_editable) requestTimer(m_caretBlinkDelay, &this.timerEvent, true);
@@ -111,16 +174,20 @@ class WidgetText : WidgetWindow
             // Make scroll bars
             if (m_allowVScroll)
             {
-                m_vscroll = root.create!WidgetScroll(this, 0, 1000, [0,0], [0,0], WidgetScroll.Orientation.VERTICAL);
-                m_vscroll.fadeInAndOut = true;
-                m_vscroll.bgColor = RGBA(.2,.2,.4,0);
+                m_vscroll = root.create!WidgetScroll(this,
+                                                     arg("range", [0, 1000]),
+                                                     arg("fade", false),
+                                                     arg("background", RGBA(.2,.2,.4,1)),
+                                                     arg("orientation", WidgetScroll.Orientation.VERTICAL));
             }
 
             if (m_allowHScroll)
             {
-                m_hscroll = root.create!WidgetScroll(this, 0, 1000, [0,0], [0,0], WidgetScroll.Orientation.HORIZONTAL);
-                m_hscroll.fadeInAndOut = true;
-                m_hscroll.bgColor = RGBA(.2,.2,.4,0);
+                m_hscroll = root.create!WidgetScroll(this,
+                                                     arg("range", [0, 1000]),
+                                                     arg("fade", true),
+                                                     arg("background", RGBA(.2,.2,.4,1)),
+                                                     arg("orientation", WidgetScroll.Orientation.HORIZONTAL));
             }
         }
 
@@ -160,6 +227,9 @@ class WidgetText : WidgetWindow
         override void render()
         {
             super.render();
+
+            if (m_font is null)
+                return;
 
             setCoords();
             glPushMatrix();
@@ -436,13 +506,13 @@ class WidgetText : WidgetWindow
 
         KEY m_lastKey = KEY.KC_NULL;
 
-        Font m_font;
+        Font m_font = null;
         TextArea m_text;
-        RGBA m_textColor = {1f,1f,1f,1f};
-        RGBA m_textBgColor = {0f,0f,0f,0f};
+        RGBA m_textColor = {1,1,1,1};
+        RGBA m_textBgColor = {0,0,0,0};
 
-        bool m_allowVScroll = true;
-        bool m_allowHScroll = true;
+        bool m_allowVScroll = false;
+        bool m_allowHScroll = false;
         WidgetScroll m_vscroll;
         WidgetScroll m_hscroll;
 
@@ -470,33 +540,49 @@ class WidgetText : WidgetWindow
 class WidgetLabel : WidgetText
 {
     package
-        this(WidgetRoot root,
-             Widget parent,
-             string text,
-             Font font,
-             int x, int y,
-             RGBA bgColor = RGBA(0,0,0,0),
-             RGBA borderColor = RGBA(0,0,0,0))
+        this(WidgetRoot root, Widget parent)
         {
-            super(root, parent, font);
-            m_text.set(text);
-            setPos(x,y);
-            this.bgColor = bgColor;
-            this.borderColor = borderColor;
-
-            // Set default dimensions
-            auto lines = split(text, "\n");
-            float xdim = 0;
-            foreach(line; lines)
-            {
-                auto l = 1.2*getLineLength(line, font);
-                if (l > xdim)
-                    xdim = l;
-            }
-
-            setDim(cast(int)xdim, cast(int)(1.5*lines.length*font.m_lineHeight));
+            super(root, parent);
         }
 
+    public:
+        void set(KeyVals...)(Font font, KeyVals args)
+        {
+            super.set(font, args);
+
+            // Alignment is vertically centered by default:
+            m_vAlign = WidgetText.VAlign.CENTER;
+            m_editable = false;
+
+            foreach(arg; args)
+            {
+                switch(arg.key.toLower)
+                {
+                    case "text":
+                        static if (arg.type == "string")
+                        {
+                            m_text.set(arg.val);
+
+                            // Set default dimensions
+                            auto lines = split(arg.val, "\n");
+                            float xdim = 0;
+                            foreach(line; lines)
+                            {
+                                auto l = 1.2*getLineLength(line, m_font);
+                                if (l > xdim)
+                                    xdim = l;
+                            }
+
+                            setDim(cast(int)xdim,
+                                   cast(int)(1.5*lines.length*m_font.m_lineHeight));
+                        }
+                        else arg.error("string", "Widget");
+                        break;
+
+                    default:
+                }
+            }
+        }
 }
 
 

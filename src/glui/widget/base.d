@@ -22,7 +22,8 @@ import
     core.thread,
     std.math,
     std.format,
-    std.array;
+    std.array,
+    std.traits;
 
 public import /// import publicly so users can call Flag!
     std.typecons;
@@ -195,24 +196,110 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 }
 
 
+
+// Allow widgets to take a list of names params
 KeyVal!T arg(T)(string k, T t)
 {
     KeyVal!T kv = {k, t};
     return kv;
 }
 
+// The backend of the named params mechanism
 struct KeyVal(T)
 {
     string key;
     T val;
+
+    enum string type = T.stringof;
+
+    // Assert(false) and print error msg when incorrect type is given
+    void error(string expected, string widgetname)
+    {
+        assert(false, "Incorrect argument type for " ~
+                    widgetname ~ " : " ~ key ~ "\n" ~
+                    "expected " ~ expected ~ ", got " ~
+                    type ~ ", (" ~ val.to!string ~ ")");
+    }
 }
 
 
-
-
+/**
+* Widget base class.
+*/
 abstract class Widget
 {
+    package
+        this(WidgetRoot root, Widget parent)
+        {
+            m_root = root;
+            this.parent = parent;
+        }
+
     public:
+
+        void set(KeyVal...)(KeyVal args)
+        {
+            foreach(arg; args)
+            {
+                switch(arg.key.toLower)
+                {
+                    case "pos":
+                    case "position":
+                        static if (arg.type == "int[]" || arg.type == "float[]")
+                            m_pos = [cast(int)arg.val[0], cast(int)arg.val[1]];
+                        else arg.error("int[] or float[]", "Widget");
+                        break;
+
+                    case "dim":
+                    case "dimension":
+                    case "dimensions":
+                        static if (arg.type == "int[]" || arg.type == "float[]")
+                            m_dim = [cast(int)arg.val[0], cast(int)arg.val[1]];
+                        else arg.error("int[] or float[]", "Widget");
+                        break;
+
+                    case "cornerradius":
+                        static if (isNumeric!(typeof(arg.val)))
+                            m_cornerRadius = cast(int)arg.val;
+                        else arg.error("numeric type", "Widget");
+                        break;
+
+                    case "showing":
+                        static if (arg.type == "bool")
+                            m_showing = arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    case "clipped":
+                        static if (arg.type == "bool")
+                            m_clipped = arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    case "blocking":
+                        static if (arg.type == "bool")
+                            m_blocking = arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    case "candrag":
+                        static if (arg.type == "bool")
+                            m_canDrag = arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    case "canresize":
+                        static if (arg.type == "bool")
+                            m_canResize = arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
+                    default:
+                }
+            }
+        }
+
+
 
         // Get
         @property int[2] screenPos() const { return m_screenPos; }
@@ -495,13 +582,15 @@ abstract class Widget
         // Update the absolute screen position, visibility, and clipping of this widget
         void updateScreenInfo()
         {
-            m_screenPos[] = parent.screenPos[] + m_pos[];
+            m_screenPos[] = m_parent.screenPos[] + m_pos[];
             m_clip = getClipBox();
 
             // Child can only be visible if parent is visible
             m_visible = m_parent.visible && m_showing;
 
-            if (m_clipped) smallestBox(m_clip, parent.getChildClipBox(this));
+            if (m_clipped)
+                smallestBox(m_clip, m_parent.getChildClipBox(this));
+
             foreach(child; m_children)
                 child.updateScreenInfo();
         }
@@ -520,7 +609,6 @@ abstract class Widget
         {
             return getClipBox();
         }
-
 
         Widget m_parent = null;
         Widget[] m_children = null;
@@ -546,7 +634,6 @@ abstract class Widget
 
 
 
-
 /**
 * The WidgetRoot is responsible for creating widgets, maintaining a depth-sorted
 * list of all widgets for rendering, calling each widget's render method, checking
@@ -560,7 +647,10 @@ class WidgetRoot : Widget
 
         this(Window wnd)
         {
+            super(this, this);
+
             m_root = this;
+            m_parent = null;
             m_type = "WIDGETROOT";
             m_window = wnd;
             wnd.event.connect(&this.injectEvent, PRIORITY.NORMAL);
@@ -633,6 +723,9 @@ class WidgetRoot : Widget
             */
             foreach(widget; retro(m_widgetList))
             {
+                if (widget.type == "WIDGETSCROLL" && widget.parent.type == "WIDGETTREE")
+                    writeln(widget.clip);
+
                 /**
                 * TODO: sort widgets so that invisible widgets are at the bottom of the list,
                 * and the first invisible widget can terminate this loop
@@ -874,10 +967,15 @@ class WidgetRoot : Widget
         }
 
         // Create a widget under this root
-        T create(T : Widget, S...)(Widget parent, S args)
+        T create(T : Widget, KeyVal...)(Widget parent, KeyVal args)
         {
-            T newWidget = new T(this, parent, args);
+            T newWidget = new T(this, parent);
             assert (newWidget !is null);
+
+            newWidget.set(args);
+            newWidget.geometryChanged(Widget.GeometryChangeFlag.POSITION |
+                                      Widget.GeometryChangeFlag.DIMENSION);
+
             m_widgetList ~= newWidget;
             newWidget.lastFocused = newWidget.parent.lastFocused + 1;
             sortWidgetList();
@@ -918,7 +1016,6 @@ class WidgetRoot : Widget
 
             foreach(i, child; w.children)
             {
-                writeln(w, " DESTROYING CHILD ", i, ": ", child);
                 destroyRecurse(child);
             }
 
@@ -1145,7 +1242,50 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
 */
 class WidgetWindow : Widget
 {
+
+    package
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
+
     public:
+
+        void set(T...)(T args)
+        {
+            super.set(args);
+
+            foreach(arg; args)
+            {
+                switch(arg.key.toLower)
+                {
+                    case "bgcolor":
+                    case "background":
+                        static if (arg.type == "RGBA")
+                            bgColor = arg.val;
+                        else arg.error("RGBA", "WidgetWindow");
+                        break;
+
+                    case "border":
+                    case "bordercolor":
+                        static if (arg.type == "RGBA")
+                            borderColor = arg.val;
+                        else arg.error("RGBA", "WidgetWindow");
+                        break;
+
+                    case "texture":
+                        static if (arg.type == GLuint.stringof)
+                            texture = arg.val;
+                        else arg.error(GLuint.stringof, "WidgetWindow");
+                        break;
+
+                    default:
+                }
+            }
+
+            m_type = "WIDGETWINDOW";
+            m_cacheId = glGenLists(1);
+        }
 
         // Background color
         @property RGBA bgColor() const { return m_bgColor; }
@@ -1171,14 +1311,6 @@ class WidgetWindow : Widget
             m_texture = v;
             m_refreshCache = true;
             needRender;
-        }
-
-        this(WidgetRoot root, Widget parent)
-        {
-            m_root = root;
-            Widget.parent = parent;
-            m_type = "WIDGETWINDOW";
-            m_cacheId = glGenLists(1);
         }
 
         override void geometryChanged(Widget.GeometryChangeFlag flag)
@@ -1277,7 +1409,7 @@ class WidgetWindow : Widget
 
     private:
 
-        RGBA m_bgColor = {.3,.3,.3,1};
+        RGBA m_bgColor = {0,0,0,1};
         RGBA m_borderColor = {0,0,0,0};
         GLuint m_texture = 0;
         GLuint m_cacheId = 0; // glDisplayList for caching
@@ -1287,10 +1419,76 @@ class WidgetWindow : Widget
 
 
 
-
 class WidgetScroll : WidgetWindow
 {
+    package
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
+
     public:
+
+        void set(KeyVals...)(KeyVals args)
+        {
+            super.set(args);
+            m_type = "WIDGETSCROLL";
+
+            int smin, smax;
+            foreach(arg; args)
+            {
+                switch(arg.key.toLower)
+                {
+                    case "min":
+                    case "slidermin":
+                        static if (arg.type == "int")
+                            smin = arg.val;
+                        else arg.error("int", "WidgetScroll");
+                        break;
+
+                    case "max":
+                    case "slidermax":
+                        static if (arg.type == "int")
+                            smax = arg.val;
+                        else arg.error("int", "WidgetScroll");
+                        break;
+
+                    case "range":
+                        static if (arg.type == "int[]")
+                        {
+                            smin = arg.val[0];
+                            smax = arg.val[1];
+                        }
+                        else arg.error("int[]", "WidgetScroll");
+                        break;
+
+                    case "orientation":
+                        static if (arg.type == Orientation.stringof)
+                            m_orient = arg.val;
+                        else arg.error(Orientation.stringof, "WidgetScroll");
+                        break;
+
+                    case "fade":
+                        static if (arg.type == "bool")
+                            m_hideWhenNotHovered = arg.val;
+                        else arg.error("bool", "WidgetScroll");
+                        break;
+
+                    case "slidecolor":
+                        static if (arg.type == "RGBA")
+                            m_slideColor = arg.val;
+                        else arg.error("RGBA", "WidgetScroll");
+                        break;
+
+                    default:
+                }
+            }
+
+            if (smin > smax)
+                smin = smax = 0;
+
+            m_range[] = [smin, smax];
+        }
 
         enum Orientation { VERTICAL, HORIZONTAL }
 
@@ -1338,23 +1536,6 @@ class WidgetScroll : WidgetWindow
 
         PrioritySignal!(int) scrollEvent;
 
-    package
-        this(WidgetRoot root, Widget parent,
-             int sliderMin, int sliderMax,
-             int[] pos, int[] dim,
-             Orientation orient = Orientation.VERTICAL)
-        {
-            super(root, parent);
-            m_type = "WIDGETSCROLL";
-
-            if (sliderMin > sliderMax)
-                sliderMin = sliderMax = 0;
-
-            m_range[] = [sliderMin, sliderMax];
-            m_orient = orient;
-            m_pos[] = pos[];
-            m_dim[] = dim[];
-        }
 
         // If the geometry has changed, update
         override void geometryChanged(Widget.GeometryChangeFlag flag)
@@ -1397,11 +1578,11 @@ class WidgetScroll : WidgetWindow
             super.render();
 
             glBegin(GL_QUADS);
-            glColor4fv(m_slideColor.ptr);
-            glVertex2i(m_slidePos.x, m_slidePos.y);
-            glVertex2i(m_slidePos.x + m_slideDim.x, m_slidePos.y);
-            glVertex2i(m_slidePos.x + m_slideDim.x, m_slidePos.y + m_slideDim.y);
-            glVertex2i(m_slidePos.x, m_slidePos.y + m_slideDim.y);
+                glColor4fv(m_slideColor.ptr);
+                glVertex2i(m_slidePos.x, m_slidePos.y);
+                glVertex2i(m_slidePos.x + m_slideDim.x, m_slidePos.y);
+                glVertex2i(m_slidePos.x + m_slideDim.x, m_slidePos.y + m_slideDim.y);
+                glVertex2i(m_slidePos.x, m_slidePos.y + m_slideDim.y);
             glEnd();
         }
 
@@ -1539,7 +1720,7 @@ class WidgetScroll : WidgetWindow
         int[2] m_slideLimit;
         int[2] m_slidePos;
         int[2] m_slideDim;
-        RGBA m_slideColor = {1f,1f,1f,1f};
+        RGBA m_slideColor = {1,1,1,1};
 
         Orientation m_orient;
 
@@ -1556,18 +1737,26 @@ class WidgetScroll : WidgetWindow
 
 class WidgetTree : WidgetWindow
 {
-
-    package
-        this(WidgetRoot root, Widget parent)
-        {
-            super(root, parent);
-            m_type = "WIDGETLAYOUT";
-            m_vScroll = m_root.create!WidgetScroll(this, 0, 100, [0,0], [0,0], WidgetScroll.Orientation.VERTICAL);
-            m_vScroll.scrollEvent.connect(&this.scrollEvent);
-            m_vScroll.fadeInAndOut = true;
-        }
+    package this(WidgetRoot root, Widget parent)
+    {
+        super(root, parent);
+    }
 
     public:
+
+        void set(KeyVal...)(KeyVal args)
+        {
+            super.set(args);
+            m_type = "WIDGETTREE";
+
+            m_vScroll = m_root.create!WidgetScroll(this,
+                                            arg("range", [0,1000]),
+                                            arg("fade", false),
+                                            arg("orientation", WidgetScroll.Orientation.VERTICAL));
+
+            m_vScroll.scrollEvent.connect(&this.scrollEvent);
+        }
+
 
         void add(Widget wparent,
                  Widget widget,
@@ -1706,14 +1895,6 @@ class WidgetTree : WidgetWindow
                 if (findParentNode(child, w, parent))
                     return true;
 
-                /++
-                if(child.widget is w)
-                {
-                    parent = child;
-                    return true;
-                }
-            }
-            ++/
             return false;
         }
 
