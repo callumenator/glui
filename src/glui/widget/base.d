@@ -198,29 +198,56 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 
 
 // Allow widgets to take a list of names params
-KeyVal!T arg(T)(string k, T t)
+KeyVal arg(T)(string k, T t)
 {
-    KeyVal!T kv = {k, t};
-    return kv;
+    return KeyVal(k, t);
 }
 
-// The backend of the named params mechanism
-struct KeyVal(T)
+// THe key/name backend
+struct KeyVal
 {
-    string key;
-    T val;
-
-    enum string type = T.stringof;
-
-    // Assert(false) and print error msg when incorrect type is given
-    void error(string expected, string widgetname)
+    this(T)(string k, T v)
     {
-        assert(false, "Incorrect argument type for " ~
+        key = k;
+        val = v;
+    }
+
+    string key;
+    Variant val;
+
+    // Get the value from the variant
+    T get(T)(string widgetname)
+    {
+        if (val.convertsTo!T)
+            return val.get!T;
+        else
+            assert(false, "Incorrect argument type for " ~
                     widgetname ~ " : " ~ key ~ "\n" ~
-                    "expected " ~ expected ~ ", got " ~
-                    type ~ ", (" ~ val.to!string ~ ")");
+                    "expected " ~ T.stringof ~ ", got " ~
+                    (val.type()).to!string);
     }
 }
+
+// Unpack a tuple of mixed KeyVals/KeyVal[]'s
+KeyVal[] unpack(T...)(T args)
+{
+    KeyVal[] o;
+
+    foreach(arg; args)
+    {
+        static if (typeof(arg).stringof == "KeyVal")
+            o ~= arg;
+        else if (typeof(arg).stringof == "KeyVal[]")
+        {
+            foreach(arg_; arg)
+            {
+                o ~= arg_;
+            }
+        }
+    }
+    return o;
+}
+
 
 
 /**
@@ -239,59 +266,43 @@ abstract class Widget
 
         void set(KeyVal...)(KeyVal args)
         {
-            foreach(arg; args)
+            foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
                 {
                     case "pos":
                     case "position":
-                        static if (arg.type == "int[]" || arg.type == "float[]")
-                            m_pos = [cast(int)arg.val[0], cast(int)arg.val[1]];
-                        else arg.error("int[] or float[]", "Widget");
+                        m_pos = arg.get!(int[])(m_type);
                         break;
 
                     case "dim":
                     case "dimension":
                     case "dimensions":
-                        static if (arg.type == "int[]" || arg.type == "float[]")
-                            m_dim = [cast(int)arg.val[0], cast(int)arg.val[1]];
-                        else arg.error("int[] or float[]", "Widget");
+                        m_dim = arg.get!(int[])(m_type);
                         break;
 
                     case "cornerradius":
-                        static if (isNumeric!(typeof(arg.val)))
-                            m_cornerRadius = cast(int)arg.val;
-                        else arg.error("numeric type", "Widget");
+                        m_cornerRadius = arg.get!int(m_type);
                         break;
 
                     case "showing":
-                        static if (arg.type == "bool")
-                            m_showing = arg.val;
-                        else arg.error("bool", "Widget");
+                        m_showing = arg.get!bool(m_type);
                         break;
 
                     case "clipped":
-                        static if (arg.type == "bool")
-                            m_clipped = arg.val;
-                        else arg.error("bool", "Widget");
+                        m_clipped = arg.get!bool(m_type);
                         break;
 
                     case "blocking":
-                        static if (arg.type == "bool")
-                            m_blocking = arg.val;
-                        else arg.error("bool", "Widget");
+                        m_blocking = arg.get!bool(m_type);
                         break;
 
                     case "candrag":
-                        static if (arg.type == "bool")
-                            m_canDrag = arg.val;
-                        else arg.error("bool", "Widget");
+                        m_canDrag = arg.get!bool(m_type);
                         break;
 
                     case "canresize":
-                        static if (arg.type == "bool")
-                            m_canResize = arg.val;
-                        else arg.error("bool", "Widget");
+                        m_canResize = arg.get!bool(m_type);
                         break;
 
                     default:
@@ -1251,37 +1262,30 @@ class WidgetWindow : Widget
         void set(T...)(T args)
         {
             super.set(args);
+            m_type = "WIDGETWINDOW";
+            m_cacheId = glGenLists(1);
 
-            foreach(arg; args)
+            foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
                 {
                     case "bgcolor":
                     case "background":
-                        static if (arg.type == "RGBA")
-                            bgColor = arg.val;
-                        else arg.error("RGBA", "WidgetWindow");
+                        bgColor = arg.get!RGBA(m_type);
                         break;
 
                     case "border":
                     case "bordercolor":
-                        static if (arg.type == "RGBA")
-                            borderColor = arg.val;
-                        else arg.error("RGBA", "WidgetWindow");
+                        borderColor = arg.get!RGBA(m_type);
                         break;
 
                     case "texture":
-                        static if (arg.type == GLuint.stringof)
-                            texture = arg.val;
-                        else arg.error(GLuint.stringof, "WidgetWindow");
+                        texture = arg.get!GLuint(m_type);
                         break;
 
                     default:
                 }
             }
-
-            m_type = "WIDGETWINDOW";
-            m_cacheId = glGenLists(1);
         }
 
         // Background color
@@ -1432,49 +1436,36 @@ class WidgetScroll : WidgetWindow
             m_type = "WIDGETSCROLL";
 
             int smin, smax;
-            foreach(arg; args)
+            foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
                 {
                     case "min":
                     case "slidermin":
-                        static if (arg.type == "int")
-                            smin = arg.val;
-                        else arg.error("int", "WidgetScroll");
+                        smin = arg.get!int(m_type);
                         break;
 
                     case "max":
                     case "slidermax":
-                        static if (arg.type == "int")
-                            smax = arg.val;
-                        else arg.error("int", "WidgetScroll");
+                        smax = arg.get!int(m_type);
                         break;
 
                     case "range":
-                        static if (arg.type == "int[]")
-                        {
-                            smin = arg.val[0];
-                            smax = arg.val[1];
-                        }
-                        else arg.error("int[]", "WidgetScroll");
+                        auto rnge = arg.get!(int[])(m_type);
+                        smin = rnge[0];
+                        smax = rnge[1];
                         break;
 
                     case "orientation":
-                        static if (arg.type == Orientation.stringof)
-                            m_orient = arg.val;
-                        else arg.error(Orientation.stringof, "WidgetScroll");
+                        m_orient = arg.get!Orientation(m_type);
                         break;
 
                     case "fade":
-                        static if (arg.type == "bool")
-                            m_hideWhenNotHovered = arg.val;
-                        else arg.error("bool", "WidgetScroll");
+                        m_hideWhenNotHovered = arg.get!bool(m_type);
                         break;
 
                     case "slidecolor":
-                        static if (arg.type == "RGBA")
-                            m_slideColor = arg.val;
-                        else arg.error("RGBA", "WidgetScroll");
+                        m_slideColor = arg.get!RGBA(m_type);
                         break;
 
                     default:
@@ -1746,10 +1737,21 @@ class WidgetTree : WidgetWindow
             super.set(args);
             m_type = "WIDGETTREE";
 
+            foreach(arg; unpack(args))
+            {
+                switch(arg.key.toLower)
+                {
+                    case "indent":
+                        m_widgetIndent = arg.get!int(m_type);
+
+                    default:
+                }
+            }
+
             m_vScroll = m_root.create!WidgetScroll(this,
-                                            arg("range", [0,1000]),
-                                            arg("fade", true),
-                                            arg("orientation", WidgetScroll.Orientation.VERTICAL));
+                                        arg("range", [0,1000]),
+                                        arg("fade", true),
+                                        arg("orientation", WidgetScroll.Orientation.VERTICAL));
 
             m_vScroll.scrollEvent.connect(&this.scrollEvent);
         }
@@ -1909,7 +1911,7 @@ class WidgetTree : WidgetWindow
 
         void updateTreeRecurse(Node node, ref int xoffset, ref int yoffset, ref int width)
         {
-            xoffset += 10;
+            xoffset += m_widgetIndent;
             width = node.widget.dim.x + xoffset;
             node.widget.setPos(xoffset, yoffset);
             node.widget.updateScreenInfo();
@@ -1928,7 +1930,7 @@ class WidgetTree : WidgetWindow
                     updateTreeRecurse(child, xoffset, yoffset, width);
             }
 
-            xoffset -= 10;
+            xoffset -= m_widgetIndent;
         }
 
         void setVisibility(Node n)
@@ -1963,6 +1965,7 @@ class WidgetTree : WidgetWindow
         int m_transitionCalls = 0;
         int m_transitionInc = 1;
         int m_widgetGap = 5;
+        int m_widgetIndent = 20;
 
         GLuint m_cacheId = 0; // display list for caching
         bool m_refreshCache = true;

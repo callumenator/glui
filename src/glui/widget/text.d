@@ -104,70 +104,50 @@ class WidgetText : WidgetWindow
             m_repeatDelayTime = -1;
             m_repeatHoldTime = -1;
             m_caretBlinkDelay = -1;
-            foreach(arg; args)
+            foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
                 {
                     case "textcolor":
-                        static if (arg.type == "RGBA")
-                            m_textColor = arg.val;
-                        else arg.error("RGBA", "Widget");
+                        m_textColor = arg.get!RGBA(m_type);
                         break;
 
                     case "textbackground":
-                        static if (arg.type == "RGBA")
-                            m_textBgColor = arg.val;
-                        else arg.error("RGBA", "Widget");
+                        m_textBgColor = arg.get!RGBA(m_type);
                         break;
 
                     case "editable":
-                        static if (arg.type == "bool")
-                            m_editable= arg.val;
-                        else arg.error("bool", "Widget");
+                        m_editable= arg.get!bool(m_type);
                         break;
 
                     case "vscroll":
-                        static if (arg.type == "bool")
-                            m_allowVScroll= arg.val;
-                        else arg.error("bool", "Widget");
+                        m_allowVScroll= arg.get!bool(m_type);
                         break;
 
                     case "hscroll":
-                        static if (arg.type == "bool")
-                            m_allowHScroll= arg.val;
-                        else arg.error("bool", "Widget");
+                        m_allowHScroll= arg.get!bool(m_type);
                         break;
 
                     case "repeatdelay":
-                        static if (arg.type == "int")
-                            m_repeatDelayTime = arg.val;
-                        else arg.error("int", "Widget");
+                        m_repeatDelayTime = arg.get!int(m_type);
                         break;
 
                     case "repeathold":
-                        static if (arg.type == "int")
-                            m_repeatHoldTime = arg.val;
-                        else arg.error("int", "Widget");
+                        m_repeatHoldTime = arg.get!int(m_type);
                         break;
 
                     case "caretblinkdelay":
-                        static if (arg.type == "int")
-                            m_caretBlinkDelay = arg.val;
-                        else arg.error("int", "Widget");
+                        m_caretBlinkDelay = arg.get!int(m_type);
                         break;
 
                     case "valign":
                     case "verticalalign":
-                        static if (arg.type == VAlign.stringof)
-                            m_vAlign = arg.val;
-                        else arg.error(VAlign.stringof, "Widget");
+                        m_vAlign = arg.get!VAlign(m_type);
                         break;
 
                     case "halign":
                     case "horizontalalign":
-                        static if (arg.type == HAlign.stringof)
-                            m_hAlign = arg.val;
-                        else arg.error(HAlign.stringof, "Widget");
+                        m_hAlign = arg.get!HAlign(m_type);
                         break;
 
                     default:
@@ -560,6 +540,7 @@ class WidgetLabel : WidgetText
         void set(KeyVals...)(Font font, KeyVals args)
         {
             super.set(font, args);
+            m_type = "WIDGETLABEL";
 
             // Alignment is vertically centered by default:
             m_vAlign = WidgetText.VAlign.CENTER;
@@ -568,35 +549,31 @@ class WidgetLabel : WidgetText
             int[2] dims = [0,0];
             bool fixedWidth = false;
 
-            foreach(arg; args)
+            foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
                 {
                     case "fixedwidth":
-                        static if (arg.type == "bool")
-                            fixedWidth = arg.val;
-                        else arg.error("bool", "Widget");
+                        fixedWidth = arg.get!bool(m_type);
                         break;
 
                     case "text":
-                        static if (arg.type == "string")
+                        auto s = arg.get!string(m_type);
+                        m_text.set(s);
+
+                        // Set default dimensions
+                        auto lines = split(s, "\n");
+                        float xdim = 0;
+                        foreach(line; lines)
                         {
-                            m_text.set(arg.val);
-
-                            // Set default dimensions
-                            auto lines = split(arg.val, "\n");
-                            float xdim = 0;
-                            foreach(line; lines)
-                            {
-                                auto l = 1.2*getLineLength(line, m_font);
-                                if (l > xdim)
-                                    xdim = l;
-                            }
-
-                            dims = [cast(int)xdim,
-                                    cast(int)(1.5*lines.length*m_font.m_lineHeight)];
+                            auto l = 1.2*getLineLength(line, m_font);
+                            if (l > xdim)
+                                xdim = l;
                         }
-                        else arg.error("string", "Widget");
+
+                        dims = [cast(int)xdim,
+                                cast(int)(1.5*lines.length*m_font.m_lineHeight)];
+
                         break;
 
                     default:
