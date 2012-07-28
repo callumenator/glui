@@ -106,9 +106,20 @@ class WidgetText : WidgetWindow
             m_caretBlinkDelay = -1;
             foreach(arg; args)
             {
-
                 switch(arg.key.toLower)
                 {
+                    case "textcolor":
+                        static if (arg.type == "RGBA")
+                            m_textColor = arg.val;
+                        else arg.error("RGBA", "Widget");
+                        break;
+
+                    case "textbackground":
+                        static if (arg.type == "RGBA")
+                            m_textBgColor = arg.val;
+                        else arg.error("RGBA", "Widget");
+                        break;
+
                     case "editable":
                         static if (arg.type == "bool")
                             m_editable= arg.val;
@@ -176,7 +187,7 @@ class WidgetText : WidgetWindow
             {
                 m_vscroll = root.create!WidgetScroll(this,
                                                      arg("range", [0, 1000]),
-                                                     arg("fade", false),
+                                                     arg("fade", true),
                                                      arg("background", RGBA(.2,.2,.4,1)),
                                                      arg("orientation", WidgetScroll.Orientation.VERTICAL));
             }
@@ -554,10 +565,19 @@ class WidgetLabel : WidgetText
             m_vAlign = WidgetText.VAlign.CENTER;
             m_editable = false;
 
+            int[2] dims = [0,0];
+            bool fixedWidth = false;
+
             foreach(arg; args)
             {
                 switch(arg.key.toLower)
                 {
+                    case "fixedwidth":
+                        static if (arg.type == "bool")
+                            fixedWidth = arg.val;
+                        else arg.error("bool", "Widget");
+                        break;
+
                     case "text":
                         static if (arg.type == "string")
                         {
@@ -573,8 +593,8 @@ class WidgetLabel : WidgetText
                                     xdim = l;
                             }
 
-                            setDim(cast(int)xdim,
-                                   cast(int)(1.5*lines.length*m_font.m_lineHeight));
+                            dims = [cast(int)xdim,
+                                    cast(int)(1.5*lines.length*m_font.m_lineHeight)];
                         }
                         else arg.error("string", "Widget");
                         break;
@@ -582,6 +602,9 @@ class WidgetLabel : WidgetText
                     default:
                 }
             }
+
+            if (!fixedWidth)
+                setDim(dims.x, dims.y);
         }
 }
 

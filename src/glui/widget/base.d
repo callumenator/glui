@@ -723,9 +723,6 @@ class WidgetRoot : Widget
             */
             foreach(widget; retro(m_widgetList))
             {
-                if (widget.type == "WIDGETSCROLL" && widget.parent.type == "WIDGETTREE")
-                    writeln(widget.clip);
-
                 /**
                 * TODO: sort widgets so that invisible widgets are at the bottom of the list,
                 * and the first invisible widget can terminate this loop
@@ -1720,7 +1717,7 @@ class WidgetScroll : WidgetWindow
         int[2] m_slideLimit;
         int[2] m_slidePos;
         int[2] m_slideDim;
-        RGBA m_slideColor = {1,1,1,1};
+        RGBA m_slideColor = {1,.5,.1,1};
 
         Orientation m_orient;
 
@@ -1751,7 +1748,7 @@ class WidgetTree : WidgetWindow
 
             m_vScroll = m_root.create!WidgetScroll(this,
                                             arg("range", [0,1000]),
-                                            arg("fade", false),
+                                            arg("fade", true),
                                             arg("orientation", WidgetScroll.Orientation.VERTICAL));
 
             m_vScroll.scrollEvent.connect(&this.scrollEvent);
