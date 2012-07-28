@@ -83,11 +83,10 @@ class WidgetText : WidgetWindow
         PrioritySignal!(Widget, char) widgetTextDeleteEvent;
         PrioritySignal!(Widget)       widgetTextReturnEvent;
 
-    package
-        this(WidgetRoot root, Widget parent)
-        {
-            super(root, parent);
-        }
+    package this(WidgetRoot root, Widget parent)
+    {
+        super(root, parent);
+    }
 
 
     public:
@@ -104,6 +103,7 @@ class WidgetText : WidgetWindow
             m_repeatDelayTime = -1;
             m_repeatHoldTime = -1;
             m_caretBlinkDelay = -1;
+
             foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
@@ -530,11 +530,10 @@ class WidgetText : WidgetWindow
 // Convenience class for static text
 class WidgetLabel : WidgetText
 {
-    package
-        this(WidgetRoot root, Widget parent)
-        {
-            super(root, parent);
-        }
+    package this(WidgetRoot root, Widget parent)
+    {
+        super(root, parent);
+    }
 
     public:
         void set(KeyVals...)(Font font, KeyVals args)
@@ -547,14 +546,23 @@ class WidgetLabel : WidgetText
             m_editable = false;
 
             int[2] dims = [0,0];
-            bool fixedWidth = false;
+            bool fixedWidth = false, fixedHeight = false;
 
             foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
                 {
+                    case "fixeddims":
+                        fixedWidth = arg.get!bool(m_type);
+                        fixedHeight = arg.get!bool(m_type);
+                        break;
+
                     case "fixedwidth":
                         fixedWidth = arg.get!bool(m_type);
+                        break;
+
+                    case "fixedheigth":
+                        fixedHeight = arg.get!bool(m_type);
                         break;
 
                     case "text":
@@ -580,8 +588,9 @@ class WidgetLabel : WidgetText
                 }
             }
 
-            if (!fixedWidth)
-                setDim(dims.x, dims.y);
+            if (fixedWidth) dims.x = m_dim.x;
+            if (fixedHeight) dims.y = m_dim.y;
+            setDim(dims.x, dims.y);
         }
 }
 

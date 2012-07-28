@@ -20,6 +20,7 @@ import
 import
     derelict.freetype.ft,
     derelict.opengl.gl,
+    derelict.opengl.extfuncs,
     derelict.util.exception;
 
 
@@ -360,7 +361,7 @@ private
 
             if (index < 127)
             {
-                if (FT_Load_Glyph(face, FT_Get_Char_Index(face,cast(char)index), FT_LOAD_DEFAULT))
+                if (FT_Load_Glyph(face, FT_Get_Char_Index(face,cast(char)index), FT_LOAD_NO_HINTING))
                 return -1;
 
                 FT_Render_Glyph(face.glyph, FT_Render_Mode.FT_RENDER_MODE_NORMAL);
@@ -459,11 +460,24 @@ private
 	    }
 
         glBindTexture(GL_TEXTURE_2D, font.m_texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA16, fullWidth, fullHeight,
+        /// Create the tex data.
+        if (DerelictGL.maxVersion() < GLVersion.GL30)
+        {
+            glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA16, fullWidth, fullHeight,
                      0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, fullData.ptr);
+        }
+        else
+        {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA16, fullWidth, fullHeight,
+                     0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, fullData.ptr);
+            glGenerateMipmap(GL_TEXTURE_2D);
+        }
+
+
 
 	    return 0;
     }

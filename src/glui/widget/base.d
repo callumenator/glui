@@ -255,12 +255,11 @@ KeyVal[] unpack(T...)(T args)
 */
 abstract class Widget
 {
-    package
-        this(WidgetRoot root, Widget parent)
-        {
-            m_root = root;
-            this.parent = parent;
-        }
+    package this(WidgetRoot root, Widget parent)
+    {
+        m_root = root;
+        this.parent = parent;
+    }
 
     public:
 
@@ -565,6 +564,19 @@ abstract class Widget
             m_lastFocused = last;
             foreach(child; m_children)
                 child.lastFocused(last + 1);
+        }
+
+        /**
+        * Recurse through the hierarchy to find the maximum lastFocused value
+        */
+        void maxLastFocused(ref long maxFocus)
+        {
+            if (m_lastFocused > maxFocus)
+                maxFocus = m_lastFocused;
+
+            foreach(child; m_children)
+                if (child.visible)
+                    child.maxLastFocused(maxFocus);
         }
 
         // Add a child to this widget's list of children
@@ -1251,11 +1263,10 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
 class WidgetWindow : Widget
 {
 
-    package
-        this(WidgetRoot root, Widget parent)
-        {
-            super(root, parent);
-        }
+    package this(WidgetRoot root, Widget parent)
+    {
+        super(root, parent);
+    }
 
     public:
 
@@ -1422,11 +1433,10 @@ class WidgetWindow : Widget
 
 class WidgetScroll : WidgetWindow
 {
-    package
-        this(WidgetRoot root, Widget parent)
-        {
-            super(root, parent);
-        }
+    package this(WidgetRoot root, Widget parent)
+    {
+        super(root, parent);
+    }
 
     public:
 
@@ -1476,6 +1486,7 @@ class WidgetScroll : WidgetWindow
                 smin = smax = 0;
 
             m_range[] = [smin, smax];
+            m_alphaMax[] = [m_bgColor.a, m_slideColor.a];
         }
 
         enum Orientation { VERTICAL, HORIZONTAL }
@@ -1672,7 +1683,8 @@ class WidgetScroll : WidgetWindow
         {
             if (m_fadingIn)
             {
-                m_bgColor.a += m_fadeInc;
+                if (m_bgColor.a < m_alphaMax[0])
+                    m_bgColor.a += m_fadeInc;
                 m_slideColor.a += m_fadeInc;
             }
             else if (m_fadingOut)
@@ -1688,10 +1700,9 @@ class WidgetScroll : WidgetWindow
                 m_fadingOut = false;
                 removeTimer(10, &this.fadeTimer, true);
             }
-            else if (m_fadingIn && m_bgColor.a > 1.0)
+            else if (m_fadingIn && m_slideColor.a > m_alphaMax[1])
             {
-                m_bgColor.a = 1;
-                m_slideColor.a = 1;
+                m_slideColor.a = m_alphaMax[1];
                 m_fadingIn = false;
                 removeTimer(10, &this.fadeTimer, true);
             }
@@ -1708,6 +1719,7 @@ class WidgetScroll : WidgetWindow
         int[2] m_slideLimit;
         int[2] m_slidePos;
         int[2] m_slideDim;
+        float[2] m_alphaMax;
         RGBA m_slideColor = {1,.5,.1,1};
 
         Orientation m_orient;
@@ -1737,21 +1749,42 @@ class WidgetTree : WidgetWindow
             super.set(args);
             m_type = "WIDGETTREE";
 
+            RGBA scrollBg = RGBA(0,0,0,1);
+            RGBA scrollFg = RGBA(1,1,1,1);
             foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
                 {
+                    case "gap":
+                        m_widgetGap = arg.get!int(m_type);
+                        break;
+
                     case "indent":
                         m_widgetIndent = arg.get!int(m_type);
+                        break;
+
+                    case "cliptoscrollbar":
+                        m_clipToScrollBar = arg.get!bool(m_type);
+                        break;
+
+                    case "scrollbackground":
+                        scrollBg = arg.get!RGBA(m_type);
+                        break;
+
+                    case "scrollforeground":
+                        scrollFg = arg.get!RGBA(m_type);
+                        break;
 
                     default:
                 }
             }
 
             m_vScroll = m_root.create!WidgetScroll(this,
-                                        arg("range", [0,1000]),
-                                        arg("fade", true),
-                                        arg("orientation", WidgetScroll.Orientation.VERTICAL));
+                                    arg("range", [0,1000]),
+                                    arg("fade", true),
+                                    arg("slidecolor", scrollFg),
+                                    arg("background", scrollBg),
+                                    arg("orientation", WidgetScroll.Orientation.VERTICAL));
 
             m_vScroll.scrollEvent.connect(&this.scrollEvent);
         }
@@ -1810,14 +1843,13 @@ class WidgetTree : WidgetWindow
                 m_vScroll.setDim(10, m_dim.y - 10);
                 m_vScroll.setPos(m_dim.x - 10, 0);
                 updateTree();
-                m_refreshCache = true;
             }
         }
 
         override void event(ref Event event)
         {
             // Look for mouse clicks on any of our branches
-            if (event.type == EventType.MOUSECLICK)
+            if (event.type == EventType.MOUSECLICK && (amIFocused || isAChildFocused))
             {
                 auto pos = event.get!MouseClick.pos;
                 Widget focus = null;
@@ -1849,7 +1881,7 @@ class WidgetTree : WidgetWindow
         // Clip tree to include the scroll bar
         override int[4] getChildClipBox(Widget w)
         {
-            if (w.type == "WIDGETSCROLL")
+            if (w.type == "WIDGETSCROLL" || !m_clipToScrollBar)
             {
                 return getClipBox();
             }
@@ -1872,6 +1904,17 @@ class WidgetTree : WidgetWindow
                 m_transitionCalls = 0;
                 removeTimer(10, &transitionTimer, true);
             }
+        }
+
+        override void lastFocused(long last)
+        {
+            m_lastFocused = last;
+            foreach(child; m_children)
+                child.lastFocused(last + 1);
+
+            long maxFocus = 0;
+            maxLastFocused(maxFocus);
+            m_vScroll.lastFocused = maxFocus + 1;
         }
 
     private:
@@ -1901,20 +1944,25 @@ class WidgetTree : WidgetWindow
         {
             updateScreenInfo();
             int xoffset = 10, yoffset = 10 - m_vScroll.current, width = m_dim.x;
+            long screenDepth;
 
             foreach(node; m_tree)
-                updateTreeRecurse(node, xoffset, yoffset, width);
+                updateTreeRecurse(node, xoffset, yoffset, width, screenDepth);
 
             m_vScroll.range = [0, yoffset];
+            m_vScroll.lastFocused(screenDepth + 1);
             needRender;
         }
 
-        void updateTreeRecurse(Node node, ref int xoffset, ref int yoffset, ref int width)
+        void updateTreeRecurse(Node node, ref int xoffset, ref int yoffset, ref int width, ref long screenDepth)
         {
             xoffset += m_widgetIndent;
             width = node.widget.dim.x + xoffset;
             node.widget.setPos(xoffset, yoffset);
             node.widget.updateScreenInfo();
+
+            if (node.widget.lastFocused > screenDepth)
+                screenDepth = node.widget.lastFocused;
 
             // See if widget is still visible inside the clipping area
             if (node.widget.isOutside(this))
@@ -1927,7 +1975,7 @@ class WidgetTree : WidgetWindow
                 yoffset += node.widget.dim.y + m_widgetGap;
 
                 foreach(child; node.children)
-                    updateTreeRecurse(child, xoffset, yoffset, width);
+                    updateTreeRecurse(child, xoffset, yoffset, width, screenDepth);
             }
 
             xoffset -= m_widgetIndent;
@@ -1961,6 +2009,7 @@ class WidgetTree : WidgetWindow
 
         WidgetScroll m_vScroll;
 
+        bool m_clipToScrollBar = true;
         bool m_transitioning = false;
         int m_transitionCalls = 0;
         int m_transitionInc = 1;
