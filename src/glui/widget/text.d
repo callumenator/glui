@@ -167,18 +167,18 @@ class WidgetText : WidgetWindow
             {
                 m_vscroll = root.create!WidgetScroll(this,
                                                      arg("range", [0, 1000]),
-                                                     arg("fade", true),
+                                                     arg("fade", false),
                                                      arg("background", RGBA(.2,.2,.4,1)),
-                                                     arg("orientation", WidgetScroll.Orientation.VERTICAL));
+                                                     arg("orientation", Orientation.VERTICAL));
             }
 
             if (m_allowHScroll)
             {
                 m_hscroll = root.create!WidgetScroll(this,
                                                      arg("range", [0, 1000]),
-                                                     arg("fade", true),
+                                                     arg("fade", false),
                                                      arg("background", RGBA(.2,.2,.4,1)),
-                                                     arg("orientation", WidgetScroll.Orientation.HORIZONTAL));
+                                                     arg("orientation", Orientation.HORIZONTAL));
             }
         }
 

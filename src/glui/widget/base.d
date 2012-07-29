@@ -144,7 +144,7 @@ bool isInside(Widget w, int[2] point)
         return false;
 }
 
-// Check if a given point is within a given box (this one can't account for rounded corners!)
+// Check if a given point is within a given box (this one won't account for rounded corners!)
 bool isInside(int[2] scrPos, int[2] dim, int[2] point)
 {
     return (point.x >= scrPos.x && point.x <= scrPos.x + dim.x &&
@@ -171,6 +171,20 @@ bool isInside(Widget w1, Widget w2)
 bool isOutside(Widget w1, Widget w2)
 {
     auto p = w1.screenPos();
+    return !w2.isInside(p) &&
+           !w2.isInside([p.x + w1.w, p.y]) &&
+           !w2.isInside([p.x + w1.w, p.y + w1.h]) &&
+           !w2.isInside([p.x, p.y + w1.h]);
+}
+
+/**
+* ditto, but with a translation applied to w1 before the check
+*/
+bool isOutside(Widget w1, Widget w2, int[2] delta)
+{
+    auto p = w1.screenPos();
+    p[0] += delta[0];
+    p[1] += delta[1];
     return !w2.isInside(p) &&
            !w2.isInside([p.x + w1.w, p.y]) &&
            !w2.isInside([p.x + w1.w, p.y + w1.h]) &&
@@ -310,6 +324,11 @@ abstract class Widget
         }
 
 
+        // All widgets can send these events to registered listeners
+        PrioritySignal!(Widget, int, int, int, int) widgetDragEvent;
+        PrioritySignal!(Widget, Flag!"Focused") widgetFocusEvent;
+        PrioritySignal!(Widget, Flag!"Hovered") widgetHoverEvent;
+
 
         // Get
         @property int[2] screenPos() const { return m_screenPos; }
@@ -411,11 +430,6 @@ abstract class Widget
             if (prefix.length > 2)
                 prefix = prefix[2..$];
         }
-
-        // All widgets can send these events to registered listeners
-        PrioritySignal!(Widget, int, int, int, int) widgetDragEvent;
-        PrioritySignal!(Widget, Flag!"Focused") widgetFocusEvent;
-        PrioritySignal!(Widget, Flag!"Hovered") widgetHoverEvent;
 
         @property bool amIFocused() const { return m_root.isFocused(this); }
 
@@ -1287,6 +1301,32 @@ class WidgetWindow : Widget
 
     public:
 
+        // Background color
+        @property RGBA bgColor() const { return m_bgColor; }
+
+        // Border line color
+        @property RGBA borderColor() const { return m_borderColor; }
+
+        // Setters
+        @property void bgColor(RGBA v)
+        {
+            m_bgColor = v;
+            m_refreshCache = true;
+            needRender;
+        }
+        @property void borderColor(RGBA v)
+        {
+            m_borderColor = v;
+            m_refreshCache = true;
+            needRender;
+        }
+        @property void texture(GLuint v)
+        {
+            m_texture = v;
+            m_refreshCache = true;
+            needRender;
+        }
+
         void set(T...)(T args)
         {
             super.set(args);
@@ -1316,31 +1356,7 @@ class WidgetWindow : Widget
             }
         }
 
-        // Background color
-        @property RGBA bgColor() const { return m_bgColor; }
 
-        // Border line color
-        @property RGBA borderColor() const { return m_borderColor; }
-
-        // Setters
-        @property void bgColor(RGBA v)
-        {
-            m_bgColor = v;
-            m_refreshCache = true;
-            needRender;
-        }
-        @property void borderColor(RGBA v)
-        {
-            m_borderColor = v;
-            m_refreshCache = true;
-            needRender;
-        }
-        @property void texture(GLuint v)
-        {
-            m_texture = v;
-            m_refreshCache = true;
-            needRender;
-        }
 
         override void geometryChanged(Widget.GeometryChangeFlag flag)
         {
@@ -1436,7 +1452,7 @@ class WidgetWindow : Widget
             glTranslatef(-m_pos.x, -m_pos.y, 0);
         }
 
-    private:
+    package:
 
         RGBA m_bgColor = {0,0,0,1};
         RGBA m_borderColor = {0,0,0,0};
@@ -1508,6 +1524,11 @@ class WidgetPanWindow : WidgetWindow
         int m_zoom;
 }
 
+enum Orientation
+{
+    VERTICAL, HORIZONTAL
+}
+
 
 class WidgetScroll : WidgetWindow
 {
@@ -1566,8 +1587,6 @@ class WidgetScroll : WidgetWindow
             m_range[] = [smin, smax];
             m_alphaMax[] = [m_bgColor.a, m_slideColor.a];
         }
-
-        enum Orientation { VERTICAL, HORIZONTAL }
 
         // Get
         @property bool fadeInAndOut() const { return m_hideWhenNotHovered; }
@@ -1829,6 +1848,8 @@ class WidgetTree : WidgetWindow
 
             RGBA scrollBg = RGBA(0,0,0,1);
             RGBA scrollFg = RGBA(1,1,1,1);
+            RGBA scrollBd = RGBA(0,0,0,1);
+            bool scrollFade = true;
             foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
@@ -1849,8 +1870,16 @@ class WidgetTree : WidgetWindow
                         scrollBg = arg.get!RGBA(m_type);
                         break;
 
-                    case "scrollforeground":
+                    case "scrollcolor":
                         scrollFg = arg.get!RGBA(m_type);
+                        break;
+
+                    case "scrollborder":
+                        scrollBd = arg.get!RGBA(m_type);
+                        break;
+
+                    case "scrollfade":
+                        scrollFade = arg.get!bool(m_type);
                         break;
 
                     default:
@@ -1858,22 +1887,23 @@ class WidgetTree : WidgetWindow
             }
 
             m_vScroll = m_root.create!WidgetScroll(this,
+                                    arg("dim", [20, m_dim.y - 20]),
                                     arg("range", [0,1000]),
-                                    arg("fade", true),
-                                    arg("slidecolor", scrollFg),
+                                    arg("fade", scrollFade),
+                                    arg("slidercolor", scrollFg),
+                                    arg("sliderborder", scrollBd),
                                     arg("background", scrollBg),
-                                    arg("orientation", WidgetScroll.Orientation.VERTICAL));
+                                    arg("orientation", Orientation.VERTICAL));
 
-            m_vScroll.scrollEvent.connect(&this.scrollEvent);
         }
-
 
         void add(Widget wparent,
                  Widget widget,
                  Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
         {
             widget.parent = this;
-            //widget.drawnByRoot = false;
+            widget.drawnByRoot = false;
+            widget.clipped = false;
 
             if (wparent is null)
             {
@@ -1921,7 +1951,6 @@ class WidgetTree : WidgetWindow
             {
                 m_vScroll.setDim(10, m_dim.y - 10);
                 m_vScroll.setPos(m_dim.x - 10, 0);
-                updateTree();
             }
         }
 
@@ -1931,6 +1960,8 @@ class WidgetTree : WidgetWindow
             if (event.type == EventType.MOUSECLICK && (amIFocused || isAChildFocused))
             {
                 auto pos = event.get!MouseClick.pos;
+                pos[1] += m_vScroll.current; // adjust for vertical scroll
+
                 Widget focus = null;
                 foreach(child; m_children)
                     if (child.focus(pos, focus))
@@ -1949,7 +1980,7 @@ class WidgetTree : WidgetWindow
                         n.expanded = !n.expanded;
 
                         foreach(child; n.children)
-                            setVisibility(child);
+                            child.shown = child.parent.expanded && child.parent.shown;
 
                         updateTree();
                     }
@@ -1985,23 +2016,36 @@ class WidgetTree : WidgetWindow
             }
         }
 
-        override void lastFocused(long last)
+        override void render()
         {
-            m_lastFocused = last;
-            foreach(child; m_children)
-                child.lastFocused(last + 1);
+            super.render();
 
-            long maxFocus = 0;
-            maxLastFocused(maxFocus);
-            m_vScroll.lastFocused = maxFocus + 1;
+            foreach(child; m_children)
+                if (child !is m_vScroll)
+                    renderChildren(child);
         }
 
     private:
 
-        int scrollEvent(int current)
+        void renderChildren(Widget w)
         {
-            updateTree();
-            return 0;
+            if (!w.visible || w.isOutside(this, [0, -m_vScroll.current]))
+                return;
+
+            glLoadIdentity();
+
+            auto clip = w.clip;
+            clip[1] += m_vScroll.current;
+            smallestBox(clip, this.getChildClipBox(w));
+            glScissor(clip[0], clip[1], clip[2], clip[3]);
+
+            glTranslatef(w.parent.screenPos.x,
+                         w.parent.screenPos.y - m_vScroll.current, 0);
+
+            w.render();
+            foreach(c; w.children)
+                renderChildren(c);
+
         }
 
         bool findParentNode(Node n, Widget w, ref Node parent)
@@ -2022,51 +2066,34 @@ class WidgetTree : WidgetWindow
         void updateTree()
         {
             updateScreenInfo();
-            int xoffset = 10, yoffset = 10 - m_vScroll.current, width = m_dim.x;
-            long screenDepth;
+            int xoffset = 10, yoffset = 10, width = m_dim.x;
 
             foreach(node; m_tree)
-                updateTreeRecurse(node, xoffset, yoffset, width, screenDepth);
+                updateTreeRecurse(node, xoffset, yoffset, width);
 
-            m_vScroll.range = [0, yoffset];
-            m_vScroll.lastFocused(screenDepth + 1);
+            //m_vScroll.range = [0, yoffset];
             needRender;
         }
 
-        void updateTreeRecurse(Node node, ref int xoffset, ref int yoffset, ref int width, ref long screenDepth)
+        void updateTreeRecurse(Node node, ref int xoffset, ref int yoffset, ref int width)
         {
             xoffset += m_widgetIndent;
             width = node.widget.dim.x + xoffset;
             node.widget.setPos(xoffset, yoffset);
             node.widget.updateScreenInfo();
 
-            if (node.widget.lastFocused > screenDepth)
-                screenDepth = node.widget.lastFocused;
-
             // See if widget is still visible inside the clipping area
-            if (node.widget.isOutside(this))
-                node.widget.showing = false;
-            else
-                node.widget.showing = true && node.shown;
+            node.widget.showing = true && node.shown;
 
             if (node.shown)
             {
                 yoffset += node.widget.dim.y + m_widgetGap;
 
                 foreach(child; node.children)
-                    updateTreeRecurse(child, xoffset, yoffset, width, screenDepth);
+                    updateTreeRecurse(child, xoffset, yoffset, width);
             }
 
             xoffset -= m_widgetIndent;
-        }
-
-        void setVisibility(Node n)
-        {
-            n.shown = n.parent.expanded && n.parent.shown;
-            n.widget.showing = n.shown;
-
-            foreach(child; n.children)
-                setVisibility(child);
         }
 
         class Node
@@ -2094,9 +2121,6 @@ class WidgetTree : WidgetWindow
         int m_transitionInc = 1;
         int m_widgetGap = 5;
         int m_widgetIndent = 20;
-
-        GLuint m_cacheId = 0; // display list for caching
-        bool m_refreshCache = true;
 }
 
 
