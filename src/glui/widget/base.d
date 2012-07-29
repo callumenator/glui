@@ -325,6 +325,8 @@ abstract class Widget
         @property bool blocking() const { return m_blocking; }
         @property bool clipped() const { return m_clipped; }
         @property bool focusable() const { return m_focusable; }
+        @property bool drawnByRoot() const { return m_drawnByRoot; }
+        @property bool drawn() const { return m_drawn; }
         @property WidgetRoot root() { return m_root; }
         @property Widget parent() { return m_parent; }
         @property Widget[] children() { return m_children; }
@@ -337,6 +339,7 @@ abstract class Widget
         @property void canResize(bool v) { m_canResize = v; }
         @property void clipped(bool v) { m_clipped = v; }
         @property void focusable(bool v) { m_focusable = v; }
+        @property void drawnByRoot(bool v) { m_drawnByRoot = v; }
         @property void blocking(bool v) { m_blocking = v; }
         @property void showing(bool v) { m_showing = v; needRender; }
         @property void root(WidgetRoot root) { m_root = root; }
@@ -359,7 +362,12 @@ abstract class Widget
         }
 
         // Set position
-        void setPos(int[2] pos)
+        void setPos(int[] pos)
+        in
+        {
+            assert(pos.length == 2);
+        }
+        body
         {
             m_pos = pos;
             geometryChanged(GeometryChangeFlag.POSITION);
@@ -373,7 +381,12 @@ abstract class Widget
         }
 
         // Set dimension
-        void setDim(int[2] dim)
+        void setDim(int[] dim)
+        in
+        {
+            assert(dim.length == 2);
+        }
+        body
         {
             m_dim = dim;
             geometryChanged(GeometryChangeFlag.DIMENSION);
@@ -608,6 +621,8 @@ abstract class Widget
             m_screenPos[] = m_parent.screenPos[] + m_pos[];
             m_clip = getClipBox();
 
+            m_drawn = m_parent.drawnByRoot && m_drawnByRoot;
+
             // Child can only be visible if parent is visible
             m_visible = m_parent.visible && m_showing;
 
@@ -646,6 +661,8 @@ abstract class Widget
         bool m_visible = true; // this decides wether or not widget _will_ be shown, based on parent's visibility
         bool m_clipped = true;
         bool m_focusable = true; // can deactivate widgets this way
+        bool m_drawnByRoot = true; // whether or not root _should_ draw this widget
+        bool m_drawn = true; // whether or not root _will_ draw this widget
         bool m_canDrag = false;
         bool m_canResize = false;
         bool m_blocking = false; // blocking widgets don't lose focus
@@ -750,7 +767,7 @@ class WidgetRoot : Widget
                 * TODO: sort widgets so that invisible widgets are at the bottom of the list,
                 * and the first invisible widget can terminate this loop
                 */
-                if (!widget.visible)
+                if (!widget.visible || !widget.drawn)
                     continue;
 
                 // Translate to parents coord, and set clip box
@@ -1431,6 +1448,67 @@ class WidgetWindow : Widget
 
 
 
+class WidgetPanWindow : WidgetWindow
+{
+    package this(WidgetRoot root, Widget parent)
+    {
+        super(root, parent);
+    }
+
+    public:
+
+        void set(KeyVals...)(KeyVals args)
+        {
+            super.set(args);
+            m_canDrag = true;
+        }
+
+        override void drag(int[2] pos, int[2] delta)
+        {
+            m_translation[] += delta[];
+        }
+
+        override void addChild(Widget child)
+        {
+            m_children ~= child;
+            child.drawnByRoot = false;
+        }
+
+        override void render()
+        {
+            super.render();
+
+            foreach(child; m_children)
+                renderChildren(child);
+        }
+
+    private:
+
+        void renderChildren(Widget w)
+        {
+            glLoadIdentity();
+
+            auto clip = w.clip;
+            clip[0] += m_translation[0];
+            clip[1] -= m_translation[1];
+
+            smallestBox(clip, this.clip);
+
+            glScissor(clip[0], clip[1], clip[2], clip[3]);
+
+            glTranslatef(w.parent.screenPos.x + m_translation[0],
+                         w.parent.screenPos.y + m_translation[1], 0);
+
+            w.render();
+            foreach(c; w.children)
+                renderChildren(c);
+        }
+
+        int[2] m_translation;
+        int m_zoom;
+}
+
+
 class WidgetScroll : WidgetWindow
 {
     package this(WidgetRoot root, Widget parent)
@@ -1795,6 +1873,7 @@ class WidgetTree : WidgetWindow
                  Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
         {
             widget.parent = this;
+            //widget.drawnByRoot = false;
 
             if (wparent is null)
             {
