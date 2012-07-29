@@ -1,4 +1,4 @@
-// Written in the D programming language.
+// Written in the\ D programming language.
 
 /**
 * Copyright: Copyright 2012 -
@@ -104,6 +104,13 @@ class WidgetText : WidgetWindow
             m_repeatHoldTime = -1;
             m_caretBlinkDelay = -1;
 
+            // Scroll bar options
+            RGBA scrollBg = RGBA(0,0,0,1);
+            RGBA scrollFg = RGBA(1,1,1,1);
+            RGBA scrollBd = RGBA(0,0,0,1);
+            bool scrollFade = true;
+            int scrollCr = 0;
+
             foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
@@ -150,6 +157,26 @@ class WidgetText : WidgetWindow
                         m_hAlign = arg.get!HAlign(m_type);
                         break;
 
+                    case "scrollbackground":
+                        scrollBg = arg.get!RGBA(m_type);
+                        break;
+
+                    case "scrollcolor":
+                        scrollFg = arg.get!RGBA(m_type);
+                        break;
+
+                    case "scrollborder":
+                        scrollBd = arg.get!RGBA(m_type);
+                        break;
+
+                    case "scrollfade":
+                        scrollFade = arg.get!bool(m_type);
+                        break;
+
+                    case "scrollcornerradius":
+                        scrollCr = arg.get!int(m_type);
+                        break;
+
                     default:
                 }
             }
@@ -165,20 +192,28 @@ class WidgetText : WidgetWindow
             // Make scroll bars
             if (m_allowVScroll)
             {
-                m_vscroll = root.create!WidgetScroll(this,
-                                                     arg("range", [0, 1000]),
-                                                     arg("fade", false),
-                                                     arg("background", RGBA(.2,.2,.4,1)),
-                                                     arg("orientation", Orientation.VERTICAL));
+                m_vscroll = m_root.create!WidgetScroll(this,
+                                    arg("dim", [20, m_dim.y - 20]),
+                                    arg("range", [0,1000]),
+                                    arg("fade", scrollFade),
+                                    arg("slidercolor", scrollFg),
+                                    arg("sliderborder", scrollBd),
+                                    arg("background", scrollBg),
+                                    arg("cornerRadius", scrollCr),
+                                    arg("orientation", Orientation.VERTICAL));
             }
 
             if (m_allowHScroll)
             {
-                m_hscroll = root.create!WidgetScroll(this,
-                                                     arg("range", [0, 1000]),
-                                                     arg("fade", false),
-                                                     arg("background", RGBA(.2,.2,.4,1)),
-                                                     arg("orientation", Orientation.HORIZONTAL));
+                m_hscroll = m_root.create!WidgetScroll(this,
+                                    arg("dim", [20, m_dim.y - 20]),
+                                    arg("range", [0,1000]),
+                                    arg("fade", scrollFade),
+                                    arg("slidercolor", scrollFg),
+                                    arg("sliderborder", scrollBd),
+                                    arg("background", scrollBg),
+                                    arg("cornerRadius", scrollCr),
+                                    arg("orientation", Orientation.HORIZONTAL));
             }
         }
 

@@ -1184,9 +1184,9 @@ string squareBox(bool textured = false)
     {
         return "
                glVertex2i(0, 0);
-               glVertex2i(m_dim.x, 0);
-               glVertex2i(m_dim.x, m_dim.y);
-               glVertex2i(0, m_dim.y);";
+               glVertex2i(width, 0);
+               glVertex2i(width, height);
+               glVertex2i(0, height);";
     }
     else
     {
@@ -1194,11 +1194,11 @@ string squareBox(bool textured = false)
                glTexCoord2i(0, 1);
                glVertex2i(0, 0);
                glTexCoord2i(1, 1);
-               glVertex2i(m_dim.x, 0);
+               glVertex2i(width, 0);
                glTexCoord2i(1, 0);
-               glVertex2i(m_dim.x, m_dim.y);
+               glVertex2i(width, height);
                glTexCoord2i(0, 0);
-               glVertex2i(0, m_dim.y); ";
+               glVertex2i(0, height); ";
     }
 }
 
@@ -1231,20 +1231,20 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
             else if (n == 1) // 90..180
             {
                 angle = (3.1415926575/2.) * (1.0 - (cast(float)i)/(cast(float)resolution));
-                px = "m_dim.x - r";
+                px = "width - r";
                 py = "r";
             }
             else if (n == 2) // 360..270
             {
                 angle = (3.1415926575/2.) * (4.0 - (cast(float)i)/(cast(float)resolution));
-                px = "m_dim.x - r";
-                py = "m_dim.y - r";
+                px = "width - r";
+                py = "height - r";
             }
             else if (n == 3) // 270..180
             {
                 angle = (3.1415926575/2.) * (3.0 - (cast(float)i)/(cast(float)resolution));
                 px = "r";
-                py = "m_dim.y - r";
+                py = "height - r";
             }
 
             int fx = cast(int) (cos(angle)*1000000.);
@@ -1277,7 +1277,7 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
                 sy = yprefix ~ "0." ~ fsy;
 
             if (textured)
-                s ~= "glTexCoord2f( (" ~ px ~ "+ r*(" ~ sx ~ ")) / m_dim.x, 1 - (" ~ py ~ "+ r*(" ~ sy ~ ")) / m_dim.y);\n";
+                s ~= "glTexCoord2f( (" ~ px ~ "+ r*(" ~ sx ~ ")) / width, 1 - (" ~ py ~ "+ r*(" ~ sy ~ ")) / height);\n";
 
             s ~= "glVertex2f(" ~ px ~ "+ r*(" ~ sx ~ ")," ~ py ~ "+ r*(" ~ sy ~ "));\n";
         }
@@ -1302,25 +1302,27 @@ class WidgetWindow : Widget
     public:
 
         // Background color
-        @property RGBA bgColor() const { return m_bgColor; }
+        @property RGBA color() const { return m_color; }
 
         // Border line color
         @property RGBA borderColor() const { return m_borderColor; }
 
         // Setters
-        @property void bgColor(RGBA v)
+        void setColor(RGBA v)
         {
-            m_bgColor = v;
+            m_color = v;
             m_refreshCache = true;
             needRender;
         }
-        @property void borderColor(RGBA v)
+
+        void setBorderColor(RGBA v)
         {
             m_borderColor = v;
             m_refreshCache = true;
             needRender;
         }
-        @property void texture(GLuint v)
+
+        void setTexture(GLuint v)
         {
             m_texture = v;
             m_refreshCache = true;
@@ -1339,16 +1341,16 @@ class WidgetWindow : Widget
                 {
                     case "bgcolor":
                     case "background":
-                        bgColor = arg.get!RGBA(m_type);
+                        setColor = arg.get!RGBA(m_type);
                         break;
 
                     case "border":
                     case "bordercolor":
-                        borderColor = arg.get!RGBA(m_type);
+                        setBorderColor = arg.get!RGBA(m_type);
                         break;
 
                     case "texture":
-                        texture = arg.get!GLuint(m_type);
+                        setTexture = arg.get!GLuint(m_type);
                         break;
 
                     default:
@@ -1377,6 +1379,11 @@ class WidgetWindow : Widget
                 m_cachedRadius = r;
                 glNewList(m_cacheId, GL_COMPILE_AND_EXECUTE);
 
+                // These idents are used by the mixins
+                auto width = m_dim.x;
+                auto height = m_dim.y;
+
+
                 if (m_texture != 0)
                 {
                     glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
@@ -1384,7 +1391,7 @@ class WidgetWindow : Widget
                     glBindTexture(GL_TEXTURE_2D, m_texture);
                     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
-                    glColor4fv(m_bgColor.ptr);
+                    glColor4fv(m_color.ptr);
 
                     if (m_cornerRadius == 0) // textured square box
                     {
@@ -1416,7 +1423,7 @@ class WidgetWindow : Widget
                 }
                 else
                 {
-                    glColor4fv(m_bgColor.ptr);
+                    glColor4fv(m_color.ptr);
 
                     if (m_cornerRadius == 0) // non-textured square box
                     {
@@ -1454,7 +1461,7 @@ class WidgetWindow : Widget
 
     package:
 
-        RGBA m_bgColor = {0,0,0,1};
+        RGBA m_color = {0,0,0,1};
         RGBA m_borderColor = {0,0,0,0};
         GLuint m_texture = 0;
         GLuint m_cacheId = 0; // glDisplayList for caching
@@ -1529,7 +1536,6 @@ enum Orientation
     VERTICAL, HORIZONTAL
 }
 
-
 class WidgetScroll : WidgetWindow
 {
     package this(WidgetRoot root, Widget parent)
@@ -1573,8 +1579,16 @@ class WidgetScroll : WidgetWindow
                         m_hideWhenNotHovered = arg.get!bool(m_type);
                         break;
 
-                    case "slidecolor":
+                    case "slidercolor":
                         m_slideColor = arg.get!RGBA(m_type);
+                        break;
+
+                    case "sliderborder":
+                        m_slideBorder = arg.get!RGBA(m_type);
+                        break;
+
+                    case "sliderlength":
+                        m_slideLength = arg.get!float(m_type);
                         break;
 
                     default:
@@ -1584,8 +1598,15 @@ class WidgetScroll : WidgetWindow
             if (smin > smax)
                 smin = smax = 0;
 
-            m_range[] = [smin, smax];
-            m_alphaMax[] = [m_bgColor.a, m_slideColor.a];
+            m_range = [smin, smax];
+
+            m_backgroundAlphaMax = m_color.a;
+            m_slideAlphaMax = m_slideColor.a;
+            m_slideBorderAlphaMax = m_slideBorder.a;
+
+            fadeInAndOut = m_hideWhenNotHovered;
+            updateSlider();
+
         }
 
         // Get
@@ -1615,57 +1636,70 @@ class WidgetScroll : WidgetWindow
             m_hideWhenNotHovered = b;
             if (b && !m_fadingIn && !m_fadingOut)
             {
-                m_bgColor.a = 0;
+                m_color.a = 0;
                 m_slideColor.a = 0;
+                m_slideBorder.a = 0;
             }
             else
             {
-                m_bgColor.a = 1;
-                m_slideColor.a = 1;
+                m_color.a = m_backgroundAlphaMax;
+                m_slideColor.a = m_slideAlphaMax;
+                m_slideBorder.a = m_slideBorderAlphaMax;
             }
+
+            m_refreshCache = true;
+            needRender;
         }
+
         @property void current(int v)
         {
             if (v >= m_range[0] && v <= m_range[1])
                 m_current = v;
         }
 
+        // Signal when we have a scroll event (drag or scroll wheel)
         PrioritySignal!(int) scrollEvent;
-
 
         // If the geometry has changed, update
         override void geometryChanged(Widget.GeometryChangeFlag flag)
         {
             super.geometryChanged(flag);
+            updateSlider();
+        }
 
-            m_sliderLength = 50;
+        void updateSlider()
+        {
             float sf = m_current / cast(float)(m_range[1] - m_range[0]);
 
             if (m_orient == Orientation.VERTICAL)
             {
+                auto slen = cast(int)(m_dim.y * m_slideLength);
                 int sw = cast(int)(m_dim.x*0.8);
                 m_slidePos = [m_pos.x + (m_dim.x - sw)/2, cast(int)(sf*m_dim.y)];
-                m_slideDim = [sw, m_sliderLength];
-                m_slideLimit = [0, m_dim.y - m_sliderLength];
+                m_slideDim = [sw, slen];
+                m_slideLimit = [0, m_dim.y - slen];
             }
             else if (m_orient == Orientation.HORIZONTAL)
             {
+                auto slen = cast(int)(m_dim.x * m_slideLength);
                 int sw = cast(int)(m_dim.y*0.8);
                 m_slidePos = [cast(int)(sf*m_dim.x), m_pos.y + (m_dim.y - sw)/2];
-                m_slideDim = [m_sliderLength, sw];
-                m_slideLimit = [0, m_dim.x - m_sliderLength];
+                m_slideDim = [slen, sw];
+                m_slideLimit = [0, m_dim.x - slen];
             }
 
-        }
+            m_refreshCache = true;
+            needRender;
 
+        }
         // Render, call super then render the slider and buttons
         override void render()
         {
             // If enough time has elapsed since the last scroll event, start fading out
-            if (timerMsecs - m_lastScrollTime  > m_postScrollFadeDelay &&
-                    m_waitingForScrollDelay &&
-                    !amIDragging &&
-                    !amIHovered)
+            if (timerMsecs - m_lastScrollTime > m_postScrollFadeDelay &&
+                m_waitingForScrollDelay &&
+                !amIDragging &&
+                !amIHovered)
             {
                 lostHover();
                 m_waitingForScrollDelay = false;
@@ -1673,13 +1707,41 @@ class WidgetScroll : WidgetWindow
 
             super.render();
 
-            glBegin(GL_QUADS);
-                glColor4fv(m_slideColor.ptr);
-                glVertex2i(m_slidePos.x, m_slidePos.y);
-                glVertex2i(m_slidePos.x + m_slideDim.x, m_slidePos.y);
-                glVertex2i(m_slidePos.x + m_slideDim.x, m_slidePos.y + m_slideDim.y);
-                glVertex2i(m_slidePos.x, m_slidePos.y + m_slideDim.y);
-            glEnd();
+            // r is used in a mixin, so don't change its name (this is not optimal, I know...)
+            int r = min(m_cornerRadius, m_dim.x/2, m_dim.y/2);
+
+            // These idents are used by the mixins
+            auto width = m_slideDim.x;
+            auto height = m_slideDim.y;
+
+            glTranslatef(m_slidePos.x, m_slidePos.y, 0);
+
+                if (m_cornerRadius == 0) // non-textured square box
+                {
+                    glColor4fv(m_slideColor.ptr);
+                    glBegin(GL_POLYGON);
+                    mixin(squareBox(false));
+                    glEnd();
+
+                    glColor4fv(m_slideBorder.ptr);
+                    glBegin(GL_LINE_LOOP);
+                    mixin(squareBox(false));
+                    glEnd();
+                }
+                else // non-textured rounded box
+                {
+                    glColor4fv(m_slideColor.ptr);
+                    glBegin(GL_POLYGON);
+                    mixin(roundedBox(5, false));
+                    glEnd();
+
+                    glColor4fv(m_slideBorder.ptr);
+                    glBegin(GL_LINE_LOOP);
+                    mixin(roundedBox(5, false));
+                    glEnd();
+                }
+
+            glTranslatef(-m_slidePos.x, -m_slidePos.y, 0);
         }
 
         override void event(ref Event event)
@@ -1710,7 +1772,7 @@ class WidgetScroll : WidgetWindow
                     m_slidePos[1] = m_slideLimit[1];
 
                 m_current = cast(int) ((m_range[1]-m_range[0]) * ((m_slidePos[1] - m_slideLimit[0]) /
-                                       cast(float)(m_slideLimit[1] - m_slideLimit[0])));
+                                        cast(float)(m_slideLimit[1] - m_slideLimit[0])));
 
                 scrollEvent.emit(m_current);
             }
@@ -1723,7 +1785,7 @@ class WidgetScroll : WidgetWindow
                     m_slidePos[0] = m_slideLimit[1];
 
                 m_current = cast(int) ((m_range[1]-m_range[0]) * ((m_slidePos[0] - m_slideLimit[0]) /
-                                       cast(float)(m_slideLimit[1] - m_slideLimit[0])));
+                                        cast(float)(m_slideLimit[1] - m_slideLimit[0])));
 
                 scrollEvent.emit(m_current);
             }
@@ -1780,28 +1842,41 @@ class WidgetScroll : WidgetWindow
         {
             if (m_fadingIn)
             {
-                if (m_bgColor.a < m_alphaMax[0])
-                    m_bgColor.a += m_fadeInc;
-                m_slideColor.a += m_fadeInc;
+                m_alpha += m_fadeInc;
+
+                m_color.a = m_backgroundAlphaMax * m_alpha;
+                m_slideColor.a = m_slideAlphaMax * m_alpha;
+                m_slideBorder.a = m_slideBorderAlphaMax * m_alpha;
+
+                // Check if we have finished fading
+                if (m_alpha >= 1)
+                {
+                    m_alpha = 1;
+                    m_color.a = m_backgroundAlphaMax;
+                    m_slideColor.a = m_slideAlphaMax;
+                    m_slideBorder.a = m_slideBorderAlphaMax;
+                    m_fadingIn = false;
+                    removeTimer(10, &this.fadeTimer, true);
+                }
             }
             else if (m_fadingOut)
             {
-                m_bgColor.a -= m_fadeInc;
-                m_slideColor.a -= m_fadeInc;
-            }
+                m_alpha -= m_fadeInc;
 
-            if (m_fadingOut && m_bgColor.a < 0.0)
-            {
-                m_bgColor.a = 0;
-                m_slideColor.a = 0;
-                m_fadingOut = false;
-                removeTimer(10, &this.fadeTimer, true);
-            }
-            else if (m_fadingIn && m_slideColor.a > m_alphaMax[1])
-            {
-                m_slideColor.a = m_alphaMax[1];
-                m_fadingIn = false;
-                removeTimer(10, &this.fadeTimer, true);
+                m_color.a = m_backgroundAlphaMax * m_alpha;
+                m_slideColor.a = m_slideAlphaMax * m_alpha;
+                m_slideBorder.a = m_slideBorderAlphaMax * m_alpha;
+
+                // Check if we have finished fading
+                if (m_alpha <= 0)
+                {
+                    m_alpha = 0;
+                    m_color.a = 0;
+                    m_slideColor.a = 0;
+                    m_slideBorder.a = 0;
+                    m_fadingOut = false;
+                    removeTimer(10, &this.fadeTimer, true);
+                }
             }
 
             m_refreshCache = true;
@@ -1811,13 +1886,19 @@ class WidgetScroll : WidgetWindow
     private:
         int[2] m_range;
         int m_current;
-        int m_sliderLength;
+        float m_slideLength = 0.1;
 
         int[2] m_slideLimit;
         int[2] m_slidePos;
         int[2] m_slideDim;
-        float[2] m_alphaMax;
-        RGBA m_slideColor = {1,.5,.1,1};
+
+        float m_slideAlphaMax = 0;
+        float m_slideBorderAlphaMax = 0;
+        float m_backgroundAlphaMax = 0;
+        float m_alpha = 0;
+
+        RGBA m_slideColor = {1,1,1,1};
+        RGBA m_slideBorder = {0,0,0,1};
 
         Orientation m_orient;
 
@@ -1850,6 +1931,7 @@ class WidgetTree : WidgetWindow
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
             bool scrollFade = true;
+            int scrollCr = 0;
             foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
@@ -1870,7 +1952,7 @@ class WidgetTree : WidgetWindow
                         scrollBg = arg.get!RGBA(m_type);
                         break;
 
-                    case "scrollcolor":
+                    case "scrollforeground":
                         scrollFg = arg.get!RGBA(m_type);
                         break;
 
@@ -1880,6 +1962,10 @@ class WidgetTree : WidgetWindow
 
                     case "scrollfade":
                         scrollFade = arg.get!bool(m_type);
+                        break;
+
+                    case "scrollcornerradius":
+                        scrollCr = arg.get!int(m_type);
                         break;
 
                     default:
@@ -1893,6 +1979,7 @@ class WidgetTree : WidgetWindow
                                     arg("slidercolor", scrollFg),
                                     arg("sliderborder", scrollBd),
                                     arg("background", scrollBg),
+                                    arg("cornerRadius", scrollCr),
                                     arg("orientation", Orientation.VERTICAL));
 
         }
@@ -1957,7 +2044,9 @@ class WidgetTree : WidgetWindow
         override void event(ref Event event)
         {
             // Look for mouse clicks on any of our branches
-            if (event.type == EventType.MOUSECLICK && (amIFocused || isAChildFocused))
+            if (event.type == EventType.MOUSECLICK &&
+                (amIFocused || isAChildFocused) &&
+                !m_root.isFocused(m_vScroll))
             {
                 auto pos = event.get!MouseClick.pos;
                 pos[1] += m_vScroll.current; // adjust for vertical scroll
@@ -1980,7 +2069,7 @@ class WidgetTree : WidgetWindow
                         n.expanded = !n.expanded;
 
                         foreach(child; n.children)
-                            child.shown = child.parent.expanded && child.parent.shown;
+                            setVisibility(child);
 
                         updateTree();
                     }
@@ -2026,6 +2115,15 @@ class WidgetTree : WidgetWindow
         }
 
     private:
+
+        void setVisibility(Node n)
+        {
+            n.shown = n.parent.expanded && n.parent.shown;
+            n.widget.showing = n.shown;
+
+            foreach(child; n.children)
+                setVisibility(child);
+        }
 
         void renderChildren(Widget w)
         {
