@@ -293,7 +293,7 @@ class WidgetText : WidgetWindow
                 setCoords();
                 glTranslatef(m_caretPos[0], m_caretPos[1], 0);
                 glScalef(1,-1,1);
-                glColor4f(1.,1.,1.,1);
+                glColor4fv(m_textColor.ptr);
                 glBegin(GL_QUADS);
                     glVertex2f(0,0);
                     glVertex2f(0,m_font.m_maxHeight);
