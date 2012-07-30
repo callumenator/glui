@@ -207,6 +207,9 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
     childbox[1] = cbox[1];
     childbox[2] = cbox[2] - cbox[0];
     childbox[3] = cbox[3] - cbox[1];
+
+    if (childbox[2] < 0) childbox[2] = 0;
+    if (childbox[3] < 0) childbox[3] = 0;
 }
 
 
@@ -260,6 +263,15 @@ KeyVal[] unpack(T...)(T args)
         }
     }
     return o;
+}
+
+
+/**
+* Functions that anything which contains widgets must implement
+*/
+interface WidgetContainer
+{
+    void transformPos(ref int[2] pos);
 }
 
 
@@ -347,6 +359,7 @@ abstract class Widget
         @property bool drawnByRoot() const { return m_drawnByRoot; }
         @property bool drawn() const { return m_drawn; }
         @property WidgetRoot root() { return m_root; }
+        @property WidgetContainer container () { return m_container; }
         @property Widget parent() { return m_parent; }
         @property Widget[] children() { return m_children; }
         long lastFocused() const { return m_lastFocused; }
@@ -376,6 +389,7 @@ abstract class Widget
                 newParent = m_root;
 
             m_parent = newParent; // set new parent
+            m_container = newParent.container;
             newParent.addChild(this); // add me to new parent's child list
             m_lastFocused = m_parent.lastFocused + 1;
         }
@@ -659,7 +673,27 @@ abstract class Widget
         // Override this to set a custom clip box for the widget's children
         int[4] getChildClipBox(Widget w)
         {
-            return getClipBox();
+            if (m_cornerRadius == 0)
+            {
+                return getClipBox();
+            }
+            else
+            {
+                auto clip = getClipBox();
+                clip[0] += m_cornerRadius;
+                clip[1] += m_cornerRadius;
+                clip[2] -= 2*m_cornerRadius;
+                clip[3] -= 2*m_cornerRadius;
+                return clip;
+            }
+        }
+
+        // Set a new manager for this widget
+        void setContainer(WidgetContainer w)
+        {
+            m_container = w;
+            foreach(child; m_children)
+                child.setContainer(w);
         }
 
         Widget m_parent = null;
@@ -682,6 +716,8 @@ abstract class Widget
         bool m_blocking = false; // blocking widgets don't lose focus
         long m_lastFocused = 0;
         int m_cornerRadius = 0;
+
+        WidgetContainer m_container = null; // A non-null container will transform clicks etc.
 
         string m_type = "WIDGET";
 }
@@ -845,12 +881,20 @@ class WidgetRoot : Widget
                 }
                 case MOUSECLICK:
                 {
+                    auto pos = event.get!MouseClick.pos;
+
                     // Mouseclick could potentially change the focus, so check
-                    checkFocus(event);
+                    checkFocus(pos);
 
                     // And check for dragging
-                    if ( (m_focused !is null) && m_focused.isInside(event.get!MouseClick.pos))
-                        m_dragging = m_focused.requestDrag(event.get!MouseClick.pos);
+                    if (m_focused !is null)
+                    {
+                        if (m_focused.container !is null)
+                            m_focused.container.transformPos(pos);
+
+                        if (m_focused.isInside(pos))
+                            m_dragging = m_focused.requestDrag(pos);
+                    }
 
                     break;
                 }
@@ -871,17 +915,20 @@ class WidgetRoot : Widget
         }
 
         // Check for a change of focus
-        void checkFocus(Event event)
+        void checkFocus(int[2] pos)
         {
             if (m_focused !is null && m_focused.blocking)
                 return;
 
-            auto pos = event.get!MouseClick.pos;
-
             Widget newFocus = null;
             foreach(widget; m_widgetList) // note that the list is already sorted
             {
-                if (widget.focus(pos, newFocus) )
+                int[2] transPos = pos;
+
+                if (widget.container !is null)
+                    widget.container.transformPos(transPos);
+
+                if (widget.focus(transPos, newFocus))
                 {
                     changeFocus(newFocus);
                     return;
@@ -891,6 +938,7 @@ class WidgetRoot : Widget
             // If we get to here, no widget was clicked on, set m_focused to null
             changeFocus(null);
         }
+
 
         // Cycle the focus amongst top level children !! TODO this doesn't respect visibility
         void cycleFocus()
@@ -926,7 +974,8 @@ class WidgetRoot : Widget
                     break;
 
                 // We only want top-level widgets (widgets with root as parent)
-                if (m_children[index].parent == this && m_children[index].visible)
+                if (m_children[index].parent == this && m_children[index].visible &&
+                    m_children[index].drawn)
                 {
                     changeFocus(m_children[index]);
                     break;
@@ -935,8 +984,8 @@ class WidgetRoot : Widget
             }
         }
 
-        // Give the focus to the new widget
-        void changeFocus(Widget newFocus)
+        // Give the focus to the new widget (use force when focusing non-root-managed widgets)
+        void changeFocus(Widget newFocus, Flag!"force" force = Flag!"force".no)
         {
             if (newFocus is m_focused)
                 return;
@@ -979,10 +1028,15 @@ class WidgetRoot : Widget
                 if (!widget.visible)
                     continue;
 
-                if (m_hovered !is null && widget is m_hovered && m_hovered.isInside(pos))
+                int[2] transPos = pos;
+
+                if (widget.container !is null)
+                    widget.container.transformPos(transPos);
+
+                if (m_hovered !is null && (widget is m_hovered) && m_hovered.isInside(transPos))
                     return; // currently hovered widget is still hovered
 
-                if (widget.isInside(pos))
+                if (widget.isInside(transPos))
                 {
                     if (m_hovered !is null)
                         m_hovered.lostHover();
@@ -1003,6 +1057,9 @@ class WidgetRoot : Widget
         // Check for dragging
         void checkDrag(Event event)
         {
+            if (m_focused is null)
+                return;
+
             if (m_dragging && m_window.mouseState.left == MouseState.STATE.PRESSED)
             {
                 // Only keep dragging if mouse is within our window
@@ -1028,7 +1085,8 @@ class WidgetRoot : Widget
                                       Widget.GeometryChangeFlag.DIMENSION);
 
             m_widgetList ~= newWidget;
-            newWidget.lastFocused = newWidget.parent.lastFocused + 1;
+            newWidget.lastFocused(newWidget.parent.lastFocused + 1);
+
             sortWidgetList();
             needRender;
             return newWidget;
@@ -1471,7 +1529,7 @@ class WidgetWindow : Widget
 
 
 
-class WidgetPanWindow : WidgetWindow
+class WidgetPanWindow : WidgetWindow, WidgetContainer
 {
     package this(WidgetRoot root, Widget parent)
     {
@@ -1495,6 +1553,7 @@ class WidgetPanWindow : WidgetWindow
         {
             m_children ~= child;
             child.drawnByRoot = false;
+            child.setContainer(this);
         }
 
         override void render()
@@ -1505,18 +1564,25 @@ class WidgetPanWindow : WidgetWindow
                 renderChildren(child);
         }
 
+        void transformPos(ref int[2] pos)
+        {
+            pos[] -= m_translation[];
+        }
+
     private:
 
         void renderChildren(Widget w)
         {
+            if (w.isOutside(this, m_translation))
+                return;
+
             glLoadIdentity();
 
             auto clip = w.clip;
             clip[0] += m_translation[0];
             clip[1] -= m_translation[1];
 
-            smallestBox(clip, this.clip);
-
+            smallestBox(clip, getChildClipBox(w));
             glScissor(clip[0], clip[1], clip[2], clip[3]);
 
             glTranslatef(w.parent.screenPos.x + m_translation[0],
@@ -1913,7 +1979,7 @@ class WidgetScroll : WidgetWindow
 }
 
 
-class WidgetTree : WidgetWindow
+class WidgetTree : WidgetWindow, WidgetContainer
 {
     package this(WidgetRoot root, Widget parent)
     {
@@ -1991,6 +2057,7 @@ class WidgetTree : WidgetWindow
             widget.parent = this;
             widget.drawnByRoot = false;
             widget.clipped = false;
+            widget.setContainer(this);
 
             if (wparent is null)
             {
@@ -2025,6 +2092,11 @@ class WidgetTree : WidgetWindow
                 updateTree();
         }
 
+        void transformPos(ref int[2] pos)
+        {
+            pos[1] += m_vScroll.current;
+        }
+
         void update()
         {
             updateTree();
@@ -2045,8 +2117,8 @@ class WidgetTree : WidgetWindow
         {
             // Look for mouse clicks on any of our branches
             if (event.type == EventType.MOUSECLICK &&
-                (amIFocused || isAChildFocused) &&
-                !m_root.isFocused(m_vScroll))
+                (amIHovered || isAChildHovered) &&
+                !m_root.isHovered(m_vScroll))
             {
                 auto pos = event.get!MouseClick.pos;
                 pos[1] += m_vScroll.current; // adjust for vertical scroll
@@ -2055,6 +2127,8 @@ class WidgetTree : WidgetWindow
                 foreach(child; m_children)
                     if (child.focus(pos, focus))
                         break;
+
+                writeln("TREE: ", focus);
 
                 if (focus !is null &&
                     focus.type != "WIDGETSCROLL") // we got a hit
@@ -2105,13 +2179,15 @@ class WidgetTree : WidgetWindow
             }
         }
 
+
         override void render()
         {
             super.render();
 
+            long maxFocus;
             foreach(child; m_children)
                 if (child !is m_vScroll)
-                    renderChildren(child);
+                    renderChildren(child, maxFocus);
         }
 
     private:
@@ -2125,10 +2201,13 @@ class WidgetTree : WidgetWindow
                 setVisibility(child);
         }
 
-        void renderChildren(Widget w)
+        void renderChildren(Widget w, ref long maxFocus)
         {
             if (!w.visible || w.isOutside(this, [0, -m_vScroll.current]))
                 return;
+
+            if (w.lastFocused > maxFocus)
+                maxFocus = w.lastFocused;
 
             glLoadIdentity();
 
@@ -2142,7 +2221,7 @@ class WidgetTree : WidgetWindow
 
             w.render();
             foreach(c; w.children)
-                renderChildren(c);
+                renderChildren(c, maxFocus);
 
         }
 
@@ -2169,7 +2248,7 @@ class WidgetTree : WidgetWindow
             foreach(node; m_tree)
                 updateTreeRecurse(node, xoffset, yoffset, width);
 
-            //m_vScroll.range = [0, yoffset];
+            m_vScroll.range = [0, yoffset];
             needRender;
         }
 
