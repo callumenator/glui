@@ -842,30 +842,33 @@ class WidgetRoot : Widget
 
                 if (!widget.drawn && widget.container !is null)
                 {
-                    // Draw a debug outline
-                    auto _clip = widget.container.transformClip(widget);
-                    auto _scrPos = widget.container.transformScreenPos(widget);
-                    auto _dim = widget.container.transformDim(widget);
+                    debug
+                    {
 
-                    // Outline first
-                    glScissor(0, 0, m_dim.x, m_dim.y);
-                    glColor4f(1,.4,.1,1);
-                    glBegin(GL_LINE_LOOP);
-                    glVertex2f(_scrPos.x, _scrPos.y);
-                    glVertex2f(_scrPos.x + _dim.x, _scrPos.y);
-                    glVertex2f(_scrPos.x + _dim.x, _scrPos.y + _dim.y);
-                    glVertex2f(_scrPos.x, _scrPos.y + _dim.y);
-                    glEnd();
+                        // Draw a debug outline
+                        auto _clip = widget.container.transformClip(widget);
+                        auto _scrPos = widget.container.transformScreenPos(widget);
+                        auto _dim = widget.container.transformDim(widget);
 
-                    // Then clip window
-                    glColor4f(0,1,.6,1);
-                    glBegin(GL_LINE_LOOP);
-                    glVertex2f(_clip[0], _clip[1]);
-                    glVertex2f(_clip[0] + _clip[2], _clip[1]);
-                    glVertex2f(_clip[0] + _clip[2], _clip[1] + _clip[3]);
-                    glVertex2f(_clip[0], _clip[1] + _clip[3]);
-                    glEnd();
+                        // Outline first
+                        glScissor(0, 0, m_dim.x, m_dim.y);
+                        glColor4f(1,.4,.1,1);
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2f(_scrPos.x, _scrPos.y);
+                        glVertex2f(_scrPos.x + _dim.x, _scrPos.y);
+                        glVertex2f(_scrPos.x + _dim.x, _scrPos.y + _dim.y);
+                        glVertex2f(_scrPos.x, _scrPos.y + _dim.y);
+                        glEnd();
 
+                        // Then clip window
+                        glColor4f(0,1,.6,1);
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2f(_clip[0], _clip[1]);
+                        glVertex2f(_clip[0] + _clip[2], _clip[1]);
+                        glVertex2f(_clip[0] + _clip[2], _clip[1] + _clip[3]);
+                        glVertex2f(_clip[0], _clip[1] + _clip[3]);
+                        glEnd();
+                    }
                 }
                 else
                 {
@@ -1088,7 +1091,6 @@ class WidgetRoot : Widget
 
                     m_hovered = widget;
                     m_hovered.gainedHover();
-                    writeln(m_hovered, ", gained hover");
                     return;
                 }
             }
@@ -1627,7 +1629,6 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
             {
                 m_zoom += event.get!MouseWheel.delta/1200.;
                 needRender();
-                writeln(m_zoom);
             }
 
         }
