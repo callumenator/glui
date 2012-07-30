@@ -32,14 +32,21 @@ public
     {
         FT_Face m_face;
         float m_ptSize = 0;
-        float[] m_wids, m_xoffs;
+        int[] m_wids, m_xoffs;
         GLfloat[] m_vertices; // vertex, texcoord, vertex, texcoord, etc.
         GLushort[] m_indices;
 
         GLuint m_texture;
 
-        float m_lineHeight = 0; // vertical space required between lines of text
-        float m_maxHeight = 0, m_maxWidth = 0, m_maxHoss = 0;
+        /**
+        * Make these ints, so that we move up and down by whole pixels. If I
+        * don't do this, I notice artefacts in the rendered chars, like sharp
+        * cut-off edges which look bad.
+        */
+        int m_lineHeight = 0, // vertical space required between lines of text
+            m_maxHeight = 0,
+            m_maxWidth = 0,
+            m_maxHoss = 0;
         uint m_vertexBuffer;
         uint m_indexBuffer;
     }
@@ -194,7 +201,7 @@ public
         bindFontBuffers(font);
         glColor4fv(color.ptr);
 
-        float xoffset = 0;
+        int xoffset = 0;
         foreach(char c; text)
         {
             bool norender = false;
@@ -230,7 +237,7 @@ public
 
         bindFontBuffers(font);
 
-        float xoffset = 0;
+        int xoffset = 0;
         foreach(char c; text)
         {
             bool norender = false;
@@ -263,12 +270,12 @@ public
 
 
     // get the horizontal length in screen coords of the line of text
-    float getLineLength(string text, Font font)
+    int getLineLength(string text, Font font)
     {
         if (font is null)
-            return 0.0;
+            return 0;
 
-        float length = 0;
+        int length = 0;
         foreach(char c; text)
         {
             int idx = (cast(int)c) - 32;
@@ -345,7 +352,7 @@ private
 
         int fullWidth = 96*maxWidth; // an extra one for drawing the background (95 + 1)
         int fullHeight = maxHeight;
-        uint fullSize = 2*fullWidth*fullHeight;
+        uint fullSize = fullWidth*fullHeight;
         GLubyte[] fullData;
         fullData.length = fullSize;
 
@@ -354,7 +361,7 @@ private
 	    {
 	        uint aindex = index - 32;
 	        int width = 0, height = 0;
-            uint offset = 2*(index - 32) * (maxWidth);
+            uint offset = (index - 32) * (maxWidth);
 
             float txlo = 0, txhi = 0, tylo = 0, tyhi = 0;
             float vxlo = 0, vxhi = 0, vylo = 0, vyhi = 0;
@@ -371,22 +378,17 @@ private
                 height = nextPow2(bitmap.rows);
 
                 for (j = 0; j < height; ++j)
-                {
                     for (i = 0; i < width; ++i)
-                    {
-                        fullData[offset + 2*(i+(j*fullWidth))] =
-                        fullData[offset + 2*(i+(j*fullWidth))+1] =
+                        fullData[offset + (i+(j*fullWidth))] =
                             (i >= bitmap.width || j >= bitmap.rows ) ?
                                 0 : bitmap.buffer[i + (bitmap.width*j)];
-                    }
-                }
 
                 //font.m_wids[aindex]=cast(float)(face.glyph.advance.x >> 6);
-                font.m_xoffs[aindex]=cast(float)(face.glyph.metrics.horiBearingX >> 6);
-                font.m_wids[aindex]=cast(float)(face.glyph.metrics.horiAdvance >> 6);
+                font.m_xoffs[aindex] = face.glyph.metrics.horiBearingX >> 6;
+                font.m_wids[aindex]  = face.glyph.metrics.horiAdvance >> 6;
 
-                auto hoss = cast(float)((face.glyph.metrics.horiBearingY -
-                                         face.glyph.metrics.height) >> 6);
+                int hoss = (face.glyph.metrics.horiBearingY -
+                            face.glyph.metrics.height) >> 6;
 
                 vxlo = 0;
                 vxhi = bitmap.width;
@@ -415,13 +417,8 @@ private
                 height = maxHeight;
 
                 for (j = 0; j < height; ++j)
-                {
                     for (i = 0; i < width; ++i)
-                    {
-                        fullData[offset + 2*(i+(j*fullWidth))] = 0;
-                        fullData[offset + 2*(i+(j*fullWidth))+1] = 255;
-                    }
-                }
+                        fullData[offset + (i+(j*fullWidth))] = 255;
 
                 vxlo = 0;
                 vxhi = font.m_maxWidth;
@@ -463,8 +460,8 @@ private
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA16, fullWidth, fullHeight,
-                     0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, fullData.ptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, fullWidth, fullHeight,
+                     0, GL_ALPHA, GL_UNSIGNED_BYTE, fullData.ptr);
 
 
 	    return 0;
@@ -483,7 +480,6 @@ private
 
         int maxHeight = 0;
         int maxWidth = 0;
-        float maxHoss = 0;
 
         // Do a quick pass to find total width and height of the big texture
         int fullWidth = 0, fullHeight = 0;
@@ -507,8 +503,7 @@ private
 	    }
 
         createFontTextures(fg, font, maxWidth, maxHeight);
-	    font.m_lineHeight = 1.2*font.m_maxHeight;
-
+	    font.m_lineHeight = cast(int)round(1.2*font.m_maxHeight);
 
         glGenBuffers(1, &font.m_vertexBuffer);
         glBindBuffer(GL_ARRAY_BUFFER, font.m_vertexBuffer);

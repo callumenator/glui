@@ -544,7 +544,7 @@ class WidgetText : WidgetWindow
 
         long m_caretBlinkDelay;
         bool m_drawCaret;
-        float[2] m_caretPos = [0,0];
+        int[2] m_caretPos = [0,0];
 
         HAlign m_hAlign = HAlign.LEFT;
         VAlign m_vAlign = VAlign.TOP;
@@ -652,7 +652,7 @@ class TextArea
 
         @property char rightText()
         {
-            if (m_offset + 1 > m_text.length)
+            if (cast(int)(m_offset + 1) > cast(int)(m_text.length - 1))
                 return cast(char)0;
 
             return m_text[m_offset+1];
@@ -837,9 +837,9 @@ class TextArea
             return count;
         }
 
-        float[2] getCaretPosition(ref const(Font) font)
+        int[2] getCaretPosition(ref const(Font) font)
         {
-            float[2] cpos = [0,0];
+            int[2] cpos = [0,0];
             foreach(i, char c; m_text)
             {
                 if (i == m_offset)
