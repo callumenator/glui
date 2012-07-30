@@ -180,11 +180,11 @@ bool isOutside(Widget w1, Widget w2)
 /**
 * ditto, but with a translation applied to w1 before the check
 */
-bool isOutside(Widget w1, Widget w2, int[2] delta)
+bool isOutside(Widget w1, Widget w2)
 {
     auto p = w1.screenPos();
-    p[0] += delta[0];
-    p[1] += delta[1];
+    //p[0] += delta[0];
+    //p[1] += delta[1];
     return !w2.isInside(p) &&
            !w2.isInside([p.x + w1.w, p.y]) &&
            !w2.isInside([p.x + w1.w, p.y + w1.h]) &&
@@ -192,7 +192,9 @@ bool isOutside(Widget w1, Widget w2, int[2] delta)
 }
 
 
-// Calculate the smallest clipping box, given two boxes
+/**
+* Calculate the smallest clipping box, given two boxes.
+*/
 void smallestBox(ref int[4] childbox, int[4] parentbox)
 {
     int[4] cbox = [childbox[0], childbox[1], childbox[0] + childbox[2], childbox[1] + childbox[3]];
@@ -210,6 +212,17 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 
     if (childbox[2] < 0) childbox[2] = 0;
     if (childbox[3] < 0) childbox[3] = 0;
+}
+
+/**
+* Constrain a point to lie within the given box (x, y, w, h). GUI coords
+*/
+void constrainPoint(ref int[2] pos, int[4] box)
+{
+    if (pos[0] < box[0]) pos[0] = box[0];
+    if (pos[0] > box[0] + box[2]) pos[0] = box[0] + box[2];
+    if (pos[1] < box[1]) pos[1] = box[1];
+    if (pos[1] > box[1] + box[3]) pos[1] = box[1] + box[3];
 }
 
 
@@ -271,7 +284,10 @@ KeyVal[] unpack(T...)(T args)
 */
 interface WidgetContainer
 {
+    // Transform a position
     void transformPos(ref int[2] pos);
+    // Transform an x, y, width, height box
+    void transformBox(ref int[4] box);
 }
 
 
@@ -389,7 +405,7 @@ abstract class Widget
                 newParent = m_root;
 
             m_parent = newParent; // set new parent
-            m_container = newParent.container;
+            setContainer(newParent.container);
             newParent.addChild(this); // add me to new parent's child list
             m_lastFocused = m_parent.lastFocused + 1;
         }
@@ -800,11 +816,13 @@ class WidgetRoot : Widget
 
             glPushAttrib(GL_LIST_BIT|GL_CURRENT_BIT|GL_ENABLE_BIT|GL_TRANSFORM_BIT);
             glMatrixMode(GL_MODELVIEW);
-            glDisable(GL_LIGHTING);
             glEnable(GL_TEXTURE_2D);
-            glDisable(GL_DEPTH_TEST);
             glEnable(GL_BLEND);
             glEnable(GL_SCISSOR_TEST);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_LIGHTING);
+            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
             glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
 
             /**
@@ -898,6 +916,12 @@ class WidgetRoot : Widget
 
                     break;
                 }
+                case MOUSERELEASE:
+                {
+                    m_dragging = false;
+                    m_resizing = false;
+                }
+
                 default:
             }
 
@@ -921,7 +945,7 @@ class WidgetRoot : Widget
                 return;
 
             Widget newFocus = null;
-            foreach(widget; m_widgetList) // note that the list is already sorted
+            foreach(index, widget; m_widgetList) // note that the list is already sorted
             {
                 int[2] transPos = pos;
 
@@ -1066,7 +1090,7 @@ class WidgetRoot : Widget
                 auto xpos = m_window.mouseState.xpos;
                 auto ypos = m_window.mouseState.ypos;
                 if (xpos >= 0 || xpos <= m_window.windowState.xpix ||
-                        ypos >= 0 || ypos <= m_window.windowState.ypix )
+                    ypos >= 0 || ypos <= m_window.windowState.ypix )
                 {
                     m_focused.drag(event.get!MouseMove.pos, event.get!MouseMove.delta);
                     needRender;
@@ -1085,7 +1109,10 @@ class WidgetRoot : Widget
                                       Widget.GeometryChangeFlag.DIMENSION);
 
             m_widgetList ~= newWidget;
-            newWidget.lastFocused(newWidget.parent.lastFocused + 1);
+            //newWidget.lastFocused(newWidget.parent.lastFocused + 1);
+            //changeFocus(newWidget);
+            newWidget.applyFocus(Clock.currSystemTick.length);
+            m_focused = newWidget;
 
             sortWidgetList();
             needRender;
@@ -1447,7 +1474,6 @@ class WidgetWindow : Widget
                     glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
                     glEnable(GL_TEXTURE_2D);
                     glBindTexture(GL_TEXTURE_2D, m_texture);
-                    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
                     glColor4fv(m_color.ptr);
 
@@ -1564,9 +1590,34 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
                 renderChildren(child);
         }
 
+        override void event(ref Event event)
+        {
+            if (!amIHovered && !isAChildHovered) return;
+
+            if (event.type == EventType.MOUSEWHEEL)
+            {
+                m_zoom += event.get!MouseWheel.delta/1200.;
+                needRender;
+                writeln(m_zoom);
+            }
+
+        }
+
         void transformPos(ref int[2] pos)
         {
             pos[] -= m_translation[];
+        }
+
+        // Override this so that we don't give focus to child (contained) widgets
+        override bool focus(int[2] pos, ref Widget finalFocus)
+        {
+            // If click was inside my bounds, list me as focused
+            if (m_visible && this.isInside(pos) && m_focusable)
+            {
+                finalFocus = this;
+                return true;
+            }
+            return false;
         }
 
     private:
@@ -1577,6 +1628,10 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
                 return;
 
             glLoadIdentity();
+            glTranslatef(w.parent.screenPos.x + m_translation[0],
+                         w.parent.screenPos.y + m_translation[1], 0);
+
+            glScalef(m_zoom, m_zoom, 1);
 
             auto clip = w.clip;
             clip[0] += m_translation[0];
@@ -1585,8 +1640,6 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
             smallestBox(clip, getChildClipBox(w));
             glScissor(clip[0], clip[1], clip[2], clip[3]);
 
-            glTranslatef(w.parent.screenPos.x + m_translation[0],
-                         w.parent.screenPos.y + m_translation[1], 0);
 
             w.render();
             foreach(c; w.children)
@@ -1594,7 +1647,7 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
         }
 
         int[2] m_translation;
-        int m_zoom;
+        float m_zoom = 1;
 }
 
 enum Orientation
@@ -2127,8 +2180,6 @@ class WidgetTree : WidgetWindow, WidgetContainer
                 foreach(child; m_children)
                     if (child.focus(pos, focus))
                         break;
-
-                writeln("TREE: ", focus);
 
                 if (focus !is null &&
                     focus.type != "WIDGETSCROLL") // we got a hit
