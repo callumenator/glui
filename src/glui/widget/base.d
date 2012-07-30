@@ -58,6 +58,7 @@ ref T g(T)(ref T[4] v) { return v[1]; }
 ref T b(T)(ref T[4] v) { return v[2]; }
 ref T a(T)(ref T[4] v) { return v[3]; }
 
+
 struct RGBA
 {
     static RGBA opCall(float r, float g, float b, float a)
@@ -107,9 +108,8 @@ struct RGBA
 
 }
 
+// Number of points to include in rounded corners
 enum arcResolution = 10;
-
-
 
 // Distance between two points
 float distance(int[2] p1, int[2] p2)
@@ -122,10 +122,10 @@ bool isInside(Widget w, int[2] point)
 {
     int[4] clip = w.clip;
 
-    auto radius = min(w.cornerRadius, w.dim.x/2, w.dim.y/2);  // TODO: is this a slow point?
+    if (w.container) // Allow the widgets container to transform the clip box
+        clip = w.container.transformClip(w);
 
-    // Clip is in screen coords, need to convert to gui coords
-    clip[1] = w.root.window.windowState.ypix - (clip[1] + clip[3]);
+    auto radius = min(w.cornerRadius, w.dim.x/2, w.dim.y/2);  // TODO: is this a slow point?
 
     // First check for point inside one of the two sqaures which cover the non-rounded corners
     if (point.x >= clip[0] && point.x <= clip[0] + clip[2] &&
@@ -151,46 +151,36 @@ bool isInside(int[2] scrPos, int[2] dim, int[2] point)
             point.y >= scrPos.y && point.y <= scrPos.y + dim.y );
 }
 
-/**
-* Check if a box is completely inside another box, by checking if each point
-* in w1 is inside w2.
-*/
-bool isInside(Widget w1, Widget w2)
-{
-    auto p = w1.screenPos();
-    return w2.isInside(p) &&
-           w2.isInside([p.x + w1.w, p.y]) &&
-           w2.isInside([p.x + w1.w, p.y + w1.h]) &&
-           w2.isInside([p.x, p.y + w1.h]);
-}
 
 /**
-* Check if a box is completely outside another box, by checking if each point
-* in w1 is outside w2.
+* Test to see if the bounding boxes of two widgets overlap
 */
-bool isOutside(Widget w1, Widget w2)
+bool overlap(Widget w1, Widget w2)
 {
-    auto p = w1.screenPos();
-    return !w2.isInside(p) &&
-           !w2.isInside([p.x + w1.w, p.y]) &&
-           !w2.isInside([p.x + w1.w, p.y + w1.h]) &&
-           !w2.isInside([p.x, p.y + w1.h]);
-}
+    auto p1 = w1.screenPos;
+    auto d1 = w1.dim;
 
-/**
-* ditto, but with a translation applied to w1 before the check
-*/
-bool isOutside(Widget w1, Widget w2)
-{
-    auto p = w1.screenPos();
-    //p[0] += delta[0];
-    //p[1] += delta[1];
-    return !w2.isInside(p) &&
-           !w2.isInside([p.x + w1.w, p.y]) &&
-           !w2.isInside([p.x + w1.w, p.y + w1.h]) &&
-           !w2.isInside([p.x, p.y + w1.h]);
-}
+    if (w1.container) // Allow widget container to transform geometry
+    {
+        p1 = w1.container.transformScreenPos(w1);
+        d1 = w1.container.transformDim(w1);
+    }
 
+    auto p2 = w2.screenPos;
+    auto d2 = w2.dim;
+
+    if (w2.container) // Allow widget container to transform geometry
+    {
+        p2 = w2.container.transformScreenPos(w2);
+        d2 = w2.container.transformDim(w2);
+    }
+
+    if (p1.x + d1.x < p2.x) return false; // a is left of b
+    if (p1.x > p2.x + d2.x) return false; // a is right of b
+    if (p1.y + d1.y < p2.y) return false; // a is above b
+    if (p1.y > p2.y + d2.y) return false; // a is below b
+    return true; // boxes overlap
+}
 
 /**
 * Calculate the smallest clipping box, given two boxes.
@@ -214,6 +204,7 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
     if (childbox[3] < 0) childbox[3] = 0;
 }
 
+
 /**
 * Constrain a point to lie within the given box (x, y, w, h). GUI coords
 */
@@ -233,7 +224,8 @@ KeyVal arg(T)(string k, T t)
     return KeyVal(k, t);
 }
 
-// THe key/name backend
+
+// The key/name backend
 struct KeyVal
 {
     this(T)(string k, T v)
@@ -258,6 +250,7 @@ struct KeyVal
     }
 }
 
+
 // Unpack a tuple of mixed KeyVals/KeyVal[]'s
 KeyVal[] unpack(T...)(T args)
 {
@@ -280,14 +273,15 @@ KeyVal[] unpack(T...)(T args)
 
 
 /**
-* Functions that anything which contains widgets must implement
+* Anything which contains widgets must implement these functions
 */
 interface WidgetContainer
 {
-    // Transform a position
-    void transformPos(ref int[2] pos);
-    // Transform an x, y, width, height box
-    void transformBox(ref int[4] box);
+    // Transforms on a widget's geometry
+    int[2] transformScreenPos(Widget w);
+    int[2] transformPos(Widget w);
+    int[2] transformDim(Widget w);
+    int[4] transformClip(Widget w);
 }
 
 
@@ -362,10 +356,6 @@ abstract class Widget
         @property int[2] screenPos() const { return m_screenPos; }
         @property int[2] pos() const { return m_pos; }
         @property int[2] dim() const { return m_dim; }
-        @property int x() const { return m_pos.x; }
-        @property int y() const { return m_pos.y; }
-        @property int w() const { return m_dim.x; }
-        @property int h() const { return m_dim.y; }
         @property int[4] clip() const { return m_clip; }
         @property bool showing() const { return m_showing; }
         @property bool visible() const { return m_visible; }
@@ -389,7 +379,7 @@ abstract class Widget
         @property void focusable(bool v) { m_focusable = v; }
         @property void drawnByRoot(bool v) { m_drawnByRoot = v; }
         @property void blocking(bool v) { m_blocking = v; }
-        @property void showing(bool v) { m_showing = v; needRender; }
+        @property void showing(bool v) { m_showing = v; needRender(); }
         @property void root(WidgetRoot root) { m_root = root; }
         @property void cornerRadius(int v) { m_cornerRadius = v; }
 
@@ -502,7 +492,10 @@ abstract class Widget
         @property bool shiftIsDown() const { return m_root.shiftIsDown; }
 
         // Called when a widget requires rendering
-        @property void needRender() { m_root.needRender; }
+        void needRender()
+        {
+            m_root.needRender();
+        }
 
         // Render this widget
         void render() {}
@@ -680,8 +673,14 @@ abstract class Widget
         // Override this to set a custom clip box for the widget
         int[4] getClipBox()
         {
+            /++
             return [m_screenPos.x - 1,
                     m_root.window.windowState.ypix - m_screenPos.y - m_dim.y,
+                    m_dim.x + 1,
+                    m_dim.y + 1];
+            ++/
+            return [m_screenPos.x - 1,
+                    m_screenPos.y - 1,
                     m_dim.x + 1,
                     m_dim.y + 1];
         }
@@ -835,16 +834,51 @@ class WidgetRoot : Widget
                 * TODO: sort widgets so that invisible widgets are at the bottom of the list,
                 * and the first invisible widget can terminate this loop
                 */
-                if (!widget.visible || !widget.drawn)
+                if (!widget.visible) //|| !widget.drawn)
                     continue;
 
                 // Translate to parents coord, and set clip box
                 glLoadIdentity();
-                glScissor(widget.clip[0], widget.clip[1], widget.clip[2], widget.clip[3]);
-                glTranslatef(widget.parent.screenPos.x, widget.parent.screenPos.y, 0);
 
-                // Draw the widget
-                widget.render();
+                if (!widget.drawn && widget.container !is null)
+                {
+                    // Draw a debug outline
+                    auto _clip = widget.container.transformClip(widget);
+                    auto _scrPos = widget.container.transformScreenPos(widget);
+                    auto _dim = widget.container.transformDim(widget);
+
+                    // Outline first
+                    glScissor(0, 0, m_dim.x, m_dim.y);
+                    glColor4f(1,.4,.1,1);
+                    glBegin(GL_LINE_LOOP);
+                    glVertex2f(_scrPos.x, _scrPos.y);
+                    glVertex2f(_scrPos.x + _dim.x, _scrPos.y);
+                    glVertex2f(_scrPos.x + _dim.x, _scrPos.y + _dim.y);
+                    glVertex2f(_scrPos.x, _scrPos.y + _dim.y);
+                    glEnd();
+
+                    // Then clip window
+                    glColor4f(0,1,.6,1);
+                    glBegin(GL_LINE_LOOP);
+                    glVertex2f(_clip[0], _clip[1]);
+                    glVertex2f(_clip[0] + _clip[2], _clip[1]);
+                    glVertex2f(_clip[0] + _clip[2], _clip[1] + _clip[3]);
+                    glVertex2f(_clip[0], _clip[1] + _clip[3]);
+                    glEnd();
+
+                }
+                else
+                {
+                    // Transform the clip box to screen coords
+                    auto clip = widget.clip;
+                    clipboxToScreen(clip);
+
+                    glScissor(clip[0], clip[1], clip[2], clip[3]);
+                    glTranslatef(widget.parent.screenPos.x, widget.parent.screenPos.y, 0);
+
+                    // Draw the widget
+                    widget.render();
+                }
             }
 
             glPopAttrib();
@@ -907,9 +941,6 @@ class WidgetRoot : Widget
                     // And check for dragging
                     if (m_focused !is null)
                     {
-                        if (m_focused.container !is null)
-                            m_focused.container.transformPos(pos);
-
                         if (m_focused.isInside(pos))
                             m_dragging = m_focused.requestDrag(pos);
                     }
@@ -947,12 +978,7 @@ class WidgetRoot : Widget
             Widget newFocus = null;
             foreach(index, widget; m_widgetList) // note that the list is already sorted
             {
-                int[2] transPos = pos;
-
-                if (widget.container !is null)
-                    widget.container.transformPos(transPos);
-
-                if (widget.focus(transPos, newFocus))
+                if (widget.focus(pos, newFocus))
                 {
                     changeFocus(newFocus);
                     return;
@@ -1036,7 +1062,7 @@ class WidgetRoot : Widget
             globalFocusEvent.emit(newFocus, oldFocus);
 
             sortWidgetList();
-            needRender;
+            needRender();
         }
 
         // Check for change of hovering
@@ -1052,21 +1078,17 @@ class WidgetRoot : Widget
                 if (!widget.visible)
                     continue;
 
-                int[2] transPos = pos;
-
-                if (widget.container !is null)
-                    widget.container.transformPos(transPos);
-
-                if (m_hovered !is null && (widget is m_hovered) && m_hovered.isInside(transPos))
+                if (m_hovered !is null && (widget is m_hovered) && m_hovered.isInside(pos))
                     return; // currently hovered widget is still hovered
 
-                if (widget.isInside(transPos))
+                if (widget.isInside(pos))
                 {
                     if (m_hovered !is null)
                         m_hovered.lostHover();
 
                     m_hovered = widget;
                     m_hovered.gainedHover();
+                    writeln(m_hovered, ", gained hover");
                     return;
                 }
             }
@@ -1093,7 +1115,7 @@ class WidgetRoot : Widget
                     ypos >= 0 || ypos <= m_window.windowState.ypix )
                 {
                     m_focused.drag(event.get!MouseMove.pos, event.get!MouseMove.delta);
-                    needRender;
+                    needRender();
                 }
             }
         }
@@ -1109,13 +1131,15 @@ class WidgetRoot : Widget
                                       Widget.GeometryChangeFlag.DIMENSION);
 
             m_widgetList ~= newWidget;
-            //newWidget.lastFocused(newWidget.parent.lastFocused + 1);
-            //changeFocus(newWidget);
             newWidget.applyFocus(Clock.currSystemTick.length);
-            m_focused = newWidget;
+
+            if (!m_focused)
+                m_focused = newWidget;
+            else
+                m_focused.applyFocus(Clock.currSystemTick.length + 1);
 
             sortWidgetList();
-            needRender;
+            needRender();
             return newWidget;
         }
 
@@ -1134,26 +1158,22 @@ class WidgetRoot : Widget
                 w.parent.delChild(w);
 
             sortWidgetList();
-            needRender;
+            needRender();
         }
 
         void destroyRecurse(Widget w)
         {
-            bool found = false;
             foreach(i, wid; m_widgetList)
             {
                 if (wid is w)
                 {
                     m_widgetList = m_widgetList.remove(i);
-                    found = true;
                     break;
                 }
             }
 
             foreach(i, child; w.children)
-            {
                 destroyRecurse(child);
-            }
 
             w.clearChildren();
         }
@@ -1227,10 +1247,19 @@ class WidgetRoot : Widget
         }
 
         // Flag that a widget needs to be rendered
-        @property void needRender() { m_needRender = true; }
+        void needRender()
+        {
+            m_needRender = true;
+        }
 
         // Signal whenever the focus changes
         PrioritySignal!(Widget /*gained focus*/, Widget /*lost focus*/) globalFocusEvent;
+
+        // Convert a clip box (which is given in the upside down gui coords) to screen coords
+        void clipboxToScreen(ref int[4] box)
+        {
+            box[1] = m_window.windowState.ypix - (box[1] + box[3]);
+        }
 
     private:
         Window m_window;
@@ -1397,21 +1426,21 @@ class WidgetWindow : Widget
         {
             m_color = v;
             m_refreshCache = true;
-            needRender;
+            needRender();
         }
 
         void setBorderColor(RGBA v)
         {
             m_borderColor = v;
             m_refreshCache = true;
-            needRender;
+            needRender();
         }
 
         void setTexture(GLuint v)
         {
             m_texture = v;
             m_refreshCache = true;
-            needRender;
+            needRender();
         }
 
         void set(T...)(T args)
@@ -1597,15 +1626,36 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
             if (event.type == EventType.MOUSEWHEEL)
             {
                 m_zoom += event.get!MouseWheel.delta/1200.;
-                needRender;
+                needRender();
                 writeln(m_zoom);
             }
 
         }
 
-        void transformPos(ref int[2] pos)
+        int[2] transformScreenPos(Widget w)
         {
-            pos[] -= m_translation[];
+            return [w.screenPos.x + m_translation.x,
+                    w.screenPos.y + m_translation.y];
+        }
+
+        int[2] transformPos(Widget w)
+        {
+            return [w.pos.x + m_translation.x,
+                    w.pos.y + m_translation.y];
+        }
+
+        int[2] transformDim(Widget w)
+        {
+            return [cast(int)(w.dim.x * m_zoom),
+                    cast(int)(w.dim.y * m_zoom)];
+        }
+
+        int[4] transformClip(Widget w)
+        {
+            return [w.clip[0] + m_translation[0],
+                    w.clip[1] + m_translation[1],
+                    cast(int)(w.clip[2] * m_zoom),
+                    cast(int)(w.clip[3] * m_zoom)];
         }
 
         // Override this so that we don't give focus to child (contained) widgets
@@ -1624,22 +1674,22 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
 
         void renderChildren(Widget w)
         {
-            if (w.isOutside(this, m_translation))
+            if (!overlap(w, this))
                 return;
 
             glLoadIdentity();
+
+            auto clip = transformClip(w);
             glTranslatef(w.parent.screenPos.x + m_translation[0],
                          w.parent.screenPos.y + m_translation[1], 0);
 
+            // Account for change in scale of starting position
+            glTranslatef(-w.pos.x*(m_zoom-1), -w.pos.y*(m_zoom-1), 0);
+
             glScalef(m_zoom, m_zoom, 1);
-
-            auto clip = w.clip;
-            clip[0] += m_translation[0];
-            clip[1] -= m_translation[1];
-
             smallestBox(clip, getChildClipBox(w));
+            m_root.clipboxToScreen(clip);
             glScissor(clip[0], clip[1], clip[2], clip[3]);
-
 
             w.render();
             foreach(c; w.children)
@@ -1767,7 +1817,7 @@ class WidgetScroll : WidgetWindow
             }
 
             m_refreshCache = true;
-            needRender;
+            needRender();
         }
 
         @property void current(int v)
@@ -1808,7 +1858,7 @@ class WidgetScroll : WidgetWindow
             }
 
             m_refreshCache = true;
-            needRender;
+            needRender();
 
         }
         // Render, call super then render the slider and buttons
@@ -1999,7 +2049,7 @@ class WidgetScroll : WidgetWindow
             }
 
             m_refreshCache = true;
-            needRender;
+            needRender();
         }
 
     private:
@@ -2050,7 +2100,7 @@ class WidgetTree : WidgetWindow, WidgetContainer
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
             bool scrollFade = true;
-            int scrollCr = 0;
+            int scrollCr = 0, scrollTh = 0; // corner radius and thickness
             foreach(arg; unpack(args))
             {
                 switch(arg.key.toLower)
@@ -2087,12 +2137,17 @@ class WidgetTree : WidgetWindow, WidgetContainer
                         scrollCr = arg.get!int(m_type);
                         break;
 
+                    case "scrollthick":
+                    case "scrollthickness":
+                        scrollTh = arg.get!int(m_type);
+                        break;
+
                     default:
                 }
             }
 
             m_vScroll = m_root.create!WidgetScroll(this,
-                                    arg("dim", [20, m_dim.y - 20]),
+                                    arg("dim", [scrollTh, m_dim.y - scrollTh]),
                                     arg("range", [0,1000]),
                                     arg("fade", scrollFade),
                                     arg("slidercolor", scrollFg),
@@ -2145,9 +2200,28 @@ class WidgetTree : WidgetWindow, WidgetContainer
                 updateTree();
         }
 
-        void transformPos(ref int[2] pos)
+        int[2] transformScreenPos(Widget w)
         {
-            pos[1] += m_vScroll.current;
+            return [w.screenPos.x,
+                    w.screenPos.y - m_vScroll.current];
+        }
+
+        int[2] transformPos(Widget w)
+        {
+            return [w.pos.x,
+                    w.pos.y - m_vScroll.current];
+        }
+
+        int[2] transformDim(Widget w)
+        {
+            return w.dim;
+        }
+
+        int[4] transformClip(Widget w)
+        {
+            return [w.clip[0],
+                    w.clip[1] - m_vScroll.current,
+                    w.clip[2], w.clip[3]];
         }
 
         void update()
@@ -2161,8 +2235,8 @@ class WidgetTree : WidgetWindow, WidgetContainer
 
             if (flag & Widget.GeometryChangeFlag.DIMENSION)
             {
-                m_vScroll.setDim(10, m_dim.y - 10);
-                m_vScroll.setPos(m_dim.x - 10, 0);
+                m_vScroll.setDim(m_vScroll.dim.x, m_dim.y - m_vScroll.dim.x);
+                m_vScroll.setPos(m_dim.x - m_vScroll.dim.x, 0);
             }
         }
 
@@ -2174,7 +2248,6 @@ class WidgetTree : WidgetWindow, WidgetContainer
                 !m_root.isHovered(m_vScroll))
             {
                 auto pos = event.get!MouseClick.pos;
-                pos[1] += m_vScroll.current; // adjust for vertical scroll
 
                 Widget focus = null;
                 foreach(child; m_children)
@@ -2254,7 +2327,7 @@ class WidgetTree : WidgetWindow, WidgetContainer
 
         void renderChildren(Widget w, ref long maxFocus)
         {
-            if (!w.visible || w.isOutside(this, [0, -m_vScroll.current]))
+            if (!w.visible || !overlap(w, this))
                 return;
 
             if (w.lastFocused > maxFocus)
@@ -2263,8 +2336,9 @@ class WidgetTree : WidgetWindow, WidgetContainer
             glLoadIdentity();
 
             auto clip = w.clip;
-            clip[1] += m_vScroll.current;
+            clip[1] -= m_vScroll.current;
             smallestBox(clip, this.getChildClipBox(w));
+            m_root.clipboxToScreen(clip);
             glScissor(clip[0], clip[1], clip[2], clip[3]);
 
             glTranslatef(w.parent.screenPos.x,
@@ -2300,7 +2374,7 @@ class WidgetTree : WidgetWindow, WidgetContainer
                 updateTreeRecurse(node, xoffset, yoffset, width);
 
             m_vScroll.range = [0, yoffset];
-            needRender;
+            needRender();
         }
 
         void updateTreeRecurse(Node node, ref int xoffset, ref int yoffset, ref int width)

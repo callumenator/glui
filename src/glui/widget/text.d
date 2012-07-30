@@ -60,7 +60,7 @@ class WidgetText : WidgetWindow
             if (m_allowVScroll)
                 m_vscroll.current = 0;
             m_refreshCache = true;
-            needRender;
+            needRender();
         }
 
         void write(T...)(T args)
@@ -71,7 +71,7 @@ class WidgetText : WidgetWindow
 
             m_text.insert(s);
             m_refreshCache = true;
-            needRender;
+            needRender();
         }
 
         void writeln(T...)(T args)
@@ -246,7 +246,7 @@ class WidgetText : WidgetWindow
             if (delay == m_caretBlinkDelay)
             {
                 m_drawCaret = !m_drawCaret;
-                needRender;
+                needRender();
             }
         }
 
@@ -433,42 +433,42 @@ class WidgetText : WidgetWindow
                 {
                     m_text.home();
                     m_drawCaret = true;
-                    needRender;
+                    needRender();
                     break;
                 }
                 case KC_END: // end key
                 {
                     m_text.end();
                     m_drawCaret = true;
-                    needRender;
+                    needRender();
                     break;
                 }
                 case KC_LEFT: // left arrow
                 {
                     m_text.moveLeft();
                     m_drawCaret = true;
-                    needRender;
+                    needRender();
                     break;
                 }
                 case KC_RIGHT: // right arrow
                 {
                     m_text.moveRight();
                     m_drawCaret = true;
-                    needRender;
+                    needRender();
                     break;
                 }
                 case KC_UP: // up arrow
                 {
                     m_text.moveUp();
                     m_drawCaret = true;
-                    needRender;
+                    needRender();
                     break;
                 }
                 case KC_DOWN: // down arrow
                 {
                     m_text.moveDown();
                     m_drawCaret = true;
-                    needRender;
+                    needRender();
                     break;
                 }
                 case KC_DELETE: // del
@@ -478,7 +478,7 @@ class WidgetText : WidgetWindow
                     widgetTextDeleteEvent.emit(this, deleted);
                     m_drawCaret = true;
                     m_refreshCache = true;
-                    needRender;
+                    needRender();
                     break;
                 }
                 case KC_RETURN: // Carriage return
@@ -489,7 +489,7 @@ class WidgetText : WidgetWindow
                         widgetTextReturnEvent.emit(this);
                         m_drawCaret = true;
                         m_refreshCache = true;
-                        needRender;
+                        needRender();
                     }
                     break;
                 }
@@ -502,7 +502,7 @@ class WidgetText : WidgetWindow
                         widgetTextDeleteEvent.emit(this, deleted);
                         m_drawCaret = true;
                         m_refreshCache = true;
-                        needRender;
+                        needRender();
                     }
                     break;
                 }
@@ -514,7 +514,7 @@ class WidgetText : WidgetWindow
                         widgetTextInsertEvent.emit(this, key);
                         m_drawCaret = true;
                         m_refreshCache = true;
-                        needRender;
+                        needRender();
                     }
 
                     break;
