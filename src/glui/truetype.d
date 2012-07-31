@@ -24,7 +24,6 @@ import
     derelict.util.exception;
 
 
-// Font loader, using FreeType
 public
 {
     // Structure to store everything associated with a particular font and size
@@ -49,6 +48,19 @@ public
             m_maxHoss = 0;
         uint m_vertexBuffer;
         uint m_indexBuffer;
+
+        /**
+        * Return the array index for a given character.
+        */
+        uint index(char c) const
+        {
+            uint idx = (cast(uint)c) - 32;
+            if (idx >= 0 && idx < m_wids.length)
+                return idx;
+            else
+                return 0;
+        }
+
     }
 
     // Create a font from the given file, with the given size
@@ -120,6 +132,8 @@ public
     int[2] getKerning(Font font, char left, char right)
     in
     {
+        assert(font !is null, "Null font passed to truetype.getKerning");
+
         assert(cast(int)left >= 32 && cast(int)left <= 126 &&
                cast(int)right >= 32 && cast(int)right <= 126 );
     }
@@ -134,10 +148,12 @@ public
 
     // Call before rendering characters from a given font
     void bindFontBuffers(ref const(Font) font)
+    in
     {
-        if (font is null)
-            return;
-
+        assert(font !is null, "Null font passed to truetype.bindFontBuffers");
+    }
+    body
+    {
         // Bind the vertex buffer
         glBindBuffer(GL_ARRAY_BUFFER, font.m_vertexBuffer);
         // Enable VBO
@@ -156,10 +172,12 @@ public
 
     // Call after rendering characters from a given font
     void unbindFontBuffers(ref const(Font) font)
+    in
     {
-        if (font is null)
-            return;
-
+        assert(font !is null, "Null font passed to truetype.unbindFontBuffers");
+    }
+    body
+    {
         // Bind the zero buffer, to re-enable non-VBO drawing.
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -174,11 +192,11 @@ public
     void renderCharacter(ref const(Font) font, char c, float[4] color, float[4] bgcolor)
     in
     {
-        assert (cast(uint)c >= 32 && cast(uint)c <= 126 && font !is null);
+        assert(font !is null, "Null font passed to truetype.renderCharacter");
     }
     body
     {
-        auto index = (cast(uint)c) - 32;
+        auto index = font.index(c);
 
         bindFontBuffers(font);
 
@@ -194,10 +212,12 @@ public
 
     // Render a string of characters at the current position
     void renderCharacters(ref const(Font) font, string text, float[4] color)
+    in
     {
-        if (font is null)
-            return;
-
+        assert(font !is null, "Null font passed to truetype.renderCharacters");
+    }
+    body
+    {
         bindFontBuffers(font);
         glColor4fv(color.ptr);
 
@@ -215,7 +235,7 @@ public
 
             if (!norender)
             {
-                auto index = (cast(uint)c) - 32;
+                auto index = font.index(c);
 
                 glTranslatef(font.m_xoffs[index], 0, 0);
                 glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
@@ -231,10 +251,12 @@ public
 
     // Render a string of characters at the current position, with a background color
     void renderCharacters(ref const(Font) font, string text, float[4] color, float[4] bgcolor)
+    in
     {
-        if (font is null)
-            return;
-
+        assert(font !is null, "Null font passed to truetype.renderCharacter");
+    }
+    body
+    {
         bindFontBuffers(font);
 
         int xoffset = 0;
@@ -251,7 +273,7 @@ public
 
             if (!norender)
             {
-                auto index = (cast(uint)c) - 32;
+                auto index = font.index(c);
 
                 glColor4fv(bgcolor.ptr);
                 glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
@@ -271,17 +293,15 @@ public
 
     // get the horizontal length in screen coords of the line of text
     int getLineLength(string text, Font font)
+    in
     {
-        if (font is null)
-            return 0;
-
+        assert(font !is null, "Null font passed to truetype.getLineLength");
+    }
+    body
+    {
         int length = 0;
         foreach(char c; text)
-        {
-            int idx = (cast(int)c) - 32;
-            if (idx >= 0)
-                length += font.m_wids[idx];
-        }
+            length += font.m_wids[font.index(c)];
         return length;
     }
 

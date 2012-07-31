@@ -39,6 +39,7 @@ import
 
 public import
     glui.event,
+    glui.widget.event,
     glui.widget.text;
 
 
@@ -58,7 +59,7 @@ ref T g(T)(ref T[4] v) { return v[1]; }
 ref T b(T)(ref T[4] v) { return v[2]; }
 ref T a(T)(ref T[4] v) { return v[3]; }
 
-
+// Structure for storing RGBA colors
 struct RGBA
 {
     static RGBA opCall(float r, float g, float b, float a)
@@ -108,14 +109,17 @@ struct RGBA
 
 }
 
+
 // Number of points to include in rounded corners
 enum arcResolution = 10;
+
 
 // Distance between two points
 float distance(int[2] p1, int[2] p2)
 {
     return sqrt( cast(float)((p1.x - p2.x)*(p1.x - p2.x) + (p1.y - p2.y)*(p1.y - p2.y)));
 }
+
 
 // Check if a given point is within a widgets boundary
 bool isInside(Widget w, int[2] point)
@@ -143,6 +147,7 @@ bool isInside(Widget w, int[2] point)
     else
         return false;
 }
+
 
 // Check if a given point is within a given box (this one won't account for rounded corners!)
 bool isInside(int[2] scrPos, int[2] dim, int[2] point)
@@ -182,6 +187,7 @@ bool overlap(Widget w1, Widget w2)
     return true; // boxes overlap
 }
 
+
 /**
 * Calculate the smallest clipping box, given two boxes.
 */
@@ -215,7 +221,6 @@ void constrainPoint(ref int[2] pos, int[4] box)
     if (pos[1] < box[1]) pos[1] = box[1];
     if (pos[1] > box[1] + box[3]) pos[1] = box[1] + box[3];
 }
-
 
 
 // Allow widgets to take a list of names params
@@ -299,6 +304,9 @@ abstract class Widget
 
     public:
 
+        // All widgets use this event signaler
+        PrioritySignal!(Widget, WidgetEvent) eventSignal;
+
         void set(KeyVal...)(KeyVal args)
         {
             foreach(arg; unpack(args))
@@ -344,12 +352,6 @@ abstract class Widget
                 }
             }
         }
-
-
-        // All widgets can send these events to registered listeners
-        PrioritySignal!(Widget, int, int, int, int) widgetDragEvent;
-        PrioritySignal!(Widget, Flag!"Focused") widgetFocusEvent;
-        PrioritySignal!(Widget, Flag!"Hovered") widgetHoverEvent;
 
 
         // Get
@@ -552,7 +554,7 @@ abstract class Widget
             geometryChanged(GeometryChangeFlag.POSITION);
 
             // Signal event
-            widgetDragEvent.emit(this, pos.x, pos.y, delta.x, delta.y);
+            eventSignal.emit(this, WidgetEvent(Drag(pos, delta)));
         }
 
         // Override these to control resizing of your widget
@@ -1051,18 +1053,18 @@ class WidgetRoot : Widget
             {
                 m_focused.applyFocus(Clock.currSystemTick.length);
                 m_focused.gainedFocus();
-                m_focused.widgetFocusEvent.emit(m_focused, Flag!"Focused".yes);
+                m_focused.eventSignal.emit(m_focused, WidgetEvent(GainedFocus()));
             }
 
             // Got a new focus, so alert the previously focused widget
             if (oldFocus !is null)
             {
                 oldFocus.lostFocus();
-                oldFocus.widgetFocusEvent.emit(oldFocus, Flag!"Focused".no);
+                oldFocus.eventSignal.emit(oldFocus, WidgetEvent(LostFocus()));
             }
 
             // Fire a global focus change event
-            globalFocusEvent.emit(newFocus, oldFocus);
+            eventSignal.emit(this, WidgetEvent(GlobalFocusChange(newFocus, oldFocus)));
 
             sortWidgetList();
             needRender();
@@ -1091,7 +1093,6 @@ class WidgetRoot : Widget
 
                     m_hovered = widget;
                     m_hovered.gainedHover();
-                    writeln(m_hovered, ", got hover");
                     return;
                 }
             }
@@ -1254,9 +1255,6 @@ class WidgetRoot : Widget
         {
             m_needRender = true;
         }
-
-        // Signal whenever the focus changes
-        PrioritySignal!(Widget /*gained focus*/, Widget /*lost focus*/) globalFocusEvent;
 
         // Convert a clip box (which is given in the upside down gui coords) to screen coords
         void clipboxToScreen(ref int[4] box)
@@ -1828,9 +1826,6 @@ class WidgetScroll : WidgetWindow
                 m_current = v;
         }
 
-        // Signal when we have a scroll event (drag or scroll wheel)
-        PrioritySignal!(int) scrollEvent;
-
         // If the geometry has changed, update
         override void geometryChanged(Widget.GeometryChangeFlag flag)
         {
@@ -1944,8 +1939,6 @@ class WidgetScroll : WidgetWindow
 
                 m_current = cast(int) ((m_range[1]-m_range[0]) * ((m_slidePos[1] - m_slideLimit[0]) /
                                         cast(float)(m_slideLimit[1] - m_slideLimit[0])));
-
-                scrollEvent.emit(m_current);
             }
             else if (m_orient == Orientation.HORIZONTAL)
             {
@@ -1957,9 +1950,9 @@ class WidgetScroll : WidgetWindow
 
                 m_current = cast(int) ((m_range[1]-m_range[0]) * ((m_slidePos[0] - m_slideLimit[0]) /
                                         cast(float)(m_slideLimit[1] - m_slideLimit[0])));
-
-                scrollEvent.emit(m_current);
             }
+
+            eventSignal.emit(this, WidgetEvent(Scroll(m_current)));
         }
 
         // Grant drag requests if mouse is within the slider part

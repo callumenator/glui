@@ -79,9 +79,6 @@ class WidgetText : WidgetWindow
             write(args, "\n");
         }
 
-        PrioritySignal!(Widget, KEY)  widgetTextInsertEvent;
-        PrioritySignal!(Widget, char) widgetTextDeleteEvent;
-        PrioritySignal!(Widget)       widgetTextReturnEvent;
 
     package this(WidgetRoot root, Widget parent)
     {
@@ -475,7 +472,7 @@ class WidgetText : WidgetWindow
                 {
                     char deleted = m_text.rightText();
                     m_text.del();
-                    widgetTextDeleteEvent.emit(this, deleted);
+                    eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender();
@@ -486,7 +483,7 @@ class WidgetText : WidgetWindow
                     if (m_editable)
                     {
                         m_text.insert("\n");
-                        widgetTextReturnEvent.emit(this);
+                        eventSignal.emit(this, WidgetEvent(TextReturn()));
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
@@ -499,7 +496,7 @@ class WidgetText : WidgetWindow
                     {
                         char deleted = m_text.leftText();
                         m_text.backspace();
-                        widgetTextDeleteEvent.emit(this, deleted);
+                        eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
@@ -511,7 +508,7 @@ class WidgetText : WidgetWindow
                     if (m_editable)
                     {
                         m_text.insert(to!string(cast(char)key));
-                        widgetTextInsertEvent.emit(this, key);
+                        eventSignal.emit(this, WidgetEvent(TextInsert(to!string(cast(char)key))));
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();

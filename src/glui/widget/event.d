@@ -10,11 +10,19 @@
 
 module glui.widget.event;
 
+import
+    std.variant;
+
 public import
-    glui.event;
+    glui.event,
+    glui.widget.base;
+
 
 enum WidgetEventType
 {
+    // Global events fired by root
+    GLOBALFOCUSCHANGE,
+
     // Widget
     DRAG,
     GAINEDFOCUS,
@@ -25,34 +33,63 @@ enum WidgetEventType
     // WidgetText
     TEXTINSERT,
     TEXTREMOVE,
-    TEXTRETURN
+    TEXTRETURN,
+
+    // WidgetScroll
+    SCROLL
 }
 
+/**
+* Root fires this whenever the focus changes.
+*/
+struct GlobalFocusChange
+{
+    public:
+
+        this(Widget newFocus, Widget oldFocus)
+        {
+            m_newFocus = newFocus;
+            m_oldFocus = oldFocus;
+        }
+
+        @property Widget newFocus() { return m_newFocus; }
+        @property Widget oldFocus() { return m_oldFocus; }
+        @property WidgetEventType type() { return WidgetEventType.GAINEDFOCUS; }
+
+    private:
+        Widget m_newFocus;
+        Widget m_oldFocus;
+}
+
+
+/**
+* Events fired by all widgets.
+*/
 struct GainedFocus
 {
-    @property EventType type() { return WidgetEventType.GAINEDFOCUS; }
+    @property WidgetEventType type() { return WidgetEventType.GAINEDFOCUS; }
 }
 
 struct LostFocus
 {
-    @property EventType type() { return WidgetEventType.LOSTFOCUS; }
+    @property WidgetEventType type() { return WidgetEventType.LOSTFOCUS; }
 }
 
 struct GainedHover
 {
-    @property EventType type() { return WidgetEventType.GAINEDHOVER; }
+    @property WidgetEventType type() { return WidgetEventType.GAINEDHOVER; }
 }
 
 struct LostHover
 {
-    @property EventType type() { return WidgetEventType.LOSTHOVER; }
+    @property WidgetEventType type() { return WidgetEventType.LOSTHOVER; }
 }
 
 struct Drag
 {
     public:
 
-        this(int[2] pos, int delta)
+        this(int[2] pos, int[2] delta)
         {
             m_pos = pos;
             m_delta = delta;
@@ -60,7 +97,7 @@ struct Drag
 
         @property int[2] pos() const { return m_pos; }
         @property int[2] delta() const { return m_delta; }
-        @property EventType type() { return WidgetEventType.DRAG; }
+        @property WidgetEventType type() { return WidgetEventType.DRAG; }
 
     private:
         int[2] m_pos;
@@ -69,9 +106,8 @@ struct Drag
 
 
 /**
-* WidgetText
+* WidgetText events
 */
-
 struct TextInsert
 {
     public:
@@ -82,7 +118,7 @@ struct TextInsert
         }
 
         @property string text() const { return m_text; }
-        @property EventType type() { return WidgetEventType.TEXTINSERT; }
+        @property WidgetEventType type() { return WidgetEventType.TEXTINSERT; }
 
     private:
         string m_text;
@@ -98,7 +134,7 @@ struct TextRemove
         }
 
         @property string text() const { return m_text; }
-        @property EventType type() { return WidgetEventType.TEXTREMOVE; }
+        @property WidgetEventType type() { return WidgetEventType.TEXTREMOVE; }
 
     private:
         string m_text;
@@ -107,7 +143,28 @@ struct TextRemove
 // Return key was pressed
 struct TextReturn
 {
-    @property EventType type() { return WidgetEventType.TEXTRETURN; }
+    @property WidgetEventType type() { return WidgetEventType.TEXTRETURN; }
+}
+
+
+
+/**
+* WidgetScroll events
+*/
+struct Scroll
+{
+    public:
+
+        this(int current)
+        {
+            m_current = current;
+        }
+
+        @property int current() const { return m_current; }
+        @property WidgetEventType type() { return WidgetEventType.SCROLL; }
+
+    private:
+        int m_current;
 }
 
 
