@@ -299,7 +299,7 @@ abstract class Widget
     package this(WidgetRoot root, Widget parent)
     {
         m_root = root;
-        this.parent = parent;
+        this.setParent(parent);
     }
 
     public:
@@ -385,7 +385,7 @@ abstract class Widget
         @property void root(WidgetRoot root) { m_root = root; }
         @property void cornerRadius(int v) { m_cornerRadius = v; }
 
-        @property void parent(Widget newParent)
+        void setParent(Widget newParent)
         {
             if (newParent is this) // Cant be it's own parent! (inf loops!)
                 return;
@@ -550,11 +550,11 @@ abstract class Widget
             // By default, if a widget allows dragging, it drags in both x and y, unconstrained
             m_pos[] += delta[];
 
-            // Flag the change in geometry
-            geometryChanged(GeometryChangeFlag.POSITION);
-
-            // Signal event
-            eventSignal.emit(this, WidgetEvent(Drag(pos, delta)));
+            /**
+            * Note that root makes sure the geometryChanged method is called, and
+            * fires the drag event signal, so be aware of this if overriding this
+            * drag method for custom logic.
+            */
         }
 
         // Override these to control resizing of your widget
@@ -621,7 +621,7 @@ abstract class Widget
         /**
         * Recurse through the hierarchy to find the maximum lastFocused value
         */
-        void maxLastFocused(ref long maxFocus)
+        void maxLastFocused(ref long maxFocus) const
         {
             if (m_lastFocused > maxFocus)
                 maxFocus = m_lastFocused;
@@ -1118,7 +1118,16 @@ class WidgetRoot : Widget
                 if (xpos >= 0 || xpos <= m_window.windowState.xpix ||
                     ypos >= 0 || ypos <= m_window.windowState.ypix )
                 {
-                    m_focused.drag(event.get!MouseMove.pos, event.get!MouseMove.delta);
+                    auto pos = event.get!MouseMove.pos;
+                    auto delta = event.get!MouseMove.delta;
+                    m_focused.drag(pos, delta);
+
+                    // Flag the change in geometry
+                    m_focused.geometryChanged(Widget.GeometryChangeFlag.POSITION);
+
+                    // Signal event
+                    eventSignal.emit(m_focused, WidgetEvent(Drag(pos, delta)));
+
                     needRender();
                 }
             }
@@ -2157,10 +2166,10 @@ class WidgetTree : WidgetWindow, WidgetContainer
                  Widget widget,
                  Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
         {
-            widget.parent = this;
+            widget.setParent(this);
+            widget.setContainer(this);
             widget.drawnByRoot = false;
             widget.clipped = false;
-            widget.setContainer(this);
 
             if (wparent is null)
             {

@@ -5,7 +5,8 @@
 * License: $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
 * Authors: Callum Anderson
 * Revised: July 24, 2012
-* Summary: UI events.
+* Summary: Widget events. This mirrors the system in glui.event for
+* platform events (Key, Mouse and Window events).
 */
 
 module glui.widget.event;
@@ -18,6 +19,9 @@ public import
     glui.widget.base;
 
 
+/**
+* Every widget event must be represented in this enum.
+*/
 enum WidgetEventType
 {
     // Global events fired by root
@@ -39,8 +43,9 @@ enum WidgetEventType
     SCROLL
 }
 
+
 /**
-* Root fires this whenever the focus changes.
+* WidgetRoot fires this whenever the focus changes.
 */
 struct GlobalFocusChange
 {
@@ -89,6 +94,11 @@ struct Drag
 {
     public:
 
+        /**
+        * params:
+        * pos = current position of the mouse pointer
+        * delta = change in mouse position
+        */
         this(int[2] pos, int[2] delta)
         {
             m_pos = pos;
