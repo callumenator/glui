@@ -834,7 +834,7 @@ class WidgetRoot : Widget
                 * TODO: sort widgets so that invisible widgets are at the bottom of the list,
                 * and the first invisible widget can terminate this loop
                 */
-                if (!widget.visible) //|| !widget.drawn)
+                if (!widget.visible)
                     continue;
 
                 // Translate to parents coord, and set clip box
@@ -1091,6 +1091,7 @@ class WidgetRoot : Widget
 
                     m_hovered = widget;
                     m_hovered.gainedHover();
+                    writeln(m_hovered, ", got hover");
                     return;
                 }
             }
