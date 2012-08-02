@@ -291,6 +291,16 @@ interface WidgetContainer
 
 
 
+enum EdgeFlag
+{
+    NONE    = 0x00,
+    TOP     = 0x01,
+    BOTTOM  = 0x02,
+    LEFT    = 0x04,
+    RIGHT   = 0x08
+}
+
+
 /**
 * Widget base class.
 */
@@ -366,6 +376,9 @@ abstract class Widget
         @property bool focusable() const { return m_focusable; }
         @property bool drawnByRoot() const { return m_drawnByRoot; }
         @property bool drawn() const { return m_drawn; }
+        @property bool canDrag() const { return m_canDrag; }
+        @property bool canResize() const { return m_canResize; }
+        @property bool resizeWithParent() const { return m_resizeWithParent; }
         @property WidgetRoot root() { return m_root; }
         @property WidgetContainer container () { return m_container; }
         @property Widget parent() { return m_parent; }
@@ -377,6 +390,7 @@ abstract class Widget
         // Set
         @property void canDrag(bool v) { m_canDrag = v; }
         @property void canResize(bool v) { m_canResize = v; }
+        @property void resizeWithParent(bool v) { m_resizeWithParent = v; }
         @property void clipped(bool v) { m_clipped = v; }
         @property void focusable(bool v) { m_focusable = v; }
         @property void drawnByRoot(bool v) { m_drawnByRoot = v; }
@@ -550,22 +564,87 @@ abstract class Widget
             // By default, if a widget allows dragging, it drags in both x and y, unconstrained
             m_pos[] += delta[];
 
-            /**
-            * Note that root makes sure the geometryChanged method is called, and
-            * fires the drag event signal, so be aware of this if overriding this
-            * drag method for custom logic.
-            */
+            // Flag the change in geometry
+            geometryChanged(Widget.GeometryChangeFlag.POSITION);
+
+            // Signal event
+            eventSignal.emit(this, WidgetEvent(Drag(pos, delta)));
         }
 
         // Override these to control resizing of your widget
         bool requestResize(int[2] pos)
         {
-            // By default, widgets are not resizable
-            return m_canResize;
+            if (!m_canResize)
+                return false;
+
+            m_resizing = EdgeFlag.NONE;
+
+            if (abs(pos.x - m_screenPos.x) < 10)
+                m_resizing |= EdgeFlag.LEFT;
+
+            if (abs(pos.x - (m_screenPos.x + m_dim.x)) < 10)
+                m_resizing |= EdgeFlag.RIGHT;
+
+            if (abs(pos.y - m_screenPos.y) < 10)
+                m_resizing |= EdgeFlag.TOP;
+
+            if (abs(pos.y - (m_screenPos.y + m_dim.y)) < 10)
+                m_resizing |= EdgeFlag.BOTTOM;
+
+            return m_resizing != EdgeFlag.NONE;
         }
 
         // Need to override this to create resizing ability
-        void resize(int[2] pos, int[2] delta) {}
+        void resize(int[2] pos, int[2] delta, Flag!"TopLevel" top = Flag!"TopLevel".no)
+        {
+            int[2] preDim = m_dim, prePos = m_pos;
+
+            with(EdgeFlag)
+            {
+                if (m_resizing & LEFT)
+                {
+                    if (top) {
+                        m_pos[0] += delta.x;
+                        m_dim[0] -= delta.x;
+                    }
+                }
+
+                if (m_resizing & RIGHT)
+                    m_dim[0] += delta.x;
+
+                if (m_resizing & TOP)
+                {
+                    if (top) {
+                        m_pos[1] += delta.y;
+                        m_dim[1] -= delta.y;
+                    }
+                }
+
+                if (m_resizing & BOTTOM)
+                    m_dim[1] += delta.y;
+
+                assert(m_resizing != NONE);
+            }
+
+            geometryChanged(GeometryChangeFlag.POSITION |
+                            GeometryChangeFlag.DIMENSION );
+
+            // Signal event
+            eventSignal.emit(this, WidgetEvent(Resize(prePos, preDim)));
+
+            /**
+            * Alert children, provide the old position and dimensions
+            * (the new pos/dim can be retrieved by the child)
+            */
+            foreach(child; m_children)
+            {
+                if (child.canResize && child.resizeWithParent)
+                {
+                    child.m_resizing = m_resizing;
+                    child.resize(pos, delta, Flag!"TopLevel".no);
+                }
+            }
+        }
 
 
         /**
@@ -675,12 +754,6 @@ abstract class Widget
         // Override this to set a custom clip box for the widget
         int[4] getClipBox()
         {
-            /++
-            return [m_screenPos.x - 1,
-                    m_root.window.windowState.ypix - m_screenPos.y - m_dim.y,
-                    m_dim.x + 1,
-                    m_dim.y + 1];
-            ++/
             return [m_screenPos.x - 1,
                     m_screenPos.y - 1,
                     m_dim.x + 1,
@@ -733,6 +806,10 @@ abstract class Widget
         bool m_blocking = false; // blocking widgets don't lose focus
         long m_lastFocused = 0;
         int m_cornerRadius = 0;
+
+        bool m_resizeWithParent = false; // when parent resizes, update my size
+        int[2] m_minDim; // when parent resizes, don't shrink me below this (initially = m_dim)
+        EdgeFlag m_resizing = EdgeFlag.NONE;
 
         WidgetContainer m_container = null; // A non-null container will transform clicks etc.
 
@@ -934,6 +1011,7 @@ class WidgetRoot : Widget
                 {
                     checkHover(event.get!MouseMove.pos);
                     checkDrag(event);
+                    checkResize(event);
                     break;
                 }
                 case MOUSECLICK:
@@ -943,12 +1021,20 @@ class WidgetRoot : Widget
                     // Mouseclick could potentially change the focus, so check
                     checkFocus(pos);
 
-                    // And check for dragging
-                    if (m_focused !is null)
+                    // Check for resizing
+                    if (!m_dragging && m_focused !is null)
+                    {
+                        m_resizing = m_focused.requestResize(pos);
+                        writeln(m_resizing);
+                    }
+
+                    // Check for dragging
+                    if (!m_resizing && m_focused !is null)
                     {
                         if (m_focused.isInside(pos))
                             m_dragging = m_focused.requestDrag(pos);
                     }
+
 
                     break;
                 }
@@ -1121,12 +1207,27 @@ class WidgetRoot : Widget
                     auto pos = event.get!MouseMove.pos;
                     auto delta = event.get!MouseMove.delta;
                     m_focused.drag(pos, delta);
+                    needRender();
+                }
+            }
+        }
 
-                    // Flag the change in geometry
-                    m_focused.geometryChanged(Widget.GeometryChangeFlag.POSITION);
+        void checkResize(Event event)
+        {
+            if (m_focused is null)
+                return;
 
-                    // Signal event
-                    eventSignal.emit(m_focused, WidgetEvent(Drag(pos, delta)));
+            if (m_resizing && m_window.mouseState.left == MouseState.STATE.PRESSED)
+            {
+                // Only keep resizing if mouse is within our window
+                auto xpos = m_window.mouseState.xpos;
+                auto ypos = m_window.mouseState.ypos;
+                if (xpos >= 0 || xpos <= m_window.windowState.xpix ||
+                    ypos >= 0 || ypos <= m_window.windowState.ypix )
+                {
+                    auto pos = event.get!MouseMove.pos;
+                    auto delta = event.get!MouseMove.delta;
+                    m_focused.resize(pos, delta, Flag!"TopLevel".yes);
 
                     needRender();
                 }

@@ -29,6 +29,7 @@ enum WidgetEventType
 
     // Widget
     DRAG,
+    RESIZE,
     GAINEDFOCUS,
     LOSTFOCUS,
     GAINEDHOVER,
@@ -112,6 +113,30 @@ struct Drag
     private:
         int[2] m_pos;
         int[2] m_delta;
+}
+
+struct Resize
+{
+    public:
+
+        /**
+        * params:
+        * oldPos = previous pos (new pos can be retrieved manually)
+        * oldDim = previous dim (new dim can be retrieved manually)
+        */
+        this(int[2] oldDos, int[2] oldDim)
+        {
+            m_oldPos = oldPos;
+            m_oldDim = oldDim;
+        }
+
+        @property int[2] oldPos() const { return m_oldPos; }
+        @property int[2] oldDim() const { return m_oldDim; }
+        @property WidgetEventType type() { return WidgetEventType.RESIZE; }
+
+    private:
+        int[2] m_oldPos;
+        int[2] m_oldDim;
 }
 
 
