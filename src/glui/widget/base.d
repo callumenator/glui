@@ -300,6 +300,32 @@ enum EdgeFlag
     RIGHT   = 0x08
 }
 
+enum ResizeFlag
+{
+    NONE    = 0x00,
+    X       = 0x01,
+    Y       = 0x02
+}
+
+enum AdaptX
+{
+    NONE,
+    RESIZE,
+    MAINTAIN_LEFT,
+    MAINTAIN_RIGHT
+}
+
+enum AdaptY
+{
+    NONE,
+    RESIZE,
+    MAINTAIN_TOP,
+    MAINTAIN_BOTTOM
+}
+
+
+
+
 
 /**
 * Widget base class.
@@ -354,10 +380,6 @@ abstract class Widget
                         m_canDrag = arg.get!bool(m_type);
                         break;
 
-                    case "canresize":
-                        m_canResize = arg.get!bool(m_type);
-                        break;
-
                     default:
                 }
             }
@@ -377,8 +399,6 @@ abstract class Widget
         @property bool drawnByRoot() const { return m_drawnByRoot; }
         @property bool drawn() const { return m_drawn; }
         @property bool canDrag() const { return m_canDrag; }
-        @property bool canResize() const { return m_canResize; }
-        @property bool resizeWithParent() const { return m_resizeWithParent; }
         @property WidgetRoot root() { return m_root; }
         @property WidgetContainer container () { return m_container; }
         @property Widget parent() { return m_parent; }
@@ -389,8 +409,6 @@ abstract class Widget
 
         // Set
         @property void canDrag(bool v) { m_canDrag = v; }
-        @property void canResize(bool v) { m_canResize = v; }
-        @property void resizeWithParent(bool v) { m_resizeWithParent = v; }
         @property void clipped(bool v) { m_clipped = v; }
         @property void focusable(bool v) { m_focusable = v; }
         @property void drawnByRoot(bool v) { m_drawnByRoot = v; }
@@ -574,22 +592,28 @@ abstract class Widget
         // Override these to control resizing of your widget
         bool requestResize(int[2] pos)
         {
-            if (!m_canResize)
+            if (!m_resize)
                 return false;
 
             m_resizing = EdgeFlag.NONE;
 
-            if (abs(pos.x - m_screenPos.x) < 10)
-                m_resizing |= EdgeFlag.LEFT;
+            if (m_resize & ResizeFlag.X)
+            {
+                if (abs(pos.x - m_screenPos.x) < 10)
+                    m_resizing |= EdgeFlag.LEFT;
 
-            if (abs(pos.x - (m_screenPos.x + m_dim.x)) < 10)
-                m_resizing |= EdgeFlag.RIGHT;
+                if (abs(pos.x - (m_screenPos.x + m_dim.x)) < 10)
+                    m_resizing |= EdgeFlag.RIGHT;
+            }
 
-            if (abs(pos.y - m_screenPos.y) < 10)
-                m_resizing |= EdgeFlag.TOP;
+            if (m_resize & ResizeFlag.Y)
+            {
+                if (abs(pos.y - m_screenPos.y) < 10)
+                    m_resizing |= EdgeFlag.TOP;
 
-            if (abs(pos.y - (m_screenPos.y + m_dim.y)) < 10)
-                m_resizing |= EdgeFlag.BOTTOM;
+                if (abs(pos.y - (m_screenPos.y + m_dim.y)) < 10)
+                    m_resizing |= EdgeFlag.BOTTOM;
+            }
 
             return m_resizing != EdgeFlag.NONE;
         }
@@ -601,30 +625,105 @@ abstract class Widget
 
             with(EdgeFlag)
             {
-                if (m_resizing & LEFT)
+                if (top)
                 {
-                    if (top) {
+                    assert(m_resize);
+
+                    if (m_resizing & LEFT)
+                    {
                         m_pos[0] += delta.x;
                         m_dim[0] -= delta.x;
                     }
-                }
 
-                if (m_resizing & RIGHT)
-                    m_dim[0] += delta.x;
+                    if (m_resizing & RIGHT)
+                        m_dim[0] += delta.x;
 
-                if (m_resizing & TOP)
-                {
-                    if (top) {
+                    if (m_resizing & TOP)
+                    {
                         m_pos[1] += delta.y;
                         m_dim[1] -= delta.y;
                     }
+
+                    if (m_resizing & BOTTOM)
+                        m_dim[1] += delta.y;
+                }
+                else
+                {
+
+                    if (m_resizing & LEFT && m_onParentResizeX)
+                    {
+                        final switch(m_onParentResizeX) with(AdaptX)
+                        {
+                            case RESIZE:
+                                m_dim[0] -= delta.x;
+                                break;
+                            case MAINTAIN_LEFT:
+                                break;
+                            case MAINTAIN_RIGHT:
+                                m_pos[0] -= delta.x;
+                                break;
+                            case NONE:
+                        }
+                    }
+
+                    if (m_resizing & RIGHT && m_onParentResizeX)
+                    {
+                        final switch(m_onParentResizeX) with(AdaptX)
+                        {
+                            case RESIZE:
+                                m_dim[0] += delta.x;
+                                break;
+                            case MAINTAIN_LEFT:
+                                break;
+                            case MAINTAIN_RIGHT:
+                                m_pos[0] += delta.x;
+                                break;
+                            case NONE:
+                        }
+                    }
+
+                    if (m_resizing & TOP && m_onParentResizeY)
+                    {
+                        final switch(m_onParentResizeY) with(AdaptY)
+                        {
+                            case RESIZE:
+                                m_dim[1] -= delta.y;
+                                break;
+                            case MAINTAIN_TOP:
+                                break;
+                            case MAINTAIN_BOTTOM:
+                                m_pos[1] -= delta.y;
+                                break;
+                            case NONE:
+                        }
+                    }
+
+                    if (m_resizing & BOTTOM && m_onParentResizeY)
+                    {
+                        final switch(m_onParentResizeY) with(AdaptY)
+                        {
+                            case RESIZE:
+                                m_dim[1] += delta.y;
+                                break;
+                            case MAINTAIN_TOP:
+                                break;
+                            case MAINTAIN_BOTTOM:
+                                m_pos[1] += delta.y;
+                                break;
+                            case NONE:
+                        }
+                    }
+
+                    // These conditionals undo repositioning which occurs automatically
+                    if (m_resizing & LEFT && !m_onParentResizeX)
+                        m_pos[0] -= delta.x;
+
+                    if (m_resizing & TOP && !m_onParentResizeY)
+                        m_pos[1] -= delta.y;
+
                 }
 
-                if (m_resizing & BOTTOM)
-                    m_dim[1] += delta.y;
-
-                assert(m_resizing != NONE);
-            }
+            } // with(EdgeFlag)
 
             geometryChanged(GeometryChangeFlag.POSITION |
                             GeometryChangeFlag.DIMENSION );
@@ -633,16 +732,12 @@ abstract class Widget
             eventSignal.emit(this, WidgetEvent(Resize(prePos, preDim)));
 
             /**
-            * Alert children, provide the old position and dimensions
-            * (the new pos/dim can be retrieved by the child)
+            * Alert children
             */
             foreach(child; m_children)
             {
-                if (child.canResize && child.resizeWithParent)
-                {
-                    child.m_resizing = m_resizing;
-                    child.resize(pos, delta, Flag!"TopLevel".no);
-                }
+                child.m_resizing = m_resizing;
+                child.resize(pos, delta, Flag!"TopLevel".no);
             }
         }
 
@@ -802,14 +897,14 @@ abstract class Widget
         bool m_drawnByRoot = true; // whether or not root _should_ draw this widget
         bool m_drawn = true; // whether or not root _will_ draw this widget
         bool m_canDrag = false;
-        bool m_canResize = false;
         bool m_blocking = false; // blocking widgets don't lose focus
         long m_lastFocused = 0;
         int m_cornerRadius = 0;
 
-        bool m_resizeWithParent = false; // when parent resizes, update my size
-        int[2] m_minDim; // when parent resizes, don't shrink me below this (initially = m_dim)
         EdgeFlag m_resizing = EdgeFlag.NONE;
+        AdaptX m_onParentResizeX = AdaptX.MAINTAIN_LEFT;
+        AdaptY m_onParentResizeY = AdaptY.MAINTAIN_TOP;
+        ResizeFlag m_resize = ResizeFlag.X | ResizeFlag.Y;
 
         WidgetContainer m_container = null; // A non-null container will transform clicks etc.
 
@@ -1882,6 +1977,19 @@ class WidgetScroll : WidgetWindow
             m_backgroundAlphaMax = m_color.a;
             m_slideAlphaMax = m_slideColor.a;
             m_slideBorderAlphaMax = m_slideBorder.a;
+            m_resize = ResizeFlag.NONE;
+
+            if (m_orient == Orientation.VERTICAL)
+            {
+                m_onParentResizeX = AdaptX.MAINTAIN_RIGHT;
+                m_onParentResizeY = AdaptY.RESIZE;
+            }
+
+            if (m_orient == Orientation.HORIZONTAL)
+            {
+                m_onParentResizeX = AdaptX.RESIZE;
+                m_onParentResizeY = AdaptY.MAINTAIN_BOTTOM;
+            }
 
             fadeInAndOut = m_hideWhenNotHovered;
             updateSlider();
@@ -2252,6 +2360,7 @@ class WidgetTree : WidgetWindow, WidgetContainer
             }
 
             m_vScroll = m_root.create!WidgetScroll(this,
+                                    arg("pos", [m_dim.x - scrollTh, 0]),
                                     arg("dim", [scrollTh, m_dim.y - scrollTh]),
                                     arg("range", [0,1000]),
                                     arg("fade", scrollFade),
@@ -2332,17 +2441,6 @@ class WidgetTree : WidgetWindow, WidgetContainer
         void update()
         {
             updateTree();
-        }
-
-        override void geometryChanged(Widget.GeometryChangeFlag flag)
-        {
-            super.geometryChanged(flag);
-
-            if (flag & Widget.GeometryChangeFlag.DIMENSION)
-            {
-                m_vScroll.setDim(m_vScroll.dim.x, m_dim.y - m_vScroll.dim.x);
-                m_vScroll.setPos(m_dim.x - m_vScroll.dim.x, 0);
-            }
         }
 
         override void event(ref Event event)
