@@ -572,8 +572,7 @@ abstract class Widget
         // Override these to control dragging of your widget
         bool requestDrag(int[2] pos)
         {
-            // By default, widgets are not draggable
-            return m_canDrag;
+            return ((pos.y - m_screenPos.y) < 20) && m_canDrag;
         }
 
         // Override this to provide customized drag logic
@@ -599,19 +598,19 @@ abstract class Widget
 
             if (m_resize & ResizeFlag.X)
             {
-                if (abs(pos.x - m_screenPos.x) < 10)
+                if (abs(pos.x - m_screenPos.x) < 4)
                     m_resizing |= EdgeFlag.LEFT;
 
-                if (abs(pos.x - (m_screenPos.x + m_dim.x)) < 10)
+                if (abs(pos.x - (m_screenPos.x + m_dim.x)) < 4)
                     m_resizing |= EdgeFlag.RIGHT;
             }
 
             if (m_resize & ResizeFlag.Y)
             {
-                if (abs(pos.y - m_screenPos.y) < 10)
+                if (abs(pos.y - m_screenPos.y) < 4)
                     m_resizing |= EdgeFlag.TOP;
 
-                if (abs(pos.y - (m_screenPos.y + m_dim.y)) < 10)
+                if (abs(pos.y - (m_screenPos.y + m_dim.y)) < 4)
                     m_resizing |= EdgeFlag.BOTTOM;
             }
 
@@ -1111,32 +1110,37 @@ class WidgetRoot : Widget
                 }
                 case MOUSECLICK:
                 {
-                    auto pos = event.get!MouseClick.pos;
-
-                    // Mouseclick could potentially change the focus, so check
-                    checkFocus(pos);
-
-                    // Check for resizing
-                    if (!m_dragging && m_focused !is null)
+                    if (event.get!MouseClick.button == MouseClick.Button.LEFT)
                     {
-                        m_resizing = m_focused.requestResize(pos);
-                        writeln(m_resizing);
+                        auto pos = event.get!MouseClick.pos;
+
+                        // Mouseclick could potentially change the focus, so check
+                        checkFocus(pos);
+
+                        // Check for resize and drag
+                        Widget current = m_focused;
+                        while(current)
+                        {
+                            if (current.requestResize(pos))
+                            {
+                                m_recieveResize = current;
+                                break;
+                            }
+                            else if (current.requestDrag(pos))
+                            {
+                                m_recieveDrag = current;
+                                break;
+                            }
+                            current = current.parent;
+                        }
                     }
-
-                    // Check for dragging
-                    if (!m_resizing && m_focused !is null)
-                    {
-                        if (m_focused.isInside(pos))
-                            m_dragging = m_focused.requestDrag(pos);
-                    }
-
-
                     break;
                 }
                 case MOUSERELEASE:
                 {
-                    m_dragging = false;
-                    m_resizing = false;
+                    m_recieveDrag = null;
+                    //m_resizing = false;
+                    m_recieveResize = null;
                 }
 
                 default:
@@ -1288,10 +1292,8 @@ class WidgetRoot : Widget
         // Check for dragging
         void checkDrag(Event event)
         {
-            if (m_focused is null)
-                return;
-
-            if (m_dragging && m_window.mouseState.left == MouseState.STATE.PRESSED)
+            if (m_recieveDrag !is null &&
+                m_window.mouseState.left == MouseState.STATE.PRESSED)
             {
                 // Only keep dragging if mouse is within our window
                 auto xpos = m_window.mouseState.xpos;
@@ -1301,7 +1303,7 @@ class WidgetRoot : Widget
                 {
                     auto pos = event.get!MouseMove.pos;
                     auto delta = event.get!MouseMove.delta;
-                    m_focused.drag(pos, delta);
+                    m_recieveDrag.drag(pos, delta);
                     needRender();
                 }
             }
@@ -1309,10 +1311,8 @@ class WidgetRoot : Widget
 
         void checkResize(Event event)
         {
-            if (m_focused is null)
-                return;
-
-            if (m_resizing && m_window.mouseState.left == MouseState.STATE.PRESSED)
+            if (m_recieveResize !is null &&
+                m_window.mouseState.left == MouseState.STATE.PRESSED)
             {
                 // Only keep resizing if mouse is within our window
                 auto xpos = m_window.mouseState.xpos;
@@ -1322,8 +1322,7 @@ class WidgetRoot : Widget
                 {
                     auto pos = event.get!MouseMove.pos;
                     auto delta = event.get!MouseMove.delta;
-                    m_focused.resize(pos, delta, Flag!"TopLevel".yes);
-
+                    m_recieveResize.resize(pos, delta, Flag!"TopLevel".yes);
                     needRender();
                 }
             }
@@ -1490,6 +1489,9 @@ class WidgetRoot : Widget
         bool m_dragging = false; // are we dragging the focused widget?
         bool m_resizing = false; // are we resizing the focused widget?
         bool m_needRender = false; // are there widgets that need to be rendered next poll?
+
+        Widget m_recieveDrag = null;
+        Widget m_recieveResize = null;
 }
 
 
@@ -1805,6 +1807,11 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
             m_canDrag = true;
         }
 
+        override bool requestDrag(int[2] pos)
+        {
+            return true;
+        }
+
         override void drag(int[2] pos, int[2] delta)
         {
             m_translation[] += delta[];
@@ -1973,7 +1980,6 @@ class WidgetScroll : WidgetWindow
                 smin = smax = 0;
 
             m_range = [smin, smax];
-
             m_backgroundAlphaMax = m_color.a;
             m_slideAlphaMax = m_slideColor.a;
             m_slideBorderAlphaMax = m_slideBorder.a;
