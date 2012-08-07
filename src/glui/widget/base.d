@@ -211,70 +211,87 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 }
 
 
-/**
-* Constrain a point to lie within the given box (x, y, w, h). GUI coords
-*/
-void constrainPoint(ref int[2] pos, int[4] box)
+alias Variant[string] WidgetArgs;
+
+void fill(T...)(WidgetArgs args, T fields)
 {
-    if (pos[0] < box[0]) pos[0] = box[0];
-    if (pos[0] > box[0] + box[2]) pos[0] = box[0] + box[2];
-    if (pos[1] < box[1]) pos[1] = box[1];
-    if (pos[1] > box[1] + box[3]) pos[1] = box[1] + box[3];
-}
+    Variant* ptr = null;
 
-
-// Allow widgets to take a list of names params
-KeyVal arg(T)(string k, T t)
-{
-    return KeyVal(k, t);
-}
-
-
-// The key/name backend
-struct KeyVal
-{
-    this(T)(string k, T v)
+    foreach(field; fields)
     {
-        key = k;
-        val = v;
-    }
-
-    string key;
-    Variant val;
-
-    // Get the value from the variant
-    T get(T)(string widgetname)
-    {
-        if (val.convertsTo!T)
-            return val.get!T;
-        else
-            assert(false, "Incorrect argument type for " ~
-                    widgetname ~ " : " ~ key ~ "\n" ~
-                    "expected " ~ T.stringof ~ ", got " ~
-                    (val.type()).to!string);
-    }
-}
-
-
-// Unpack a tuple of mixed KeyVals/KeyVal[]'s
-KeyVal[] unpack(T...)(T args)
-{
-    KeyVal[] o;
-
-    foreach(arg; args)
-    {
-        static if (typeof(arg).stringof == "KeyVal")
-            o ~= arg;
-        else if (typeof(arg).stringof == "KeyVal[]")
+        static if (is(typeof(field) dummy == KeyVal!U, U))
         {
-            foreach(arg_; arg)
+            ptr = field.key in args;
+            if (ptr !is null)
             {
-                o ~= arg_;
+                static if (is(U == int[2]))
+                    *field.val = ptr.get!(int[]);
+                else
+                    *field.val = ptr.get!U;
             }
         }
     }
-    return o;
 }
+
+KeyVal!T arg(T)(string k, ref T t)
+{
+    KeyVal!T kv;
+    kv.key = k.toLower;
+    kv.val = &t;
+    return kv;
+}
+
+struct KeyVal(T)
+{
+    string key;
+    T* val;
+}
+
+WidgetArgs widgetArgs(T...)(T args)
+{
+    WidgetArgs out_args;
+    string current = "";
+    Variant holder;
+    bool expectVal = false;
+
+    foreach(arg; args)
+    {
+        static if (isTuple!(typeof(arg)))
+        {
+            auto sub_args = widgetArgs(arg.expand);
+            foreach(key, val; sub_args)
+                out_args[key] = Variant(val);
+        }
+        else
+        {
+            if (!expectVal)
+            {
+                static if (is(typeof(arg) == string))
+                {
+                    current = arg.toLower;
+                    expectVal = true;
+                }
+                else
+                {
+                    // We don't really need to assert, but
+                    assert(false, "Error: expected argument name, not " ~ arg.to!string);
+                }
+            }
+            else
+            {
+                holder = arg;
+                out_args[current] = holder;
+                expectVal = false;
+                current = "";
+            }
+        }
+    }
+    return out_args;
+}
+
+
+
+
 
 
 /**
@@ -323,7 +340,10 @@ enum AdaptY
     MAINTAIN_BOTTOM
 }
 
-
+enum Orientation
+{
+    VERTICAL, HORIZONTAL
+}
 
 
 
@@ -343,46 +363,15 @@ abstract class Widget
         // All widgets use this event signaler
         PrioritySignal!(Widget, WidgetEvent) eventSignal;
 
-        void set(KeyVal...)(KeyVal args)
+        void set(WidgetArgs args)
         {
-            foreach(arg; unpack(args))
-            {
-                switch(arg.key.toLower)
-                {
-                    case "pos":
-                    case "position":
-                        m_pos = arg.get!(int[])(m_type);
-                        break;
-
-                    case "dim":
-                    case "dimension":
-                    case "dimensions":
-                        m_dim = arg.get!(int[])(m_type);
-                        break;
-
-                    case "cornerradius":
-                        m_cornerRadius = arg.get!int(m_type);
-                        break;
-
-                    case "showing":
-                        m_showing = arg.get!bool(m_type);
-                        break;
-
-                    case "clipped":
-                        m_clipped = arg.get!bool(m_type);
-                        break;
-
-                    case "blocking":
-                        m_blocking = arg.get!bool(m_type);
-                        break;
-
-                    case "candrag":
-                        m_canDrag = arg.get!bool(m_type);
-                        break;
-
-                    default:
-                }
-            }
+            fill(args, arg("dim", m_dim),
+                       arg("pos", m_pos),
+                       arg("cornerradius", m_cornerRadius),
+                       arg("showing", m_showing),
+                       arg("clipped", m_clipped),
+                       arg("blocking", m_blocking),
+                       arg("candrag", m_canDrag));
         }
 
 
@@ -900,10 +889,10 @@ abstract class Widget
         long m_lastFocused = 0;
         int m_cornerRadius = 0;
 
+        ResizeFlag m_resize = ResizeFlag.NONE;
         EdgeFlag m_resizing = EdgeFlag.NONE;
         AdaptX m_onParentResizeX = AdaptX.MAINTAIN_LEFT;
         AdaptY m_onParentResizeY = AdaptY.MAINTAIN_TOP;
-        ResizeFlag m_resize = ResizeFlag.X | ResizeFlag.Y;
 
         WidgetContainer m_container = null; // A non-null container will transform clicks etc.
 
@@ -1651,33 +1640,16 @@ class WidgetWindow : Widget
             needRender();
         }
 
-        void set(T...)(T args)
+        void set(WidgetArgs args)
         {
             super.set(args);
+
             m_type = "WIDGETWINDOW";
             m_cacheId = glGenLists(1);
 
-            foreach(arg; unpack(args))
-            {
-                switch(arg.key.toLower)
-                {
-                    case "bgcolor":
-                    case "background":
-                        setColor = arg.get!RGBA(m_type);
-                        break;
-
-                    case "border":
-                    case "bordercolor":
-                        setBorderColor = arg.get!RGBA(m_type);
-                        break;
-
-                    case "texture":
-                        setTexture = arg.get!GLuint(m_type);
-                        break;
-
-                    default:
-                }
-            }
+            fill(args, arg("background", m_color),
+                       arg("bordercolor", m_borderColor),
+                       arg("texture", m_texture));
         }
 
 
@@ -1801,7 +1773,7 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
 
     public:
 
-        void set(KeyVals...)(KeyVals args)
+        void set(WidgetArgs args)
         {
             super.set(args);
             m_canDrag = true;
@@ -1912,10 +1884,7 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
         float m_zoom = 1;
 }
 
-enum Orientation
-{
-    VERTICAL, HORIZONTAL
-}
+
 
 class WidgetScroll : WidgetWindow
 {
@@ -1926,54 +1895,25 @@ class WidgetScroll : WidgetWindow
 
     public:
 
-        void set(KeyVals...)(KeyVals args)
+        void set(WidgetArgs args)
         {
             super.set(args);
             m_type = "WIDGETSCROLL";
 
             int smin, smax;
-            foreach(arg; unpack(args))
+            fill(args, arg("min", smin),
+                       arg("max", smax),
+                       arg("orientation", m_orient),
+                       arg("fade", m_hideWhenNotHovered),
+                       arg("slidercolor", m_slideColor),
+                       arg("sliderborder", m_slideBorder),
+                       arg("sliderlength", m_slideLength));
+
+            if ("range" in args)
             {
-                switch(arg.key.toLower)
-                {
-                    case "min":
-                    case "slidermin":
-                        smin = arg.get!int(m_type);
-                        break;
-
-                    case "max":
-                    case "slidermax":
-                        smax = arg.get!int(m_type);
-                        break;
-
-                    case "range":
-                        auto rnge = arg.get!(int[])(m_type);
-                        smin = rnge[0];
-                        smax = rnge[1];
-                        break;
-
-                    case "orientation":
-                        m_orient = arg.get!Orientation(m_type);
-                        break;
-
-                    case "fade":
-                        m_hideWhenNotHovered = arg.get!bool(m_type);
-                        break;
-
-                    case "slidercolor":
-                        m_slideColor = arg.get!RGBA(m_type);
-                        break;
-
-                    case "sliderborder":
-                        m_slideBorder = arg.get!RGBA(m_type);
-                        break;
-
-                    case "sliderlength":
-                        m_slideLength = arg.get!float(m_type);
-                        break;
-
-                    default:
-                }
+                auto rnge = ("range" in args).get!(int[]);
+                smin = rnge[0];
+                smax = rnge[1];
             }
 
             if (smin > smax)
@@ -1999,7 +1939,6 @@ class WidgetScroll : WidgetWindow
 
             fadeInAndOut = m_hideWhenNotHovered;
             updateSlider();
-
         }
 
         // Get
@@ -2310,7 +2249,7 @@ class WidgetTree : WidgetWindow, WidgetContainer
 
     public:
 
-        void set(KeyVal...)(KeyVal args)
+        void set(WidgetArgs args)
         {
             super.set(args);
             m_type = "WIDGETTREE";
@@ -2320,61 +2259,28 @@ class WidgetTree : WidgetWindow, WidgetContainer
             RGBA scrollBd = RGBA(0,0,0,1);
             bool scrollFade = true;
             int scrollCr = 0, scrollTh = 0; // corner radius and thickness
-            foreach(arg; unpack(args))
-            {
-                switch(arg.key.toLower)
-                {
-                    case "gap":
-                        m_widgetGap = arg.get!int(m_type);
-                        break;
 
-                    case "indent":
-                        m_widgetIndent = arg.get!int(m_type);
-                        break;
-
-                    case "cliptoscrollbar":
-                        m_clipToScrollBar = arg.get!bool(m_type);
-                        break;
-
-                    case "scrollbackground":
-                        scrollBg = arg.get!RGBA(m_type);
-                        break;
-
-                    case "scrollforeground":
-                        scrollFg = arg.get!RGBA(m_type);
-                        break;
-
-                    case "scrollborder":
-                        scrollBd = arg.get!RGBA(m_type);
-                        break;
-
-                    case "scrollfade":
-                        scrollFade = arg.get!bool(m_type);
-                        break;
-
-                    case "scrollcornerradius":
-                        scrollCr = arg.get!int(m_type);
-                        break;
-
-                    case "scrollthick":
-                    case "scrollthickness":
-                        scrollTh = arg.get!int(m_type);
-                        break;
-
-                    default:
-                }
-            }
+            fill(args, arg("gap", m_widgetGap),
+                       arg("indent", m_widgetIndent),
+                       arg("cliptoscrollbar", m_clipToScrollBar),
+                       arg("scrollbackground", scrollBg),
+                       arg("scrollforeground", scrollFg),
+                       arg("scrollborder", scrollBd),
+                       arg("scrollfade", scrollFade),
+                       arg("scrollcornerradius", scrollCr),
+                       arg("scrollthick", scrollTh));
 
             m_vScroll = m_root.create!WidgetScroll(this,
-                                    arg("pos", [m_dim.x - scrollTh, 0]),
-                                    arg("dim", [scrollTh, m_dim.y - scrollTh]),
-                                    arg("range", [0,1000]),
-                                    arg("fade", scrollFade),
-                                    arg("slidercolor", scrollFg),
-                                    arg("sliderborder", scrollBd),
-                                    arg("background", scrollBg),
-                                    arg("cornerRadius", scrollCr),
-                                    arg("orientation", Orientation.VERTICAL));
+                                    widgetArgs(
+                                    "pos", [m_dim.x - scrollTh, 0],
+                                    "dim", [scrollTh, m_dim.y - scrollTh],
+                                    "range", [0,1000],
+                                    "fade", scrollFade,
+                                    "slidercolor", scrollFg,
+                                    "sliderborder", scrollBd,
+                                    "background", scrollBg,
+                                    "cornerRadius", scrollCr,
+                                    "orientation", Orientation.VERTICAL));
 
         }
 

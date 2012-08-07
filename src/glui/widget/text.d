@@ -88,7 +88,7 @@ class WidgetText : WidgetWindow
 
     public:
 
-        void set(KeyVal...)(Font font, KeyVal args)
+        void set(Font font, WidgetArgs args)
         {
             super.set(args);
 
@@ -106,77 +106,24 @@ class WidgetText : WidgetWindow
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
             bool scrollFade = true;
-            int scrollCr = 0;
+            int scrollCr = 0, scrollTh = 0;
 
-            foreach(arg; unpack(args))
-            {
-                switch(arg.key.toLower)
-                {
-                    case "textcolor":
-                        m_textColor = arg.get!RGBA(m_type);
-                        break;
-
-                    case "textbackground":
-                        m_textBgColor = arg.get!RGBA(m_type);
-                        break;
-
-                    case "editable":
-                        m_editable= arg.get!bool(m_type);
-                        break;
-
-                    case "vscroll":
-                        m_allowVScroll= arg.get!bool(m_type);
-                        break;
-
-                    case "hscroll":
-                        m_allowHScroll= arg.get!bool(m_type);
-                        break;
-
-                    case "repeatdelay":
-                        m_repeatDelayTime = arg.get!int(m_type);
-                        break;
-
-                    case "repeathold":
-                        m_repeatHoldTime = arg.get!int(m_type);
-                        break;
-
-                    case "caretblinkdelay":
-                        m_caretBlinkDelay = arg.get!int(m_type);
-                        break;
-
-                    case "valign":
-                    case "verticalalign":
-                        m_vAlign = arg.get!VAlign(m_type);
-                        break;
-
-                    case "halign":
-                    case "horizontalalign":
-                        m_hAlign = arg.get!HAlign(m_type);
-                        break;
-
-                    case "scrollbackground":
-                        scrollBg = arg.get!RGBA(m_type);
-                        break;
-
-                    case "scrollcolor":
-                        scrollFg = arg.get!RGBA(m_type);
-                        break;
-
-                    case "scrollborder":
-                        scrollBd = arg.get!RGBA(m_type);
-                        break;
-
-                    case "scrollfade":
-                        scrollFade = arg.get!bool(m_type);
-                        break;
-
-                    case "scrollcornerradius":
-                        scrollCr = arg.get!int(m_type);
-                        break;
-
-                    default:
-                }
-            }
+            fill(args, arg("textcolor", m_textColor),
+                       arg("textbackground", m_textBgColor),
+                       arg("editable", m_editable),
+                       arg("vscroll", m_allowVScroll),
+                       arg("hscroll", m_allowHScroll),
+                       arg("repeatdelay", m_repeatDelayTime),
+                       arg("repeathold", m_repeatHoldTime),
+                       arg("caretblinkdelay", m_caretBlinkDelay),
+                       arg("valign", m_vAlign),
+                       arg("halign", m_hAlign),
+                       arg("scrollbackground", scrollBg),
+                       arg("scrollforeground", scrollFg),
+                       arg("scrollborder", scrollBd),
+                       arg("scrollfade", scrollFade),
+                       arg("scrollcornerradius", scrollCr),
+                       arg("scrollthick", scrollTh));
 
             // Set some reasonable defaults
             if (m_repeatDelayTime == -1) m_repeatDelayTime = 20;
@@ -190,27 +137,31 @@ class WidgetText : WidgetWindow
             if (m_allowVScroll)
             {
                 m_vscroll = m_root.create!WidgetScroll(this,
-                                    arg("dim", [20, m_dim.y - 20]),
-                                    arg("range", [0,1000]),
-                                    arg("fade", scrollFade),
-                                    arg("slidercolor", scrollFg),
-                                    arg("sliderborder", scrollBd),
-                                    arg("background", scrollBg),
-                                    arg("cornerRadius", scrollCr),
-                                    arg("orientation", Orientation.VERTICAL));
+                                    widgetArgs(
+                                    "pos", [m_dim.x - scrollTh, 0],
+                                    "dim", [scrollTh, m_dim.y - scrollTh],
+                                    "range", [0,1000],
+                                    "fade", scrollFade,
+                                    "slidercolor", scrollFg,
+                                    "sliderborder", scrollBd,
+                                    "background", scrollBg,
+                                    "cornerRadius", scrollCr,
+                                    "orientation", Orientation.VERTICAL));
             }
 
             if (m_allowHScroll)
             {
                 m_hscroll = m_root.create!WidgetScroll(this,
-                                    arg("dim", [20, m_dim.y - 20]),
-                                    arg("range", [0,1000]),
-                                    arg("fade", scrollFade),
-                                    arg("slidercolor", scrollFg),
-                                    arg("sliderborder", scrollBd),
-                                    arg("background", scrollBg),
-                                    arg("cornerRadius", scrollCr),
-                                    arg("orientation", Orientation.HORIZONTAL));
+                                    widgetArgs(
+                                    "pos", [m_dim.x - scrollTh, 0],
+                                    "dim", [scrollTh, m_dim.y - scrollTh],
+                                    "range", [0,1000],
+                                    "fade", scrollFade,
+                                    "slidercolor", scrollFg,
+                                    "sliderborder", scrollBd,
+                                    "background", scrollBg,
+                                    "cornerRadius", scrollCr,
+                                    "orientation", Orientation.HORIZONTAL));
             }
         }
 
@@ -568,7 +519,7 @@ class WidgetLabel : WidgetText
     }
 
     public:
-        void set(KeyVals...)(Font font, KeyVals args)
+        void set(Font font, WidgetArgs args)
         {
             super.set(font, args);
             m_type = "WIDGETLABEL";
@@ -580,44 +531,35 @@ class WidgetLabel : WidgetText
             int[2] dims = [0,0];
             bool fixedWidth = false, fixedHeight = false;
 
-            foreach(arg; unpack(args))
+            fill(args, arg("fixedwidth", fixedWidth),
+                       arg("fixedheight", fixedHeight));
+
+            if ("fixeddims" in args)
             {
-                switch(arg.key.toLower)
+                auto v = ("fixeddims" in args).get!bool;
+                fixedWidth = v;
+                fixedHeight = v;
+            }
+
+            if ("text" in args)
+            {
+                auto s = ("text" in args).get!string;
+                m_text.set(s);
+
+                // Set default dimensions
+                auto lines = split(s, "\n");
+                float xdim = 0;
+                foreach(line; lines)
                 {
-                    case "fixeddims":
-                        fixedWidth = arg.get!bool(m_type);
-                        fixedHeight = arg.get!bool(m_type);
-                        break;
-
-                    case "fixedwidth":
-                        fixedWidth = arg.get!bool(m_type);
-                        break;
-
-                    case "fixedheigth":
-                        fixedHeight = arg.get!bool(m_type);
-                        break;
-
-                    case "text":
-                        auto s = arg.get!string(m_type);
-                        m_text.set(s);
-
-                        // Set default dimensions
-                        auto lines = split(s, "\n");
-                        float xdim = 0;
-                        foreach(line; lines)
-                        {
-                            auto l = 1.2*getLineLength(line, m_font);
-                            if (l > xdim)
-                                xdim = l;
-                        }
-
-                        dims = [cast(int)xdim,
-                                cast(int)(1.5*lines.length*m_font.m_lineHeight)];
-
-                        break;
-
-                    default:
+                    auto l = 1.2*getLineLength(line, m_font);
+                    if (l > xdim)
+                        xdim = l;
                 }
+
+                dims = [cast(int)xdim,
+                        cast(int)(1.5*lines.length*m_font.m_lineHeight)];
+
+
             }
 
             if (fixedWidth) dims.x = m_dim.x;
