@@ -35,46 +35,49 @@ int main()
 
     WidgetRoot root = new WidgetRoot(Window("window1"));
 
-    auto textl = root.create!WidgetText(null, courier,
-                                        arg("dim", [480, 680]),
-                                        arg("pos", [10,10]),
-                                        arg("texture", loadTexture("../media/images/dark1.png")),
-                                        arg("border", RGBA(1,1,1,1)),
-                                        arg("editable", true),
-                                        arg("vscroll", true),
-                                        arg("candrag", true));
+    auto textl = root.create!WidgetText(null, courier, widgetArgs(
+                                        "dim", [480, 680],
+                                        "pos", [10,10],
+                                        "texture", loadTexture("../media/images/dark1.png"),
+                                        "border", RGBA(1,1,1,1),
+                                        "editable", true,
+                                        "vscroll", true,
+                                        "candrag", true));
 
-    auto layout = root.create!WidgetTree(null,
-                                         arg("dim", [300, 400]),
-                                         arg("pos", [500,10]),
-                                         arg("background", RGBA(0,.9,.3,.5)),
-                                         arg("border", RGBA(1,1,1,1)),
-                                         arg("candrag", true));
+    auto layout = root.create!WidgetTree(null, widgetArgs(
+                                          "dim", [300, 400],
+                                          "pos", [500,10],
+                                          "background", RGBA(0,.9,.3,.5),
+                                          "border", RGBA(1,1,1,1),
+                                          "clipToScrollBar", false,
+                                          "scrollFade", false,
+                                          "scrollforeground", RGBA(0,0,0,1),
+                                          "scrollborder", RGBA(1,1,1,1)));
 
     foreach(i; 0..5)
     {
-        auto branch = layout.root.create!WidgetLabel(null, lacuna,
-                                                     arg("text", "Level 0, Item " ~ i.to!string),
-                                                     arg("dim", [200,25]),
-                                                     arg("background", RGBA(97,48,145,255)));
+        auto branch = layout.root.create!WidgetLabel(null, lacuna, widgetArgs(
+                                                      "text", "Level 0, Item " ~ i.to!string,
+                                                      "dim", [200,25],
+                                                      "background", RGBA(97,48,145,255)));
         layout.add(null, branch, Flag!"NoUpdate".yes);
 
         foreach(j; 0..5)
         {
-            auto lab = root.create!WidgetLabel(null, courier,
-                                               arg("text", "Level 1, Item " ~ j.to!string),
-                                               arg("dim", [200,20]),
-                                               arg("fixedwidth", true),
-                                               arg("background", RGBA(96,159,214,255)));
+            auto lab = root.create!WidgetLabel(null, courier, widgetArgs(
+                                                "text", "Level 1, Item " ~ j.to!string,
+                                                "dim", [200,20],
+                                                "fixedwidth", true,
+                                                "background", RGBA(96,159,214,255)));
 
             layout.add(branch, lab, Flag!"NoUpdate".yes);
 
             foreach(k; 0..5)
             {
-                auto leaf = root.create!WidgetLabel(null, lacuna,
-                                                          arg("text", "Level 2, Item " ~ k.to!string),
-                                                          arg("dim", [200,25]),
-                                                          arg("background", RGBA(153,31,131,255)));
+                auto leaf = root.create!WidgetLabel(null, lacuna, widgetArgs(
+                                                           "text", "Level 2, Item " ~ k.to!string,
+                                                           "dim", [200,25],
+                                                           "background", RGBA(153,31,131,255)));
 
                 layout.add(lab, leaf, Flag!"NoUpdate".yes);
             }

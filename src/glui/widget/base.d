@@ -2258,7 +2258,7 @@ class WidgetTree : WidgetWindow, WidgetContainer
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
             bool scrollFade = true;
-            int scrollCr = 0, scrollTh = 0; // corner radius and thickness
+            int scrollCr = 0, scrollTh = 10; // corner radius and thickness
 
             fill(args, arg("gap", m_widgetGap),
                        arg("indent", m_widgetIndent),

@@ -106,7 +106,7 @@ class WidgetText : WidgetWindow
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
             bool scrollFade = true;
-            int scrollCr = 0, scrollTh = 0;
+            int scrollCr = 0, scrollTh = 10;
 
             fill(args, arg("textcolor", m_textColor),
                        arg("textbackground", m_textBgColor),
