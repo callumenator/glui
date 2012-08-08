@@ -54,6 +54,13 @@ class WidgetText : WidgetWindow
         @property void halign(HAlign v) { m_hAlign = v; }
         @property void valign(VAlign v) { m_vAlign = v; }
 
+        @property void highlighter(SyntaxHighlighter v)
+        {
+            m_highlighter = v;
+            m_refreshCache = true;
+            needRender();
+        }
+
         @property void text(string v)
         {
             m_text.set(v);
@@ -118,6 +125,7 @@ class WidgetText : WidgetWindow
                        arg("caretblinkdelay", m_caretBlinkDelay),
                        arg("valign", m_vAlign),
                        arg("halign", m_hAlign),
+                       arg("highlighter", m_highlighter),
                        arg("scrollbackground", scrollBg),
                        arg("scrollforeground", scrollFg),
                        arg("scrollborder", scrollBd),
@@ -219,7 +227,10 @@ class WidgetText : WidgetWindow
             {
                 // Text has not been cached, so cache and draw it
                 glNewList(m_cacheId, GL_COMPILE_AND_EXECUTE);
-                renderCharacters(m_font, m_text.text, m_textColor);
+                if (m_highlighter)
+                    renderCharacters(m_font, m_text.text, m_highlighter);
+                else
+                    renderCharacters(m_font, m_text.text, m_textColor);
                 glEndList();
                 m_refreshCache = false;
             }
@@ -504,6 +515,8 @@ class WidgetText : WidgetWindow
         long m_repeatDelayTime;
 
         bool m_editable = true; // can the text be edited?
+
+        SyntaxHighlighter m_highlighter = null; // add in a syntax highlighter
 
         GLuint m_cacheId = 0; // display list for caching
         bool m_refreshCache = true;

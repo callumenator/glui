@@ -15,6 +15,8 @@ import
     std.path,
     std.conv,
     std.stdio,
+    std.string,
+    std.algorithm,
     std.math;
 
 import
@@ -22,6 +24,9 @@ import
     derelict.opengl.gl,
     derelict.opengl.extfuncs,
     derelict.util.exception;
+
+import
+    glui.widget.base;
 
 
 public
@@ -60,7 +65,6 @@ public
             else
                 return 0;
         }
-
     }
 
     // Create a font from the given file, with the given size
@@ -167,7 +171,7 @@ public
         // Bind the texture atlas
         glBindTexture(GL_TEXTURE_2D, font.m_texture);
         // Set texture environment
-        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     }
 
     // Call after rendering characters from a given font
@@ -285,6 +289,48 @@ public
                 xoffset += font.m_wids[index];
                 glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
             }
+        }
+
+        unbindFontBuffers(font);
+    }
+
+
+    // Render a string of characters at the current position, with highlighted syntax
+    void renderCharacters(ref const(Font) font, string text, SyntaxHighlighter highlighter)
+    in
+    {
+        assert(font !is null, "Null font passed to truetype.renderCharacter");
+    }
+    body
+    {
+        bindFontBuffers(font);
+
+        int xoffset = 0;
+        auto lines = splitLines(text);
+        float[4] bgcolor = [0f,0f,0f,0f];
+
+        foreach(line; lines)
+        {
+            foreach(item; highlighter.parse(line))
+            {
+                foreach(char c; item.text)
+                {
+                    auto index = font.index(c);
+
+                    glColor4fv(bgcolor.ptr);
+                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
+                    glColor4fv(item.color.v.ptr);
+                    glTranslatef(font.m_xoffs[index], 0, 0);
+                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
+
+                    xoffset += font.m_wids[index];
+                    glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+                }
+            }
+
+            glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
+            xoffset = 0;
         }
 
         unbindFontBuffers(font);
@@ -567,3 +613,205 @@ private
     }
 
 } // private functions
+
+
+abstract class SyntaxHighlighter
+{
+    struct ColoredText
+    {
+        string text;
+        RGBA color;
+    }
+
+    ColoredText[] parse(string text);
+
+    RGBA color(string word) pure
+    {
+        auto ptr = word in m_syntax;
+        if (ptr)
+            return m_color[*ptr];
+        else
+            return m_defaultColor;
+    }
+
+    private:
+        int[string] m_syntax;
+        RGBA[] m_color;
+        RGBA m_defaultColor = {1,1,1,1};
+}
+
+
+class DSyntaxHighlighter : SyntaxHighlighter
+{
+    this()
+    {
+        m_color =
+            [ RGBA(1,0,0,1) ];
+
+        m_syntax =
+        [
+            "abstract" : 0,
+            "alias" : 0,
+            "align" : 0,
+            "asm" : 0,
+            "assert" : 0,
+            "auto" : 0,
+            "body" : 0,
+            "bool" : 0,
+            "break" : 0,
+            "byte" : 0,
+            "case" : 0,
+            "cast" : 0,
+            "catch" : 0,
+            "cdouble" : 0,
+            "cent" : 0,
+            "cfloat" : 0,
+            "char" : 0,
+            "class" : 0,
+            "const" : 0,
+            "continue" : 0,
+            "creal" : 0,
+            "dchar" : 0,
+            "debug" : 0,
+            "default" : 0,
+            "delegate" : 0,
+            "delete" : 0,
+            "deprecated" : 0,
+            "@disable" : 0,
+            "do" : 0,
+            "double" : 0,
+            "dstring" : 0,
+            "else" : 0,
+            "enum" : 0,
+            "export" : 0,
+            "extern" : 0,
+            "false" : 0,
+            "__FILE__" : 0,
+            "finally" : 0,
+            "final" : 0,
+            "float" : 0,
+            "foreach_reverse" : 0,
+            "foreach" : 0,
+            "for" : 0,
+            "function" : 0,
+            "goto" : 0,
+            "__gshared" : 0,
+            "idouble" : 0,
+            "ifloat" : 0,
+            "if" : 0,
+            "immutable" : 0,
+            "import" : 0,
+            "inout" : 0,
+            "interface" : 0,
+            "in" : 0,
+            "int" : 0,
+            "invariant" : 0,
+            "ireal" : 0,
+            "is" : 0,
+            "lazy" : 0,
+            "__LINE__" : 0,
+            "long" : 0,
+            "macro" : 0,
+            "mixin" : 0,
+            "module" : 0,
+            "new" : 0,
+            "nothrow" : 0,
+            "null" : 0,
+            "out" : 0,
+            "override" : 0,
+            "package" : 0,
+            "pragma" : 0,
+            "private" : 0,
+            "@property" : 0,
+            "protected" : 0,
+            "public" : 0,
+            "pure" : 0,
+            "real" : 0,
+            "ref" : 0,
+            "return" : 0,
+            "@safe" : 0,
+            "scope" : 0,
+            "shared" : 0,
+            "short" : 0,
+            "static" : 0,
+            "string" : 0,
+            "struct" : 0,
+            "super" : 0,
+            "switch" : 0,
+            "synchronized" : 0,
+            "@system" : 0,
+            "template" : 0,
+            "this" : 0,
+            "__thread" : 0,
+            "throw" : 0,
+            "__traits" : 0,
+            "true" : 0,
+            "@trusted" : 0,
+            "try" : 0,
+            "typedef" : 0,
+            "typeid" : 0,
+            "typeof" : 0,
+            "ubyte" : 0,
+            "ucent" : 0,
+            "uint" : 0,
+            "ulong" : 0,
+            "union" : 0,
+            "unittest" : 0,
+            "ushort" : 0,
+            "version" : 0,
+            "void" : 0,
+            "volatile" : 0,
+            "wchar" : 0,
+            "while" : 0,
+            "with" : 0,
+            "wstring" : 0
+        ];
+    }
+
+    ColoredText[] parse(string text)
+    {
+        ColoredText[] t;
+        string buf;
+
+        foreach(c; text)
+        {
+            if (c == ' ')
+            {
+                t ~= [ColoredText(buf, color(buf)),
+                      ColoredText(" ", color(" "))];
+                buf.clear;
+                continue;
+            }
+            else if (c == '(')
+            {
+                t ~= [ColoredText(buf, color(buf)),
+                      ColoredText("(", color("("))];
+                buf.clear;
+                continue;
+            }
+            else if (c == ')')
+            {
+                t ~= [ColoredText(buf, color(buf)),
+                      ColoredText(")", color(")"))];
+                buf.clear;
+                continue;
+            }
+            else if (c == ';')
+            {
+                t ~= [ColoredText(buf, color(buf)),
+                      ColoredText(";", color(";"))];
+                buf.clear;
+                continue;
+            }
+            buf ~= c;
+        }
+
+        if (buf.length)
+            t ~= ColoredText(buf, color(buf));
+
+        return t;
+    }
+
+} // class DSyntaxHighlighter
+
+
