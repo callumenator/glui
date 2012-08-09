@@ -371,7 +371,8 @@ abstract class Widget
                        arg("showing", m_showing),
                        arg("clipped", m_clipped),
                        arg("blocking", m_blocking),
-                       arg("candrag", m_canDrag));
+                       arg("candrag", m_canDrag),
+                       arg("resize", m_resize));
         }
 
 
@@ -1752,7 +1753,7 @@ class WidgetWindow : Widget
 
     package:
 
-        RGBA m_color = {0,0,0,0};
+        RGBA m_color = {0,0,0,1};
         RGBA m_borderColor = {0,0,0,0};
         GLuint m_texture = 0;
         GLuint m_cacheId = 0; // glDisplayList for caching

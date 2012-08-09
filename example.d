@@ -40,7 +40,7 @@ int main()
                                         "dim", [480, 680],
                                         "pos", [10,10],
                                         "texture", loadTexture("../media/images/dark1.png"),
-                                        "border", RGBA(1,1,1,1),
+                                        "bordercolor", RGBA(1,1,1,1),
                                         "editable", true,
                                         "vscroll", true,
                                         "candrag", true));
@@ -48,8 +48,9 @@ int main()
     auto layout = root.create!WidgetTree(null, widgetArgs(
                                           "dim", [300, 400],
                                           "pos", [500,10],
-                                          "background", RGBA(0,.9,.3,.5),
-                                          "border", RGBA(1,1,1,1),
+                                          "background", RGBA(0,.9,.3,.3),
+                                          "bordercolor", RGBA(1,1,1,1),
+                                          "resize", ResizeFlag.X | ResizeFlag.Y,
                                           "clipToScrollBar", false,
                                           "scrollFade", false,
                                           "scrollforeground", RGBA(0,0,0,1),
@@ -69,6 +70,8 @@ int main()
                                                 "text", "Level 1, Item " ~ j.to!string,
                                                 "dim", [200,20],
                                                 "fixedwidth", true,
+                                                "cornerRadius", 15,
+                                                "bordercolor", RGBA(0,0,0,1),
                                                 "background", RGBA(96,159,214,255)));
 
             layout.add(branch, lab, Flag!"NoUpdate".yes);
