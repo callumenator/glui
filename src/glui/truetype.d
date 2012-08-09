@@ -17,6 +17,7 @@ import
     std.stdio,
     std.string,
     std.algorithm,
+    std.array,
     std.math;
 
 import
@@ -171,7 +172,7 @@ public
         // Bind the texture atlas
         glBindTexture(GL_TEXTURE_2D, font.m_texture);
         // Set texture environment
-        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     }
 
     // Call after rendering characters from a given font
@@ -228,25 +229,20 @@ public
         int xoffset = 0;
         foreach(char c; text)
         {
-            bool norender = false;
-
             if (c == '\n')
             {
                 glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
                 xoffset = 0;
-                norender = true;
+                continue;
             }
 
-            if (!norender)
-            {
-                auto index = font.index(c);
+            auto index = font.index(c);
 
-                glTranslatef(font.m_xoffs[index], 0, 0);
-                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
+            glTranslatef(font.m_xoffs[index], 0, 0);
+            glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
-                xoffset += font.m_wids[index];
-                glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
-            }
+            xoffset += font.m_wids[index];
+            glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
         }
 
         unbindFontBuffers(font);
@@ -266,29 +262,24 @@ public
         int xoffset = 0;
         foreach(char c; text)
         {
-            bool norender = false;
-
             if (c == '\n')
             {
                 glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
                 xoffset = 0;
-                norender = true;
+                continue;
             }
 
-            if (!norender)
-            {
-                auto index = font.index(c);
+            auto index = font.index(c);
 
-                glColor4fv(bgcolor.ptr);
-                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+            glColor4fv(bgcolor.ptr);
+            glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
-                glColor4fv(color.ptr);
-                glTranslatef(font.m_xoffs[index], 0, 0);
-                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
+            glColor4fv(color.ptr);
+            glTranslatef(font.m_xoffs[index], 0, 0);
+            glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
-                xoffset += font.m_wids[index];
-                glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
-            }
+            xoffset += font.m_wids[index];
+            glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
         }
 
         unbindFontBuffers(font);
@@ -306,31 +297,31 @@ public
         bindFontBuffers(font);
 
         int xoffset = 0;
-        auto lines = splitLines(text);
         float[4] bgcolor = [0f,0f,0f,0f];
 
-        foreach(line; lines)
+        foreach(item; highlighter.parse(text))
         {
-            foreach(item; highlighter.parse(line))
+            foreach(char c; item.text)
             {
-                foreach(char c; item.text)
+                if (c == '\n')
                 {
-                    auto index = font.index(c);
-
-                    glColor4fv(bgcolor.ptr);
-                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
-
-                    glColor4fv(item.color.v.ptr);
-                    glTranslatef(font.m_xoffs[index], 0, 0);
-                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
-
-                    xoffset += font.m_wids[index];
-                    glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+                    glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
+                    xoffset = 0;
+                    continue;
                 }
-            }
 
-            glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
-            xoffset = 0;
+                auto index = font.index(c);
+
+                glColor4fv(bgcolor.ptr);
+                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
+                glColor4fv(item.color.v.ptr);
+                glTranslatef(font.m_xoffs[index], 0, 0);
+                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
+
+                xoffset += font.m_wids[index];
+                glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+            }
         }
 
         unbindFontBuffers(font);
@@ -484,7 +475,7 @@ private
 
                 for (j = 0; j < height; ++j)
                     for (i = 0; i < width; ++i)
-                        fullData[offset + (i+(j*fullWidth))] = 255;
+                        fullData[offset + (i+(j*fullWidth))] = 0;
 
                 vxlo = 0;
                 vxhi = font.m_maxWidth;
@@ -646,10 +637,22 @@ class DSyntaxHighlighter : SyntaxHighlighter
     this()
     {
         m_color =
-            [ RGBA(1,0,0,1) ];
+        [
+            RGBA(69,138,118,255),  // teal
+            RGBA(170,170,170,255), // light grey
+        ];
 
         m_syntax =
         [
+            // PARENTHESIS etc
+            "(" : 1,
+            ")" : 1,
+            "{" : 1,
+            "}" : 1,
+            "[" : 1,
+            "]" : 1,
+
+            // KEYWORDS
             "abstract" : 0,
             "alias" : 0,
             "align" : 0,
@@ -775,33 +778,30 @@ class DSyntaxHighlighter : SyntaxHighlighter
 
         foreach(c; text)
         {
-            if (c == ' ')
+            switch (c)
             {
-                t ~= [ColoredText(buf, color(buf)),
-                      ColoredText(" ", color(" "))];
-                buf.clear;
-                continue;
-            }
-            else if (c == '(')
-            {
-                t ~= [ColoredText(buf, color(buf)),
-                      ColoredText("(", color("("))];
-                buf.clear;
-                continue;
-            }
-            else if (c == ')')
-            {
-                t ~= [ColoredText(buf, color(buf)),
-                      ColoredText(")", color(")"))];
-                buf.clear;
-                continue;
-            }
-            else if (c == ';')
-            {
-                t ~= [ColoredText(buf, color(buf)),
-                      ColoredText(";", color(";"))];
-                buf.clear;
-                continue;
+                case '\n':
+                case ' ':
+                {
+                    t ~= [ColoredText(buf, color(buf)),
+                          ColoredText([c], RGBA(0,0,0,0))];
+                    buf.clear;
+                    continue;
+                }
+                case '(':
+                case ')':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case ';':
+                {
+                    t ~= [ColoredText(buf, color(buf)),
+                          ColoredText([c], color([c]))];
+                    buf.clear;
+                    continue;
+                }
+                default:
             }
             buf ~= c;
         }

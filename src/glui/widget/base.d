@@ -1680,8 +1680,8 @@ class WidgetWindow : Widget
 
                 if (m_texture != 0)
                 {
-                    glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
-                    glEnable(GL_TEXTURE_2D);
+                    //glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
+                    //glEnable(GL_TEXTURE_2D);
                     glBindTexture(GL_TEXTURE_2D, m_texture);
 
                     glColor4fv(m_color.ptr);
@@ -1692,7 +1692,6 @@ class WidgetWindow : Widget
                         mixin(squareBox(true));
                         glEnd();
                         glBindTexture(GL_TEXTURE_2D, 0);
-                        glPopAttrib();
 
                         glColor4fv(m_borderColor.ptr);
                         glBegin(GL_LINE_LOOP);
@@ -1705,7 +1704,6 @@ class WidgetWindow : Widget
                         mixin(roundedBox(arcResolution, true));
                         glEnd();
                         glBindTexture(GL_TEXTURE_2D, 0);
-                        glPopAttrib();
 
                         glColor4fv(m_borderColor.ptr);
                         glBegin(GL_LINE_LOOP);
@@ -1754,7 +1752,7 @@ class WidgetWindow : Widget
 
     package:
 
-        RGBA m_color = {0,0,0,1};
+        RGBA m_color = {0,0,0,0};
         RGBA m_borderColor = {0,0,0,0};
         GLuint m_texture = 0;
         GLuint m_cacheId = 0; // glDisplayList for caching
