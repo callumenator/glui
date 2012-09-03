@@ -206,17 +206,17 @@ class WidgetText : WidgetWindow
             }
         }
 
-        override void render()
+        override void render(Flag!"RenderChildren" recurse = Flag!"RenderChildren".yes)
         {
-            super.render();
+            super.render(Flag!"RenderChildren".no);
 
             if (m_font is null)
                 return;
 
+            glPushMatrix();
             setCoords();
-            glPushMatrix();
             glScalef(1,-1,1);
-            glPushMatrix();
+
 
             long before = timerMsecs;
             if (!m_refreshCache)
@@ -236,11 +236,14 @@ class WidgetText : WidgetWindow
             }
             //std.stdio.writeln("Render: ", cast(float)(timerMsecs - before)/m_text.text.length);
 
-            glPopMatrix();
+
             glPopMatrix();
 
             if (m_editable && m_drawCaret && (amIFocused || isAChildFocused) )
                 renderCaret();
+
+            if (recurse)
+                renderChildren();
         }
 
         // Draw the caret
@@ -248,7 +251,7 @@ class WidgetText : WidgetWindow
         {
             glPushMatrix();
                 glLoadIdentity();
-                glTranslatef(m_parent.screenPos.x, m_parent.screenPos.y, 0);
+                glTranslatef(m_parent.screenPos.x + m_pos.x, m_parent.screenPos.y + m_pos.y, 0);
                 setCoords();
                 glTranslatef(m_caretPos[0], m_caretPos[1], 0);
                 glScalef(1,-1,1);
@@ -293,7 +296,7 @@ class WidgetText : WidgetWindow
                 }
             }
 
-            glTranslatef(m_pos.x + 5, m_pos.y + yoffset + m_font.m_lineHeight, 0);
+            glTranslatef(0*m_pos.x + 5, 0*m_pos.y + yoffset + m_font.m_lineHeight, 0);
 
             // Translate by the scroll amounts as well...
             if (m_allowHScroll)

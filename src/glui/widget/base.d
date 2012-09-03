@@ -126,8 +126,11 @@ bool isInside(Widget w, int[2] point)
 {
     int[4] clip = w.clip;
 
-    if (w.container) // Allow the widgets container to transform the clip box
-        clip = w.container.transformClip(w);
+    if (w.parent) // Allow the widgets container to transform the clip box
+    {
+        w.parent.transformPos(w, point);
+        w.parent.transformClip(w, clip);
+    }
 
     auto radius = min(w.cornerRadius, w.dim.x/2, w.dim.y/2);  // TODO: is this a slow point?
 
@@ -165,19 +168,19 @@ bool overlap(Widget w1, Widget w2)
     auto p1 = w1.screenPos;
     auto d1 = w1.dim;
 
-    if (w1.container) // Allow widget container to transform geometry
+    if (w1.parent) // Allow widget container to transform geometry
     {
-        p1 = w1.container.transformScreenPos(w1);
-        d1 = w1.container.transformDim(w1);
+        w1.parent.transformPos(w1, p1);
+        w1.parent.transformDim(w1, d1);
     }
 
     auto p2 = w2.screenPos;
     auto d2 = w2.dim;
 
-    if (w2.container) // Allow widget container to transform geometry
+    if (w2.parent) // Allow widget container to transform geometry
     {
-        p2 = w2.container.transformScreenPos(w2);
-        d2 = w2.container.transformDim(w2);
+        w2.parent.transformPos(w2, p2);
+        w2.parent.transformDim(w2, d2);
     }
 
     if (p1.x + d1.x < p2.x) return false; // a is left of b
@@ -291,12 +294,10 @@ WidgetArgs widgetArgs(T...)(T args)
 
 
 
-
-
-
 /**
 * Anything which contains widgets must implement these functions
 */
+
 interface WidgetContainer
 {
     // Transforms on a widget's geometry
@@ -386,11 +387,8 @@ abstract class Widget
         @property bool blocking() const { return m_blocking; }
         @property bool clipped() const { return m_clipped; }
         @property bool focusable() const { return m_focusable; }
-        @property bool drawnByRoot() const { return m_drawnByRoot; }
-        @property bool drawn() const { return m_drawn; }
         @property bool canDrag() const { return m_canDrag; }
         @property WidgetRoot root() { return m_root; }
-        @property WidgetContainer container () { return m_container; }
         @property Widget parent() { return m_parent; }
         @property Widget[] children() { return m_children; }
         long lastFocused() const { return m_lastFocused; }
@@ -401,7 +399,6 @@ abstract class Widget
         @property void canDrag(bool v) { m_canDrag = v; }
         @property void clipped(bool v) { m_clipped = v; }
         @property void focusable(bool v) { m_focusable = v; }
-        @property void drawnByRoot(bool v) { m_drawnByRoot = v; }
         @property void blocking(bool v) { m_blocking = v; }
         @property void showing(bool v) { m_showing = v; needRender(); }
         @property void root(WidgetRoot root) { m_root = root; }
@@ -419,7 +416,7 @@ abstract class Widget
                 newParent = m_root;
 
             m_parent = newParent; // set new parent
-            setContainer(newParent.container);
+            //setContainer(newParent.container);
             newParent.addChild(this); // add me to new parent's child list
             m_lastFocused = m_parent.lastFocused + 1;
         }
@@ -521,8 +518,70 @@ abstract class Widget
             m_root.needRender();
         }
 
+        //
+        void preRender()
+        {
+            if (m_clipped)
+            {
+                auto clip = m_clip;
+                clipboxToScreen(clip);
+                glScissor(clip[0], clip[1], clip[2], clip[3]);
+            }
+
+            glPushMatrix();
+            glTranslatef(m_pos.x, m_pos.y, 0);
+        }
+
+        void postRender()
+        {
+            glPopMatrix();
+            glScissor(0, 0, m_root.dim.x, m_root.dim.y);
+            renderClip();
+        }
+
         // Render this widget
-        void render() {}
+        void render(Flag!"RenderChildren" recurse)
+        {
+            if (recurse)
+                renderChildren();
+        }
+
+        // Render this widget's children
+        void renderChildren()
+        {
+            foreach(child; m_children)
+            {
+                if (!child.visible)
+                    continue;
+
+                child.preRender();
+                child.render(Flag!"RenderChildren".yes);
+                child.postRender();
+            }
+        }
+
+        // Render the widget's clip box for debugging
+        void renderClip()
+        {
+            // Draw a debug outline
+            auto _clip = m_clip;
+
+            // Then clip window
+            glPushMatrix();
+            glLoadIdentity();
+            glColor4f(0,1,.6,1);
+            glDisable(GL_SCISSOR_TEST);
+            glBegin(GL_LINE_LOOP);
+            glVertex2f(_clip[0], _clip[1]);
+            glVertex2f(_clip[0] + _clip[2], _clip[1]);
+            glVertex2f(_clip[0] + _clip[2], _clip[1] + _clip[3]);
+            glVertex2f(_clip[0], _clip[1] + _clip[3]);
+            glEnd();
+            glEnable(GL_SCISSOR_TEST);
+
+            glPopMatrix();
+        }
+
 
         // Handle events
         void event(ref Event event) {}
@@ -823,8 +882,6 @@ abstract class Widget
             m_screenPos[] = m_parent.screenPos[] + m_pos[];
             m_clip = getClipBox();
 
-            m_drawn = m_parent.drawnByRoot && m_drawnByRoot;
-
             // Child can only be visible if parent is visible
             m_visible = m_parent.visible && m_showing;
 
@@ -838,37 +895,81 @@ abstract class Widget
         // Override this to set a custom clip box for the widget
         int[4] getClipBox()
         {
-            return [m_screenPos.x - 1,
-                    m_screenPos.y - 1,
-                    m_dim.x + 1,
-                    m_dim.y + 1];
+            int[4] clip = [m_screenPos.x - 1,
+                           m_screenPos.y - 1,
+                           m_dim.x + 1,
+                           m_dim.y + 1];
+
+            if (m_parent)
+                m_parent.transformClip(this, clip);
+
+            return clip;
         }
 
         // Override this to set a custom clip box for the widget's children
         int[4] getChildClipBox(Widget w)
         {
-            if (m_cornerRadius == 0)
+            auto clip = getClipBox();
+
+            if (m_cornerRadius != 0)
             {
-                return getClipBox();
-            }
-            else
-            {
-                auto clip = getClipBox();
                 clip[0] += m_cornerRadius;
                 clip[1] += m_cornerRadius;
                 clip[2] -= 2*m_cornerRadius;
                 clip[3] -= 2*m_cornerRadius;
-                return clip;
             }
+
+            if (m_clipped && m_parent)
+                smallestBox(clip, m_parent.getChildClipBox(this));
+
+            return clip;
         }
 
         // Set a new manager for this widget
+        /++
         void setContainer(WidgetContainer w)
         {
             m_container = w;
             foreach(child; m_children)
                 child.setContainer(w);
         }
+        ++/
+
+        // Convert a clip box (which is given in the upside down gui coords) to screen coords
+        void clipboxToScreen(ref int[4] box)
+        {
+            box[1] = m_root.m_window.windowState.ypix - (box[1] + box[3]);
+        }
+
+        // Sort the widget list by scene depth
+        void sortChildren()
+        {
+            sort!("a.lastFocused() < b.lastFocused()")(m_children);
+            foreach(child; m_children)
+                child.sortChildren();
+        }
+
+        // Transform a position for a child
+        void transformPos(Widget w, ref int[2] pos)
+        {
+            if (m_parent)
+                m_parent.transformPos(this, pos);
+        }
+
+        // Transform a dimension for a child
+        void transformDim(Widget w, ref int[2] dim)
+        {
+            if (m_parent)
+                m_parent.transformDim(this, dim);
+        }
+
+        // Transform a screen position for a child
+        void transformClip(Widget w, ref int[4] clipbox)
+        {
+            if (m_parent)
+                m_parent.transformClip(this, clipbox);
+        }
+
 
         Widget m_parent = null;
         Widget[] m_children = null;
@@ -883,8 +984,6 @@ abstract class Widget
         bool m_visible = true; // this decides wether or not widget _will_ be shown, based on parent's visibility
         bool m_clipped = true;
         bool m_focusable = true; // can deactivate widgets this way
-        bool m_drawnByRoot = true; // whether or not root _should_ draw this widget
-        bool m_drawn = true; // whether or not root _will_ draw this widget
         bool m_canDrag = false;
         bool m_blocking = false; // blocking widgets don't lose focus
         long m_lastFocused = 0;
@@ -894,8 +993,6 @@ abstract class Widget
         EdgeFlag m_resizing = EdgeFlag.NONE;
         AdaptX m_onParentResizeX = AdaptX.MAINTAIN_LEFT;
         AdaptY m_onParentResizeY = AdaptY.MAINTAIN_TOP;
-
-        WidgetContainer m_container = null; // A non-null container will transform clicks etc.
 
         string m_type = "WIDGET";
 }
@@ -932,7 +1029,7 @@ class WidgetRoot : Widget
             m_window.poll();
 
             if (m_needRender)
-                render();
+                render(Flag!"RenderChildren".yes);
 
             // Check to see if timer events need to be issued
             long ctime = m_eventTimer.peek().msecs;
@@ -965,7 +1062,7 @@ class WidgetRoot : Widget
         }
 
         // Render all widgets which have this root
-        void render()
+        void render(Flag!"RenderChildren" recurse)
         {
             // Update screen positions
             foreach(child; m_children)
@@ -987,6 +1084,11 @@ class WidgetRoot : Widget
             glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
             glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
 
+            //glRotatef(15, 0,0,1);
+            glScissor(0, 0, m_dim[0], m_dim[1]);
+            renderChildren();
+
+            /++
             /**
             * We need to render in reverse order (widgets are sorted
             * by increasing 'effective' z depth)
@@ -1046,6 +1148,7 @@ class WidgetRoot : Widget
                     widget.render();
                 }
             }
+            ++/
 
             glPopAttrib();
             m_window.swapBuffers();
@@ -1072,7 +1175,7 @@ class WidgetRoot : Widget
                 case WINDOWPAINT:
                 {
                     // Check for window paint message, need to rerender
-                    render();
+                    render(Flag!"RenderChildren".yes);
                     return 0;
                 }
                 case KEYPRESS:
@@ -1129,7 +1232,6 @@ class WidgetRoot : Widget
                 case MOUSERELEASE:
                 {
                     m_recieveDrag = null;
-                    //m_resizing = false;
                     m_recieveResize = null;
                 }
 
@@ -1137,7 +1239,7 @@ class WidgetRoot : Widget
             }
 
             // Sort the widget list.. prob dont need this every event!
-            sortWidgetList();
+            //sortWidgetList();
 
             // Pass events on to widgets, starting with topmost
             foreach(w; m_widgetList)
@@ -1156,7 +1258,7 @@ class WidgetRoot : Widget
                 return;
 
             Widget newFocus = null;
-            foreach(index, widget; m_widgetList) // note that the list is already sorted
+            foreach(widget; m_widgetList)
             {
                 if (widget.focus(pos, newFocus))
                 {
@@ -1204,8 +1306,7 @@ class WidgetRoot : Widget
                     break;
 
                 // We only want top-level widgets (widgets with root as parent)
-                if (m_children[index].parent == this && m_children[index].visible &&
-                    m_children[index].drawn)
+                if (m_children[index].parent == this && m_children[index].visible)
                 {
                     changeFocus(m_children[index]);
                     break;
@@ -1242,6 +1343,7 @@ class WidgetRoot : Widget
             eventSignal.emit(this, WidgetEvent(GlobalFocusChange(newFocus, oldFocus)));
 
             sortWidgetList();
+            sortChildren();
             needRender();
         }
 
@@ -1388,7 +1490,7 @@ class WidgetRoot : Widget
             writeln(buf.data);
         }
 
-        // Sort the widget list by scene depth
+        // Sort the widget list
         void sortWidgetList()
         {
             sort!("a.lastFocused() > b.lastFocused()")(m_widgetList);
@@ -1448,12 +1550,6 @@ class WidgetRoot : Widget
         void needRender()
         {
             m_needRender = true;
-        }
-
-        // Convert a clip box (which is given in the upside down gui coords) to screen coords
-        void clipboxToScreen(ref int[4] box)
-        {
-            box[1] = m_window.windowState.ypix - (box[1] + box[3]);
         }
 
     private:
@@ -1653,20 +1749,16 @@ class WidgetWindow : Widget
                        arg("texture", m_texture));
         }
 
-
-
         override void geometryChanged(Widget.GeometryChangeFlag flag)
         {
             if (flag & Widget.GeometryChangeFlag.DIMENSION)
                 m_refreshCache = true;
         }
 
-        override void render()
+        override void render(Flag!"RenderChildren" recurse)
         {
             // r is used in a mixin, so don't change its name (this is not optimal, I know...)
             int r = min(m_cornerRadius, m_dim.x/2, m_dim.y/2);
-
-            glTranslatef(m_pos.x, m_pos.y, 0);
 
             if (m_refreshCache || r != m_cachedRadius) // need to refresh our display lists
             {
@@ -1678,11 +1770,8 @@ class WidgetWindow : Widget
                 auto width = m_dim.x;
                 auto height = m_dim.y;
 
-
                 if (m_texture != 0)
                 {
-                    //glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
-                    //glEnable(GL_TEXTURE_2D);
                     glBindTexture(GL_TEXTURE_2D, m_texture);
 
                     glColor4fv(m_color.ptr);
@@ -1748,7 +1837,8 @@ class WidgetWindow : Widget
                 glCallList(m_cacheId);
             }
 
-            glTranslatef(-m_pos.x, -m_pos.y, 0);
+            if (recurse)
+                renderChildren();
         }
 
     package:
@@ -1763,7 +1853,7 @@ class WidgetWindow : Widget
 
 
 
-class WidgetPanWindow : WidgetWindow, WidgetContainer
+class WidgetPanWindow : WidgetWindow
 {
     package this(WidgetRoot root, Widget parent)
     {
@@ -1791,16 +1881,15 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
         override void addChild(Widget child)
         {
             m_children ~= child;
-            child.drawnByRoot = false;
-            child.setContainer(this);
+            child.canDrag = false;
         }
 
-        override void render()
+        override void render(Flag!"RenderChildren" recurse)
         {
-            super.render();
+            super.render(Flag!"RenderChildren".no);
 
             foreach(child; m_children)
-                renderChildren(child);
+                renderChild(child);
         }
 
         override void event(ref Event event)
@@ -1809,36 +1898,54 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
 
             if (event.type == EventType.MOUSEWHEEL)
             {
-                m_zoom += event.get!MouseWheel.delta/1200.;
+                auto delta = event.get!MouseWheel.delta/1200.;
+                m_zoom += delta;
+
+                // First time through we store the orignial widget positions
+                if (m_setPositions)
+                {
+                    m_setPositions = false;
+                    foreach(child; m_children)
+                        m_opositions[child] = child.pos;
+                }
+
+                // Apply zoom to original positions to avoid creep
+                foreach(child; m_children)
+                {
+                    auto pos = *(child in m_opositions);
+                    writeln(pos);
+                    child.setPos(cast(int)round(pos.x * m_zoom),
+                                 cast(int)round(pos.y * m_zoom));
+                }
+
                 needRender();
             }
-
         }
 
-        int[2] transformScreenPos(Widget w)
+        override void transformPos(Widget w, ref int[2] pos)
         {
-            return [w.screenPos.x + m_translation.x,
-                    w.screenPos.y + m_translation.y];
+            Widget.transformPos(this, pos);
+
+            pos[0] += m_translation.x;
+            pos[1] += m_translation.y;
         }
 
-        int[2] transformPos(Widget w)
+        override void transformDim(Widget w, ref int[2] dim)
         {
-            return [w.pos.x + m_translation.x,
-                    w.pos.y + m_translation.y];
+            Widget.transformDim(this, dim);
+
+            dim[0] *= m_zoom;
+            dim[1] *= m_zoom;
         }
 
-        int[2] transformDim(Widget w)
+        override void transformClip(Widget w, ref int[4] clipbox)
         {
-            return [cast(int)(w.dim.x * m_zoom),
-                    cast(int)(w.dim.y * m_zoom)];
-        }
+            Widget.transformClip(this, clipbox);
 
-        int[4] transformClip(Widget w)
-        {
-            return [w.clip[0] + m_translation[0],
-                    w.clip[1] + m_translation[1],
-                    cast(int)(w.clip[2] * m_zoom),
-                    cast(int)(w.clip[3] * m_zoom)];
+            clipbox[0] += m_translation[0];
+            clipbox[1] += m_translation[1];
+            clipbox[2] *= m_zoom;
+            clipbox[3] *= m_zoom;
         }
 
         // Override this so that we don't give focus to child (contained) widgets
@@ -1855,32 +1962,26 @@ class WidgetPanWindow : WidgetWindow, WidgetContainer
 
     private:
 
-        void renderChildren(Widget w)
+        void renderChild(Widget w)
         {
             if (!overlap(w, this))
                 return;
 
-            glLoadIdentity();
-
-            auto clip = transformClip(w);
-            glTranslatef(w.parent.screenPos.x + m_translation[0],
-                         w.parent.screenPos.y + m_translation[1], 0);
-
-            // Account for change in scale of starting position
-            glTranslatef(-w.pos.x*(m_zoom-1), -w.pos.y*(m_zoom-1), 0);
-
+            glTranslatef(m_translation.x, m_translation.y, 0);
+            w.preRender();
             glScalef(m_zoom, m_zoom, 1);
-            smallestBox(clip, getChildClipBox(w));
-            m_root.clipboxToScreen(clip);
-            glScissor(clip[0], clip[1], clip[2], clip[3]);
+            w.render(Flag!"RenderChildren".no);
+            w.postRender();
+            glTranslatef(-m_translation.x, -m_translation.y, 0);
 
-            w.render();
             foreach(c; w.children)
-                renderChildren(c);
+                renderChild(c);
         }
 
         int[2] m_translation;
         float m_zoom = 1;
+        int[2][Widget] m_opositions;
+        bool m_setPositions = true;
 }
 
 
@@ -2003,7 +2104,7 @@ class WidgetScroll : WidgetWindow
             {
                 auto slen = cast(int)(m_dim.y * m_slideLength);
                 int sw = cast(int)(m_dim.x*0.8);
-                m_slidePos = [m_pos.x + (m_dim.x - sw)/2, cast(int)(sf*m_dim.y)];
+                m_slidePos = [(m_dim.x - sw)/2, cast(int)(sf*m_dim.y)];
                 m_slideDim = [sw, slen];
                 m_slideLimit = [0, m_dim.y - slen];
             }
@@ -2011,7 +2112,7 @@ class WidgetScroll : WidgetWindow
             {
                 auto slen = cast(int)(m_dim.x * m_slideLength);
                 int sw = cast(int)(m_dim.y*0.8);
-                m_slidePos = [cast(int)(sf*m_dim.x), m_pos.y + (m_dim.y - sw)/2];
+                m_slidePos = [cast(int)(sf*m_dim.x), (m_dim.y - sw)/2];
                 m_slideDim = [slen, sw];
                 m_slideLimit = [0, m_dim.x - slen];
             }
@@ -2021,7 +2122,7 @@ class WidgetScroll : WidgetWindow
 
         }
         // Render, call super then render the slider and buttons
-        override void render()
+        override void render(Flag!"RenderChildren" recurse)
         {
             // If enough time has elapsed since the last scroll event, start fading out
             if (timerMsecs - m_lastScrollTime > m_postScrollFadeDelay &&
@@ -2033,7 +2134,7 @@ class WidgetScroll : WidgetWindow
                 m_waitingForScrollDelay = false;
             }
 
-            super.render();
+            super.render(Flag!"RenderChildren".no);
 
             // r is used in a mixin, so don't change its name (this is not optimal, I know...)
             int r = min(m_cornerRadius, m_dim.x/2, m_dim.y/2);
@@ -2070,6 +2171,9 @@ class WidgetScroll : WidgetWindow
                 }
 
             glTranslatef(-m_slidePos.x, -m_slidePos.y, 0);
+
+            if (recurse)
+                renderChildren();
         }
 
         override void event(ref Event event)
@@ -2121,7 +2225,7 @@ class WidgetScroll : WidgetWindow
         override bool requestDrag(int[2] pos)
         {
             // Allow drag if inside slider
-            int[2] absPos = m_parent.screenPos[] + m_slidePos[];
+            int[2] absPos = m_parent.screenPos[] + m_pos[] + m_slidePos[];
             if (isInside(absPos, m_slideDim, pos))
             {
                 // Make sure we are visible, or at least fading in
@@ -2239,7 +2343,7 @@ class WidgetScroll : WidgetWindow
 }
 
 
-class WidgetTree : WidgetWindow, WidgetContainer
+class WidgetTree : WidgetWindow
 {
     package this(WidgetRoot root, Widget parent)
     {
@@ -2288,9 +2392,6 @@ class WidgetTree : WidgetWindow, WidgetContainer
                  Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
         {
             widget.setParent(this);
-            widget.setContainer(this);
-            widget.drawnByRoot = false;
-            widget.clipped = false;
 
             if (wparent is null)
             {
@@ -2325,28 +2426,20 @@ class WidgetTree : WidgetWindow, WidgetContainer
                 updateTree();
         }
 
-        int[2] transformScreenPos(Widget w)
+        override void transformPos(Widget w, ref int[2] pos)
         {
-            return [w.screenPos.x,
-                    w.screenPos.y - m_vScroll.current];
+            Widget.transformPos(this, pos);
+
+            if (w != m_vScroll)
+                pos[1] -= m_vScroll.current;
         }
 
-        int[2] transformPos(Widget w)
+        override void transformClip(Widget w, ref int[4] clipbox)
         {
-            return [w.pos.x,
-                    w.pos.y - m_vScroll.current];
-        }
+            Widget.transformClip(this, clipbox);
 
-        int[2] transformDim(Widget w)
-        {
-            return w.dim;
-        }
-
-        int[4] transformClip(Widget w)
-        {
-            return [w.clip[0],
-                    w.clip[1] - m_vScroll.current,
-                    w.clip[2], w.clip[3]];
+            if (w != m_vScroll)
+                clipbox[1] -= m_vScroll.current;
         }
 
         void update()
@@ -2392,15 +2485,14 @@ class WidgetTree : WidgetWindow, WidgetContainer
         // Clip tree to include the scroll bar
         override int[4] getChildClipBox(Widget w)
         {
-            if (w.type == "WIDGETSCROLL" || !m_clipToScrollBar)
-            {
-                return getClipBox();
-            }
-            else
-            {
-                auto clip = getClipBox();
-                return [clip[0], clip[1], clip[2] - m_vScroll.dim.x, clip[3]];
-            }
+            auto clip = getClipBox();
+            if (w.type != "WIDGETSCROLL" && m_clipToScrollBar)
+                clip[2] -= m_vScroll.dim.x;
+
+            if (m_parent)
+                smallestBox(clip, m_parent.getChildClipBox(this));
+
+            return clip;
         }
 
         void transitionTimer(long delay)
@@ -2418,14 +2510,22 @@ class WidgetTree : WidgetWindow, WidgetContainer
         }
 
 
-        override void render()
+        override void render(Flag!"RenderChildren" recurse)
         {
-            super.render();
+            super.render(Flag!"RenderChildren".no);
+
+            glTranslatef(0, -m_vScroll.current, 0);
 
             long maxFocus;
             foreach(child; m_children)
                 if (child !is m_vScroll)
-                    renderChildren(child, maxFocus);
+                    renderChild(child, maxFocus);
+
+            glTranslatef(0, m_vScroll.current, 0);
+
+            m_vScroll.preRender();
+            m_vScroll.render(Flag!"RenderChildren".yes);
+            m_vScroll.postRender();
         }
 
     private:
@@ -2439,7 +2539,7 @@ class WidgetTree : WidgetWindow, WidgetContainer
                 setVisibility(child);
         }
 
-        void renderChildren(Widget w, ref long maxFocus)
+        void renderChild(Widget w, ref long maxFocus)
         {
             if (!w.visible || !overlap(w, this))
                 return;
@@ -2447,21 +2547,9 @@ class WidgetTree : WidgetWindow, WidgetContainer
             if (w.lastFocused > maxFocus)
                 maxFocus = w.lastFocused;
 
-            glLoadIdentity();
-
-            auto clip = w.clip;
-            clip[1] -= m_vScroll.current;
-            smallestBox(clip, this.getChildClipBox(w));
-            m_root.clipboxToScreen(clip);
-            glScissor(clip[0], clip[1], clip[2], clip[3]);
-
-            glTranslatef(w.parent.screenPos.x,
-                         w.parent.screenPos.y - m_vScroll.current, 0);
-
-            w.render();
-            foreach(c; w.children)
-                renderChildren(c, maxFocus);
-
+            w.preRender();
+            w.render(Flag!"RenderChildren".yes);
+            w.postRender();
         }
 
         bool findParentNode(Node n, Widget w, ref Node parent)

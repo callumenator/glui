@@ -33,7 +33,10 @@ int main()
 	glViewport(0,0,1000,700);
 	glClearColor(0,0,0,1);
 
+
     WidgetRoot root = new WidgetRoot(Window("window1"));
+
+    /++
     auto highlighter = new DSyntaxHighlighter;
 
     auto textl = root.create!WidgetText(null, courier, widgetArgs(
@@ -88,6 +91,7 @@ int main()
         }
     }
     layout.update();
+    ++/
 
     bool finish = false;
     while (!finish)
