@@ -2225,7 +2225,9 @@ class WidgetScroll : WidgetWindow
         override bool requestDrag(int[2] pos)
         {
             // Allow drag if inside slider
-            int[2] absPos = m_parent.screenPos[] + m_pos[] + m_slidePos[];
+            int[2] absPos;
+            absPos[0] = m_parent.screenPos().x + m_pos[0] + m_slidePos[0];
+            absPos[1] = m_parent.screenPos().y + m_pos[1] + m_slidePos[1];
             if (isInside(absPos, m_slideDim, pos))
             {
                 // Make sure we are visible, or at least fading in

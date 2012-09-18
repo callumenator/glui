@@ -22,7 +22,6 @@ import
 
 int main()
 {
-
 	Window("window1", WindowState(0,0,1000,700), Flag!"Create".yes, Flag!"Show".yes);
     Window.makeCurrent("window1");
 	Window().setTitle("GLUI");
@@ -36,7 +35,6 @@ int main()
 
     WidgetRoot root = new WidgetRoot(Window("window1"));
 
-    /++
     auto highlighter = new DSyntaxHighlighter;
 
     auto textl = root.create!WidgetText(null, courier, widgetArgs(
@@ -46,7 +44,8 @@ int main()
                                         "bordercolor", RGBA(1,1,1,1),
                                         "editable", true,
                                         "vscroll", true,
-                                        "candrag", true));
+                                        "candrag", true,
+                                        "highlighter", highlighter));
 
     auto layout = root.create!WidgetTree(null, widgetArgs(
                                           "dim", [300, 400],
@@ -91,7 +90,6 @@ int main()
         }
     }
     layout.update();
-    ++/
 
     bool finish = false;
     while (!finish)
