@@ -216,7 +216,7 @@ public
     }
 
     // Render a string of characters at the current position
-    void renderCharacters(ref const(Font) font, string text, float[4] color)
+    void renderCharacters(ref const(Font) font, string text, float[4] color, uint tabSpaces = 4)
     in
     {
         assert(font !is null, "Null font passed to truetype.renderCharacters");
@@ -235,6 +235,19 @@ public
                 xoffset = 0;
                 continue;
             }
+            else if (c == '\t')
+            {
+                foreach(i; 0..tabSpaces)
+                {
+                    auto index = font.index(' ');
+
+                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
+                    xoffset += font.m_wids[index];
+                    glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+                }
+                continue;
+            }
 
             auto index = font.index(c);
 
@@ -250,7 +263,7 @@ public
 
 
     // Render a string of characters at the current position, with a background color
-    void renderCharacters(ref const(Font) font, string text, float[4] color, float[4] bgcolor)
+    void renderCharacters(ref const(Font) font, string text, float[4] color, float[4] bgcolor, uint tabSpaces = 4)
     in
     {
         assert(font !is null, "Null font passed to truetype.renderCharacter");
@@ -266,6 +279,20 @@ public
             {
                 glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
                 xoffset = 0;
+                continue;
+            }
+            else if (c == '\t')
+            {
+                foreach(i; 0..tabSpaces)
+                {
+                    auto index = font.index(' ');
+
+                    glColor4fv(bgcolor.ptr);
+                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
+                    xoffset += font.m_wids[index];
+                    glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+                }
                 continue;
             }
 
@@ -287,7 +314,7 @@ public
 
 
     // Render a string of characters at the current position, with highlighted syntax
-    void renderCharacters(ref const(Font) font, string text, SyntaxHighlighter highlighter)
+    void renderCharacters(ref const(Font) font, string text, SyntaxHighlighter highlighter, uint tabSpaces = 4)
     in
     {
         assert(font !is null, "Null font passed to truetype.renderCharacter");
@@ -307,6 +334,20 @@ public
                 {
                     glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
                     xoffset = 0;
+                    continue;
+                }
+                else if (c == '\t')
+                {
+                    foreach(i; 0..tabSpaces)
+                    {
+                        auto index = font.index(' ');
+
+                        glColor4fv(bgcolor.ptr);
+                        glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
+                        xoffset += font.m_wids[index];
+                        glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+                    }
                     continue;
                 }
 
@@ -638,7 +679,7 @@ class DSyntaxHighlighter : SyntaxHighlighter
     {
         m_color =
         [
-            RGBA(69,138,118,255),  // teal
+            RGBA(163,198,212,255),  // teal
             RGBA(170,170,170,255), // light grey
         ];
 
@@ -781,6 +822,7 @@ class DSyntaxHighlighter : SyntaxHighlighter
             switch (c)
             {
                 case '\n':
+                case '\t':
                 case ' ':
                 {
                     t ~= [ColoredText(buf, color(buf)),

@@ -293,22 +293,6 @@ WidgetArgs widgetArgs(T...)(T args)
 }
 
 
-
-/**
-* Anything which contains widgets must implement these functions
-*/
-
-interface WidgetContainer
-{
-    // Transforms on a widget's geometry
-    int[2] transformScreenPos(Widget w);
-    int[2] transformPos(Widget w);
-    int[2] transformDim(Widget w);
-    int[4] transformClip(Widget w);
-}
-
-
-
 enum EdgeFlag
 {
     NONE    = 0x00,
@@ -536,7 +520,7 @@ abstract class Widget
         {
             glPopMatrix();
             glScissor(0, 0, m_root.dim.x, m_root.dim.y);
-            renderClip();
+            //debug { renderClip(); }
         }
 
         // Render this widget
@@ -1084,71 +1068,8 @@ class WidgetRoot : Widget
             glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
             glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
 
-            //glRotatef(15, 0,0,1);
             glScissor(0, 0, m_dim[0], m_dim[1]);
             renderChildren();
-
-            /++
-            /**
-            * We need to render in reverse order (widgets are sorted
-            * by increasing 'effective' z depth)
-            */
-            foreach(widget; retro(m_widgetList))
-            {
-                /**
-                * TODO: sort widgets so that invisible widgets are at the bottom of the list,
-                * and the first invisible widget can terminate this loop
-                */
-                if (!widget.visible)
-                    continue;
-
-                // Translate to parents coord, and set clip box
-                glLoadIdentity();
-
-                if (!widget.drawn && widget.container !is null)
-                {
-                    debug
-                    {
-
-                        // Draw a debug outline
-                        auto _clip = widget.container.transformClip(widget);
-                        auto _scrPos = widget.container.transformScreenPos(widget);
-                        auto _dim = widget.container.transformDim(widget);
-
-                        // Outline first
-                        glScissor(0, 0, m_dim.x, m_dim.y);
-                        glColor4f(1,.4,.1,1);
-                        glBegin(GL_LINE_LOOP);
-                        glVertex2f(_scrPos.x, _scrPos.y);
-                        glVertex2f(_scrPos.x + _dim.x, _scrPos.y);
-                        glVertex2f(_scrPos.x + _dim.x, _scrPos.y + _dim.y);
-                        glVertex2f(_scrPos.x, _scrPos.y + _dim.y);
-                        glEnd();
-
-                        // Then clip window
-                        glColor4f(0,1,.6,1);
-                        glBegin(GL_LINE_LOOP);
-                        glVertex2f(_clip[0], _clip[1]);
-                        glVertex2f(_clip[0] + _clip[2], _clip[1]);
-                        glVertex2f(_clip[0] + _clip[2], _clip[1] + _clip[3]);
-                        glVertex2f(_clip[0], _clip[1] + _clip[3]);
-                        glEnd();
-                    }
-                }
-                else
-                {
-                    // Transform the clip box to screen coords
-                    auto clip = widget.clip;
-                    clipboxToScreen(clip);
-
-                    glScissor(clip[0], clip[1], clip[2], clip[3]);
-                    glTranslatef(widget.parent.screenPos.x, widget.parent.screenPos.y, 0);
-
-                    // Draw the widget
-                    widget.render();
-                }
-            }
-            ++/
 
             glPopAttrib();
             m_window.swapBuffers();

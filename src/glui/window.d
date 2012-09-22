@@ -357,6 +357,8 @@ version(Windows)
         // Poll for events.
         override void poll()
         {
+            //writeln(m_keyState.keys[KEY.KC_BRACELEFT]);
+
             MSG msg;
             while (PeekMessageA(&msg, null, 0, 0, PM_REMOVE))
             {
@@ -394,6 +396,8 @@ version(Windows)
 
 
     private:
+
+        KEY[] downWithShift;
 
         KEY interpretKey(WPARAM wParam)
         {
@@ -453,6 +457,10 @@ version(Windows)
                 case WM_KEYDOWN:
                 {
                     auto sym = interpretKey(wParam);
+
+                    if (cast(uint) sym > KEY.max)
+                        break;
+
                     if (m_keyState.keys[sym] != KeyState.STATE.PRESSED)
                     {
                         if (sym != KEY.KC_SHIFT_LEFT &&
@@ -463,6 +471,12 @@ version(Windows)
 
                         m_keyState.keys[sym] = KeyState.STATE.PRESSED;
                         event.emit(Event(KeyPress(sym)));
+
+                        if (m_keyState.keys[KEY.KC_SHIFT_LEFT] == KeyState.STATE.PRESSED ||
+                            m_keyState.keys[KEY.KC_SHIFT_RIGHT] == KeyState.STATE.PRESSED )
+                        {
+                            downWithShift ~= sym;
+                        }
                     }
                     break;
                 }
@@ -470,6 +484,10 @@ version(Windows)
                 case WM_KEYUP:
                 {
                     auto sym = interpretKey(wParam);
+
+                    if (cast(uint) sym > KEY.max)
+                        break;
+
                     if (sym != KEY.KC_SHIFT_LEFT &&
                         sym != KEY.KC_SHIFT_RIGHT &&
                         sym != KEY.KC_CTRL_LEFT &&
@@ -478,9 +496,20 @@ version(Windows)
                         if (m_keyState.keysDown > 0)
                             m_keyState.keysDown --;
                     }
+                    else if (sym == KEY.KC_SHIFT_LEFT ||
+                             sym == KEY.KC_SHIFT_RIGHT )
+                    {
+                        foreach(k; downWithShift)
+                        {
+                            m_keyState.keys[k] = KeyState.STATE.RELEASED;
+                            event.emit(Event(KeyRelease(k)));
+                        }
+                        downWithShift.clear;
+                    }
 
                     m_keyState.keys[sym] = KeyState.STATE.RELEASED;
                     event.emit(Event(KeyRelease(sym)));
+
                     break;
                 }
 
@@ -777,7 +806,7 @@ version(Windows)
         return 0;
     }
 
-} // End version(Windows).
+} // End version(Windows)
 
 
 
@@ -793,7 +822,7 @@ version(Posix)
     //---------------------------------//
 
 
-    // Nix Window.
+    // Linux Window
     class NixWindow : Window
     {
 
@@ -875,6 +904,10 @@ version(Posix)
             return 0;
         }
 
+    private:
+
+        KEY[] downWithShift;
+
         KEY interpretKey(Xlib.XKeyEvent event)
         {
             char[6] buff;
@@ -910,6 +943,9 @@ version(Posix)
                     {
                         auto sym = interpretKey(_event.xkey);
 
+                        if (cast(uint) sym > KEY.max)
+                            break;
+
                         if (m_keyState.keys[sym] != KeyState.STATE.PRESSED)
                         {
                             if (sym != KEY.KC_SHIFT_LEFT &&
@@ -920,6 +956,12 @@ version(Posix)
 
                             m_keyState.keys[sym] = KeyState.STATE.PRESSED;
                             event.emit(Event(KeyPress(sym)));
+
+                            if (m_keyState.keys[KEY.KC_SHIFT_LEFT] == KeyState.STATE.PRESSED ||
+                            m_keyState.keys[KEY.KC_SHIFT_RIGHT] == KeyState.STATE.PRESSED )
+                            {
+                                downWithShift ~= sym;
+                            }
                         }
                         break;
                     }
@@ -928,6 +970,9 @@ version(Posix)
                     {
                         auto sym = interpretKey(_event.xkey);
 
+                        if (cast(uint) sym > KEY.max)
+                            break;
+
                         if (sym != KEY.KC_SHIFT_LEFT &&
                             sym != KEY.KC_SHIFT_RIGHT &&
                             sym != KEY.KC_CTRL_LEFT &&
@@ -935,6 +980,16 @@ version(Posix)
                         {
                             if (m_keyState.keysDown > 0)
                                 m_keyState.keysDown --;
+                        }
+                        else if (sym == KEY.KC_SHIFT_LEFT ||
+                             sym == KEY.KC_SHIFT_RIGHT )
+                        {
+                            foreach(k; downWithShift)
+                            {
+                                m_keyState.keys[k] = KeyState.STATE.RELEASED;
+                                event.emit(Event(KeyRelease(k)));
+                            }
+                            downWithShift.clear;
                         }
 
                         m_keyState.keys[sym] = KeyState.STATE.RELEASED;

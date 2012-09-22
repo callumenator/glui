@@ -433,6 +433,16 @@ class WidgetText : WidgetWindow
                     needRender();
                     break;
                 }
+                case KC_TAB: // down arrow
+                {
+                    string tab = '\t'.to!string;
+                    m_text.insert(tab);
+                    eventSignal.emit(this, WidgetEvent(TextInsert(tab)));
+                    m_drawCaret = true;
+                    m_refreshCache = true;
+                    needRender();
+                    break;
+                }
                 case KC_DELETE: // del
                 {
                     char deleted = m_text.rightText();
@@ -804,6 +814,10 @@ class TextArea
                 {
                     cpos[0] = 0;
                     cpos[1] += font.m_lineHeight;
+                }
+                else if (c == '\t')
+                {
+                    cpos[0] += 4*font.m_wids[(cast(uint)' ') - 32];
                 }
                 else
                 {

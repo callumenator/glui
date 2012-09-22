@@ -494,7 +494,7 @@ version(Windows)
         KC_W                             = 0x0057,  /* U+0057 LATIN CAPITAL LETTER W */
         KC_X                             = 0x0058,  /* U+0058 LATIN CAPITAL LETTER X */
         KC_Y                             = 0x0059,  /* U+0059 LATIN CAPITAL LETTER Y */
-        KC_Z                             = 0x005a,  /* U+005A LATIN CAPITAL LETTER Z */
+        KC_Z                             = 0x005A,  /* U+005A LATIN CAPITAL LETTER Z */
         KC_BRACKETLEFT                   = 0x005B,  /* U+005B LEFT SQUARE BRACKET */
         KC_BACKSLASH                     = 0x005C,  /* U+005C REVERSE SOLIDUS */
         KC_BRACKETRIGHT                  = 0x005D,  /* U+005D RIGHT SQUARE BRACKET */
