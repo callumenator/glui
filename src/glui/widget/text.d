@@ -28,6 +28,11 @@ import
 */
 class WidgetText : WidgetWindow
 {
+    package this(WidgetRoot root, Widget parent)
+    {
+        super(root, parent);
+    }
+
     public:
 
         // Text horizontal alignment
@@ -86,14 +91,15 @@ class WidgetText : WidgetWindow
             write(args, "\n");
         }
 
+        void addLineHighlight(int line, RGBA color)
+        {
+            m_lineHighlights[line] = color;
+        }
 
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
-
-
-    public:
+        void removeLineHighlight(int line)
+        {
+            m_lineHighlights.remove(line);
+        }
 
         void set(Font font, WidgetArgs args)
         {
@@ -217,8 +223,6 @@ class WidgetText : WidgetWindow
             setCoords();
             glScalef(1,-1,1);
 
-
-            long before = timerMsecs;
             if (!m_refreshCache)
             {
                 glCallList(m_cacheId);
@@ -227,15 +231,26 @@ class WidgetText : WidgetWindow
             {
                 // Text has not been cached, so cache and draw it
                 glNewList(m_cacheId, GL_COMPILE_AND_EXECUTE);
-                if (m_highlighter)
-                    renderCharacters(m_font, m_text.text, m_highlighter);
-                else
-                    renderCharacters(m_font, m_text.text, m_textColor);
+
+                // Handle line highlights
+                foreach(line, color; m_lineHighlights)
+                {
+                    glColor4fv(color.ptr);
+                    glBegin(GL_QUADS);
+                    glVertex2f(-5, -line*m_font.m_lineHeight - m_font.m_maxHoss);
+                    glVertex2f(m_dim.x, -line*m_font.m_lineHeight - m_font.m_maxHoss);
+                    glVertex2f(m_dim.x, -(line-1)*m_font.m_lineHeight);
+                    glVertex2f(-5, -(line-1)*m_font.m_lineHeight);
+                    glEnd();
+                }
+
+                //if (m_highlighter)
+                //    renderCharacters(m_font, m_text.text, m_highlighter);
+                //else
+                    renderCharacters(m_font, m_text.text, m_textColor, RGBA(.3, .7, .5, 1));
                 glEndList();
                 m_refreshCache = false;
             }
-            //std.stdio.writeln("Render: ", cast(float)(timerMsecs - before)/m_text.text.length);
-
 
             glPopMatrix();
 
@@ -533,6 +548,8 @@ class WidgetText : WidgetWindow
 
         GLuint m_cacheId = 0; // display list for caching
         bool m_refreshCache = true;
+
+        RGBA[int] m_lineHighlights;
 }
 
 

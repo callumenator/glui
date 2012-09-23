@@ -299,6 +299,7 @@ public
             auto index = font.index(c);
 
             glColor4fv(bgcolor.ptr);
+            glColor4f(1,1,1,1);
             glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
             glColor4fv(color.ptr);
@@ -516,7 +517,7 @@ private
 
                 for (j = 0; j < height; ++j)
                     for (i = 0; i < width; ++i)
-                        fullData[offset + (i+(j*fullWidth))] = 0;
+                        fullData[offset + (i+(j*fullWidth))] = 255;
 
                 vxlo = 0;
                 vxhi = font.m_maxWidth;
