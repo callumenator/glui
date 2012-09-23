@@ -413,7 +413,7 @@ private
     // Handle missing symbols from Freetype library
     static bool FTMissingSymbols(string libName, string procName)
     {
-        writefln("Unable to load: %s, in %s", procName, libName);
+        //writefln("Unable to load: %s, in %s", procName, libName);
         return true;
     }
 

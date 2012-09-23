@@ -716,35 +716,17 @@ class TextArea
 
         void moveUp()
         {
-            uint preMoveOffset = m_offset, preMoveColumn = m_column;
+            uint preMoveRow = m_row,
+                 preMoveColumn = m_column,
+                 preMoveOffset = m_offset;
 
             bool found = false;
             while(m_offset > 0)
             {
                 moveLeft(true);
-                if (m_column == m_seekColumn || (m_column == 0 && m_text[m_offset] == '\n'))
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if  (m_offset == 0)
-            {
-                m_offset = preMoveOffset;
-                m_column = preMoveColumn;
-            }
-        }
-
-        void moveDown()
-        {
-            uint preMoveOffset = m_offset, preMoveColumn = m_column;
-
-            bool found = false;
-            while(m_offset < m_text.length)
-            {
-                moveRight(true);
-                if (m_column == m_seekColumn || (m_column == 0 && m_text[m_offset] == '\n'))
+                if (m_column == m_seekColumn ||
+                    m_column < m_seekColumn && countToEndOfLine() == 0 && m_row == preMoveRow - 1 ||
+                    (m_column == 0 && m_text[m_offset] == '\n'))
                 {
                     found = true;
                     break;
@@ -755,6 +737,34 @@ class TextArea
             {
                 m_offset = preMoveOffset;
                 m_column = preMoveColumn;
+                m_row = preMoveRow;
+            }
+        }
+
+        void moveDown()
+        {
+            uint preMoveRow = m_row,
+                 preMoveColumn = m_column,
+                 preMoveOffset = m_offset;
+
+            bool found = false;
+            while(m_offset < m_text.length)
+            {
+                moveRight(true);
+                if (m_column == m_seekColumn ||
+                    m_column < m_seekColumn && countToEndOfLine() == 0 && m_row == preMoveRow + 1 ||
+                    (m_column == 0 && m_text[m_offset] == '\n'))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if  (!found)
+            {
+                m_offset = preMoveOffset;
+                m_column = preMoveColumn;
+                m_row = preMoveRow;
             }
         }
 
@@ -797,7 +807,7 @@ class TextArea
             while (i < m_text.length && m_text[i] != '\n')
             {
                 i++;
-                count++;
+                count ++;
             }
             return count;
         }
@@ -817,7 +827,7 @@ class TextArea
                 }
                 else if (c == '\t')
                 {
-                    cpos[0] += 4*font.m_wids[(cast(uint)' ') - 32];
+                    cpos[0] += tabSpaces*font.m_wids[(cast(uint)' ') - 32];
                 }
                 else
                 {
@@ -841,6 +851,9 @@ class TextArea
     private:
         uint m_offset = 0;
         string m_text = "";
+
+        // Default number of spaces for a tab
+        uint tabSpaces = 4;
 
         // Current column and row of the caret (insertion point)
         uint m_column = 0;

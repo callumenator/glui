@@ -909,16 +909,6 @@ abstract class Widget
             return clip;
         }
 
-        // Set a new manager for this widget
-        /++
-        void setContainer(WidgetContainer w)
-        {
-            m_container = w;
-            foreach(child; m_children)
-                child.setContainer(w);
-        }
-        ++/
-
         // Convert a clip box (which is given in the upside down gui coords) to screen coords
         void clipboxToScreen(ref int[4] box)
         {
