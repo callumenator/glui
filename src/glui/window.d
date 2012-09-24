@@ -409,27 +409,14 @@ version(Windows)
             ushort ascii = 0;
             uint scode = MapVirtualKeyEx(wParam, 0, m_layout);
             uint vk = MapVirtualKeyEx(scode, 3, m_layout);
-            ToAsciiEx(vk, scode, state.ptr, &ascii, 0, m_layout);
+            auto asciiConv = ToAsciiEx(vk, scode, state.ptr, &ascii, 0, m_layout);
 
-            /**
-            * The CTRL key pressed can make ascii == 0, even when it should
-            * return an actual ascii value (like CTRL + TAB).
-            * The following is an ugly kludge to fix this.
-            */
-            if ((m_keyState.keys[KEY.KC_CTRL_LEFT] ||
-                 m_keyState.keys[KEY.KC_CTRL_RIGHT]) &&
-                vk < 127)
-            {
-                if (vk >= 65 && vk <= 122)
-                    ascii = cast(ushort) (vk + 32);
-                else
-                    ascii = cast(ushort)vk;
-            }
-
-            if (ascii != 0)
+            if (asciiConv == 1)
                 return cast(KEY)ascii;
-            else
+            else if (asciiConv == 0)
                 return cast(KEY)(vk + nonAsciiOffset);
+            else
+                return KEY.KC_NULL;
         }
 
         // Handle events.

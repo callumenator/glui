@@ -232,22 +232,39 @@ class WidgetText : WidgetWindow
                 // Text has not been cached, so cache and draw it
                 glNewList(m_cacheId, GL_COMPILE_AND_EXECUTE);
 
+                auto clip = m_clip;
+                clip[0] += 1;
+                clip[1] += 1;
+                clip[2] -= 2;
+                clip[3] -= 2;
+                clipboxToScreen(clip);
+                glScissor(clip[0], clip[1], clip[2], clip[3]);
+
                 // Handle line highlights
+                uint width;
+                if (m_allowHScroll)
+                {
+                    auto rnge = m_hscroll.range;
+                    width = m_dim.x + rnge[1]*m_font.m_maxWidth;
+                }
+                else
+                    width = m_dim.x;
+
                 foreach(line, color; m_lineHighlights)
                 {
                     glColor4fv(color.ptr);
                     glBegin(GL_QUADS);
                     glVertex2f(-5, -line*m_font.m_lineHeight - m_font.m_maxHoss);
-                    glVertex2f(m_dim.x, -line*m_font.m_lineHeight - m_font.m_maxHoss);
-                    glVertex2f(m_dim.x, -(line-1)*m_font.m_lineHeight);
-                    glVertex2f(-5, -(line-1)*m_font.m_lineHeight);
+                    glVertex2f(width, -line*m_font.m_lineHeight - m_font.m_maxHoss);
+                    glVertex2f(width, -line*m_font.m_lineHeight + m_font.m_maxHeight);
+                    glVertex2f(-5, -line*m_font.m_lineHeight + m_font.m_maxHeight);
                     glEnd();
                 }
 
-                //if (m_highlighter)
-                //    renderCharacters(m_font, m_text.text, m_highlighter);
-                //else
-                    renderCharacters(m_font, m_text.text, m_textColor, RGBA(.3, .7, .5, 1));
+                if (m_highlighter)
+                    renderCharacters(m_font, m_text.text, m_highlighter);
+                else
+                    renderCharacters(m_font, m_text.text, m_textColor);
                 glEndList();
                 m_refreshCache = false;
             }
@@ -317,7 +334,7 @@ class WidgetText : WidgetWindow
             if (m_allowHScroll)
                 glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
             if (m_allowVScroll)
-                glTranslatef(0, -2*m_vscroll.current*m_font.m_lineHeight, 0);
+                glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
 
         // Dispatch events
@@ -403,6 +420,13 @@ class WidgetText : WidgetWindow
         void handleKey(in KEY key)
         {
             m_lastKey = key;
+
+            if (root.ctrlIsDown())
+            {
+                handleCtrlCombo(key);
+                adjustVisiblePortion();
+                return;
+            }
 
             switch(cast(uint)key) with (KEY)
             {
@@ -510,9 +534,75 @@ class WidgetText : WidgetWindow
                 default:
             }
 
-            m_caretPos = m_text.getCaretPosition(m_font);
+            adjustVisiblePortion();
 
         } // handleKey
+
+
+        /**
+        * Update the visible portion of the text, to make the caret visible
+        */
+        void adjustVisiblePortion()
+        {
+            m_caretPos = m_text.getCaretPosition(m_font);
+
+            // If text insert moves caret off screen horizontally, adjust hscroll
+            if (m_allowHScroll)
+            {
+                auto minCol = m_hscroll.current;
+                auto maxCol = minCol + ((m_dim.x - 5) / m_font.m_maxWidth);
+                if (m_text.col > maxCol)
+                    m_hscroll.current = m_hscroll.current + (m_text.col - maxCol)*5;
+                else if (m_text.col < minCol)
+                    m_hscroll.current = m_text.col;
+            }
+            // If text insert moves caret off screen vertically, adjust vscroll
+            if (m_allowVScroll)
+            {
+                auto minRow = m_vscroll.current;
+                auto maxRow = minRow + (m_dim.y / m_font.m_lineHeight) - 1;
+                if (m_text.row > maxRow)
+                    m_vscroll.current = m_vscroll.current + (m_text.row - maxRow);
+                else if (m_text.row < minRow)
+                    m_vscroll.current = m_text.row;
+            }
+        }
+
+        void handleCtrlCombo(in KEY key)
+        {
+            switch(cast(uint)key) with (KEY)
+            {
+                case KC_LEFT: // left arrow
+                {
+                    m_text.jumpLeft();
+                    m_drawCaret = true;
+                    needRender();
+                    break;
+                }
+                case KC_RIGHT: // right arrow
+                {
+                    m_text.jumpRight();
+                    m_drawCaret = true;
+                    needRender();
+                    break;
+                }
+                case KC_UP: // up arrow
+                {
+                    m_text.moveUp();
+                    m_drawCaret = true;
+                    needRender();
+                    break;
+                }
+                case KC_DOWN: // down arrow
+                {
+                    m_text.moveDown();
+                    m_drawCaret = true;
+                    needRender();
+                    break;
+                }
+                default:
+            }
+        }
 
 
     private:
@@ -634,10 +724,10 @@ class TextArea
 
         @property char rightText()
         {
-            if (cast(int)(m_offset + 1) > cast(int)(m_text.length - 1))
+            if (cast(int)(m_offset) > cast(int)(m_text.length - 1))
                 return cast(char)0;
 
-            return m_text[m_offset+1];
+            return m_text[m_offset];
         }
 
         void set(string s)
@@ -689,6 +779,9 @@ class TextArea
             m_text = m_text[0..from] ~ m_text[to+1..$];
         }
 
+        /**
+        * Move left to next character
+        */
         void moveLeft(bool seeking = false)
         {
             if (m_offset > 0)
@@ -710,6 +803,25 @@ class TextArea
                 m_seekColumn = m_column;
         }
 
+
+        /**
+        * Jump left to next word
+        */
+        void jumpLeft()
+        {
+            if (col == 0)
+                return;
+
+            while(col > 0 && m_offset > 0 && leftText == ' ')
+                moveLeft();
+
+            while(col > 0 && m_offset > 0 && leftText != ' ')
+                moveLeft();
+        }
+
+        /**
+        * Move right to next character
+        */
         void moveRight(bool seeking = false)
         {
             if (m_offset < m_text.length)
@@ -729,6 +841,28 @@ class TextArea
 
             if (!seeking)
                 m_seekColumn = m_column;
+        }
+
+        /**
+        * Jump right to next word
+        */
+        void jumpRight()
+        {
+            auto endCol = col + countToEndOfLine();
+
+            if (rightText == ' ')
+            {
+                while(col < endCol && m_offset < m_text.length && rightText == ' ')
+                    moveRight();
+            }
+            else
+            {
+                while(col < endCol && m_offset < m_text.length && rightText != ' ')
+                    moveRight();
+
+                while(col < endCol && m_offset < m_text.length && rightText == ' ')
+                    moveRight();
+            }
         }
 
         void moveUp()

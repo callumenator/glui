@@ -172,7 +172,7 @@ public
         // Bind the texture atlas
         glBindTexture(GL_TEXTURE_2D, font.m_texture);
         // Set texture environment
-        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
     }
 
     // Call after rendering characters from a given font
@@ -299,7 +299,6 @@ public
             auto index = font.index(c);
 
             glColor4fv(bgcolor.ptr);
-            glColor4f(1,1,1,1);
             glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
             glColor4fv(color.ptr);
@@ -602,7 +601,8 @@ private
 	    }
 
         createFontTextures(fg, font, maxWidth, maxHeight);
-	    font.m_lineHeight = cast(int)round(1.2*font.m_maxHeight);
+	    //font.m_lineHeight = cast(int)round(1.2*font.m_maxHeight);
+	    font.m_lineHeight = cast(int)(font.m_maxHeight+font.m_maxHoss);
 
         glGenBuffers(1, &font.m_vertexBuffer);
         glBindBuffer(GL_ARRAY_BUFFER, font.m_vertexBuffer);

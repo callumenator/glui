@@ -1997,7 +1997,10 @@ class WidgetScroll : WidgetWindow
         @property void current(int v)
         {
             if (v >= m_range[0] && v <= m_range[1])
+            {
                 m_current = v;
+                updateSlider();
+            }
         }
 
         // If the geometry has changed, update
