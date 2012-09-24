@@ -496,8 +496,20 @@ class WidgetText : WidgetWindow
                 {
                     if (m_editable)
                     {
+                        // If current line is indented (has tabs) replicate for this line
+                        auto line = m_text.getCurrentLine();
+
                         m_text.insert("\n");
                         eventSignal.emit(this, WidgetEvent(TextReturn()));
+
+                        foreach(char c; line)
+                        {
+                            if (c == '\t')
+                                m_text.insert('\t');
+                            else
+                                break;
+                        }
+
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
@@ -521,7 +533,7 @@ class WidgetText : WidgetWindow
                 {
                     if (m_editable)
                     {
-                        m_text.insert(to!string(cast(char)key));
+                        m_text.insert(cast(char)key);
                         eventSignal.emit(this, WidgetEvent(TextInsert(to!string(cast(char)key))));
                         m_drawCaret = true;
                         m_refreshCache = true;
@@ -737,6 +749,11 @@ class TextArea
             insert(s);
         }
 
+        void insert(char c)
+        {
+            insert(c.to!string);
+        }
+
         void insert(string s)
         {
             // TODO: the column and row changes don't correctly account for
@@ -812,10 +829,10 @@ class TextArea
             if (col == 0)
                 return;
 
-            while(col > 0 && m_offset > 0 && leftText == ' ')
+            while(col > 0 && m_offset > 0 && isBlank(leftText))
                 moveLeft();
 
-            while(col > 0 && m_offset > 0 && leftText != ' ')
+            while(col > 0 && m_offset > 0 && !isBlank(leftText))
                 moveLeft();
         }
 
@@ -850,17 +867,17 @@ class TextArea
         {
             auto endCol = col + countToEndOfLine();
 
-            if (rightText == ' ')
+            if (isBlank(rightText))
             {
-                while(col < endCol && m_offset < m_text.length && rightText == ' ')
+                while(col < endCol && m_offset < m_text.length && isBlank(rightText))
                     moveRight();
             }
             else
             {
-                while(col < endCol && m_offset < m_text.length && rightText != ' ')
+                while(col < endCol && m_offset < m_text.length && !isBlank(rightText))
                     moveRight();
 
-                while(col < endCol && m_offset < m_text.length && rightText == ' ')
+                while(col < endCol && m_offset < m_text.length && isBlank(rightText))
                     moveRight();
             }
         }
@@ -963,6 +980,20 @@ class TextArea
             return count;
         }
 
+        string getLine(uint _row)
+        {
+            auto lines = splitLines(m_text);
+            if (_row < lines.length)
+                return lines[_row];
+            else
+                return "";
+        }
+
+        string getCurrentLine()
+        {
+            return getLine(row);
+        }
+
         int[2] getCaretPosition(ref const(Font) font)
         {
             int[2] cpos = [0,0];
@@ -1000,6 +1031,13 @@ class TextArea
 
 
     private:
+
+        bool isBlank(char c)
+        {
+            return c == ' ' ||
+                   c == '\t';
+        }
+
         uint m_offset = 0;
         string m_text = "";
 
