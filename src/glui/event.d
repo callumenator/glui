@@ -112,6 +112,7 @@ struct KeyRelease
         KEY m_key;
 }
 
+
 struct KeyHold
 {
     public:
