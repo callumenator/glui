@@ -34,10 +34,17 @@ struct KeyState
 /** Structure to hold the current state of the mouse. **/
 struct MouseState
 {
-    enum STATE
-    { RELEASED = 0, PRESSED = 1 }
+    enum STATE { RELEASED = 0, PRESSED = 1 }
 
-    int xpos, ypos;
+    align(1) union
+    {
+        struct
+        {
+            int xpos;
+            int ypos;
+        }
+        int[2] pos;
+    }
     int xrel, yrel;
 
     byte buttonsDown = 0;

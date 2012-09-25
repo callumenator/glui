@@ -51,6 +51,8 @@ class WidgetText : WidgetWindow
         @property TextArea text() { return m_text; }
         @property RGBA textColor() const { return m_textColor; }
         @property RGBA textBgColor() const { return m_textBgColor; }
+        @property uint row() const { return m_text.row; }
+        @property uint col() const { return m_text.col; }
 
         // Set
         @property void editable(bool v) { m_editable = v; }
@@ -99,6 +101,22 @@ class WidgetText : WidgetWindow
         void removeLineHighlight(int line)
         {
             m_lineHighlights.remove(line);
+        }
+
+        /**
+        * x and y are absolute screen coords
+        */
+        int[2] getRowCol(int x, int y)
+        {
+            auto relx = x - m_screenPos.x - 5;
+            auto rely = y - m_screenPos.y - textOffsetY() - m_font.m_lineHeight/2;
+
+            std.stdio.writeln(relx, ", ", rely);
+
+            if (relx < 0 || rely < 0)
+                return [0,0];
+
+            return m_text.getRowCol(m_font, relx, rely);
         }
 
         void set(Font font, WidgetArgs args)
@@ -300,6 +318,17 @@ class WidgetText : WidgetWindow
         // Setup draw coords
         void setCoords()
         {
+            glTranslatef(0*m_pos.x + 5, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
+
+            // Translate by the scroll amounts as well...
+            if (m_allowHScroll)
+                glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
+            if (m_allowVScroll)
+                glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
+        }
+
+        int textOffsetY()
+        {
             // Calculate vertical offset, depends on alignment
             float yoffset = 0;
             final switch(m_vAlign) with(VAlign)
@@ -327,14 +356,7 @@ class WidgetText : WidgetWindow
                     break;
                 }
             }
-
-            glTranslatef(0*m_pos.x + 5, 0*m_pos.y + yoffset + m_font.m_lineHeight, 0);
-
-            // Translate by the scroll amounts as well...
-            if (m_allowHScroll)
-                glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
-            if (m_allowVScroll)
-                glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
+            return cast(int)yoffset;
         }
 
         // Dispatch events
@@ -362,6 +384,16 @@ class WidgetText : WidgetWindow
                 case KEYPRESS:
                 {
                     handleKey(event.get!KeyPress.key);
+                    break;
+                }
+                case MOUSECLICK:
+                {
+                    auto pos = event.get!MouseClick.pos;
+                    auto rc = getRowCol(pos.x, pos.y);
+                    m_text.moveCaret(rc.x, rc.y);
+                    m_caretPos = m_text.getCaretPosition(m_font);
+                    m_drawCaret = true;
+                    needRender();
                     break;
                 }
                 default: break;
@@ -1017,6 +1049,58 @@ class TextArea
                 }
             }
             return cpos;
+        }
+
+        /**
+        * Return the row, col at screen position x, y relative to lower
+        * left corner of first character. Returned row and col are always
+        * inside the available text.
+        */
+        int[2] getRowCol(ref const(Font) font, int x, int y)
+        {
+            int[2] cpos = [0,0];
+
+            if (m_text.length == 0)
+                return cpos;
+
+            // y is determined solely by font.m_lineHeight
+            cpos[0] = cast(int) (y / font.m_lineHeight);
+
+            auto lines = splitLines(m_text);
+            if (cpos[0] > lines.length - 1)
+                cpos[0] = lines.length - 1;
+
+            float _x = 0;
+            foreach(char c; lines[cpos[0]])
+            {
+                if (_x > x)
+                    break;
+
+                if (c == '\t')
+                    _x += tabSpaces*font.m_wids[(cast(uint)' ') - 32];
+                else
+                    _x += font.m_wids[(cast(uint)c) - 32];
+
+                cpos[1] ++;
+            }
+            return cpos;
+        }
+
+        void moveCaret(uint newRow, uint newCol)
+        {
+            if (newRow == row && newCol == col)
+                return;
+
+            if (newRow > row || (newRow == row && newCol > col))
+            {
+                while(m_offset < m_text.length - 1 && (row != newRow || col != newCol))
+                    moveRight();
+            }
+            else
+            {
+                while(m_offset > 0 && (row != newRow || col != newCol))
+                    moveLeft();
+            }
         }
 
         // Clear all text
