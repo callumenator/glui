@@ -109,7 +109,12 @@ class WidgetText : WidgetWindow
         int[2] getRowCol(int x, int y)
         {
             auto relx = x - m_screenPos.x - 5;
+            if (m_allowHScroll)
+                relx += m_hscroll.current * m_font.m_maxWidth;
+
             auto rely = y - m_screenPos.y - textOffsetY() - m_font.m_lineHeight/2;
+            if (m_allowVScroll)
+                rely += m_vscroll.current * m_font.m_lineHeight;
 
             std.stdio.writeln(relx, ", ", rely);
 
