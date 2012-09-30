@@ -11,6 +11,7 @@
 module glui.widget.text;
 
 import
+    std.algorithm,
     std.array,
     std.conv,
     std.string,
@@ -116,12 +117,26 @@ class WidgetText : WidgetWindow
             if (m_allowVScroll)
                 rely += m_vscroll.current * m_font.m_lineHeight;
 
-            std.stdio.writeln(relx, ", ", rely);
-
             if (relx < 0 || rely < 0)
                 return [0,0];
 
             return m_text.getRowCol(m_font, relx, rely);
+        }
+
+        uint getOffset(int x, int y)
+        {
+            auto relx = x - m_screenPos.x - 5;
+            if (m_allowHScroll)
+                relx += m_hscroll.current * m_font.m_maxWidth;
+
+            auto rely = y - m_screenPos.y - textOffsetY() - m_font.m_lineHeight/2;
+            if (m_allowVScroll)
+                rely += m_vscroll.current * m_font.m_lineHeight;
+
+            if (relx < 0 || rely < 0)
+                return 0;
+
+            return m_text.getOffset(m_font, relx, rely);
         }
 
         void set(Font font, WidgetArgs args)
@@ -284,10 +299,39 @@ class WidgetText : WidgetWindow
                     glEnd();
                 }
 
-                if (m_highlighter)
-                    renderCharacters(m_font, m_text.text, m_highlighter);
+                if (haveSelection)
+                {
+                    auto lower = min(m_selectionRange[0], m_selectionRange[1]);
+                    auto upper = max(m_selectionRange[0], m_selectionRange[1]);
+
+                    auto pre = m_text.text[0..lower];
+                    auto mid= m_text.text[lower..upper];
+                    auto post = m_text.text[upper..$];
+
+                    if (m_highlighter)
+                    {
+                        int[2] offset;
+                        offset = renderCharacters(m_font, pre, m_highlighter);
+                        offset = renderCharacters(m_font, mid, m_highlighter, [0.,0.,1.,1.], offset);
+                        offset = renderCharacters(m_font, post, m_highlighter, [0.,0.,0.,0.], offset);
+                    }
+                    else
+                    {
+                        int[2] offset;
+                        offset = renderCharacters(m_font, pre, m_textColor);
+                        offset = renderCharacters(m_font, mid, m_textColor, [0.,0.,1.,1.], offset);
+                        offset = renderCharacters(m_font, post, m_textColor, [0.,0.,0.,0.], offset);
+                    }
+
+                }
                 else
-                    renderCharacters(m_font, m_text.text, m_textColor);
+                {
+                    if (m_highlighter)
+                        renderCharacters(m_font, m_text.text, m_highlighter);
+                    else
+                        renderCharacters(m_font, m_text.text, m_textColor);
+                }
+
                 glEndList();
                 m_refreshCache = false;
             }
@@ -323,11 +367,23 @@ class WidgetText : WidgetWindow
         // Setup draw coords
         void setCoords()
         {
-            glTranslatef(0*m_pos.x + 5, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
+            resetXCoord();
+            resetYCoord();
+        }
 
+        void resetXCoord()
+        {
+            glTranslatef(0*m_pos.x + 5, 0, 0);
             // Translate by the scroll amounts as well...
             if (m_allowHScroll)
                 glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
+        }
+
+        void resetYCoord()
+        {
+            glTranslatef(0, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
+
+            // Translate by the scroll amounts as well...
             if (m_allowVScroll)
                 glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
@@ -393,9 +449,29 @@ class WidgetText : WidgetWindow
                 }
                 case MOUSECLICK:
                 {
+                    auto preOffset = m_text.offset;
                     auto pos = event.get!MouseClick.pos;
                     auto rc = getRowCol(pos.x, pos.y);
+
                     m_text.moveCaret(rc.x, rc.y);
+
+                    std.stdio.writeln(m_selectionRange);
+
+                    if (root.shiftIsDown)
+                    {
+                        if (m_selectionRange[0] == m_selectionRange[1])
+                        {
+                            clearSelection();
+                            m_selectionRange[0] = preOffset;
+                        }
+
+                        updateSelectionRange();
+                    }
+                    else
+                    {
+                        clearSelection();
+                    }
+
                     m_caretPos = m_text.getCaretPosition(m_font);
                     m_drawCaret = true;
                     needRender();
@@ -458,18 +534,15 @@ class WidgetText : WidgetWindow
         {
             m_lastKey = key;
 
-            if (root.ctrlIsDown())
-            {
-                handleCtrlCombo(key);
-                adjustVisiblePortion();
-                return;
-            }
-
             switch(cast(uint)key) with (KEY)
             {
                 case KC_HOME: // home key
                 {
                     m_text.home();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -477,20 +550,38 @@ class WidgetText : WidgetWindow
                 case KC_END: // end key
                 {
                     m_text.end();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+
                     m_drawCaret = true;
                     needRender();
                     break;
                 }
                 case KC_LEFT: // left arrow
                 {
-                    m_text.moveLeft();
+                    if (root.ctrlIsDown)
+                        m_text.jumpLeft();
+                    else
+                        m_text.moveLeft();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+
                     m_drawCaret = true;
                     needRender();
                     break;
                 }
                 case KC_RIGHT: // right arrow
                 {
-                    m_text.moveRight();
+                    if (root.ctrlIsDown)
+                        m_text.jumpRight();
+                    else
+                        m_text.moveRight();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -498,6 +589,10 @@ class WidgetText : WidgetWindow
                 case KC_UP: // up arrow
                 {
                     m_text.moveUp();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -505,6 +600,10 @@ class WidgetText : WidgetWindow
                 case KC_DOWN: // down arrow
                 {
                     m_text.moveDown();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -527,6 +626,14 @@ class WidgetText : WidgetWindow
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender();
+                    break;
+                }
+                case KC_SHIFT_LEFT:
+                case KC_SHIFT_RIGHT:
+                {
+                    if (!haveSelection())
+                        m_selectionRange[] = [m_text.offset, m_text.offset];
+
                     break;
                 }
                 case KC_RETURN: // Carriage return
@@ -583,8 +690,14 @@ class WidgetText : WidgetWindow
                 default:
             }
 
-            adjustVisiblePortion();
+            if (!root.shiftIsDown)
+            {
+                clearSelection();
+                m_refreshCache = true;
+                needRender();
+            }
 
+            adjustVisiblePortion();
         } // handleKey
 
 
@@ -617,42 +730,45 @@ class WidgetText : WidgetWindow
             }
         }
 
-        void handleCtrlCombo(in KEY key)
+        override bool requestDrag(int[2] pos)
         {
-            switch(cast(uint)key) with (KEY)
+            m_pendingDrag = true;
+            return true;
+        }
+
+        override void drag(int[2] pos, int[2] delta)
+        {
+            auto offset = getOffset(pos.x, pos.y);
+
+            if (m_pendingDrag)
             {
-                case KC_LEFT: // left arrow
-                {
-                    m_text.jumpLeft();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                case KC_RIGHT: // right arrow
-                {
-                    m_text.jumpRight();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                case KC_UP: // up arrow
-                {
-                    m_text.moveUp();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                case KC_DOWN: // down arrow
-                {
-                    m_text.moveDown();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                default:
+                m_selectionRange[] = [offset, offset];
+                m_pendingDrag = false;
+            }
+            else
+            {
+                m_selectionRange[1] = offset;
+                m_refreshCache = true;
+                needRender();
             }
         }
 
+        void updateSelectionRange()
+        {
+            m_selectionRange[1] = m_text.offset;
+            m_refreshCache = true;
+        }
+
+        void clearSelection()
+        {
+            m_selectionRange[] = [0,0];
+            m_refreshCache = true;
+        }
+
+        bool haveSelection()
+        {
+            return m_selectionRange[0] != m_selectionRange[1];
+        }
 
     private:
 
@@ -689,6 +805,9 @@ class WidgetText : WidgetWindow
         bool m_refreshCache = true;
 
         RGBA[int] m_lineHighlights;
+
+        bool m_pendingDrag = false;
+        uint[2] m_selectionRange;
 }
 
 
@@ -1091,6 +1210,37 @@ class TextArea
             return cpos;
         }
 
+        /**
+        * Return the 1-D text offset at screen position x, y relative to lower
+        * left corner of first character. Returned offset is always
+        * inside the available text.
+        */
+        uint getOffset(ref const(Font) font, int x, int y)
+        {
+            uint offset = 0;
+
+            if (m_text.length == 0)
+                return offset;
+
+            auto rc = getRowCol(font, x, y);
+
+            int _row, _col;
+
+            while(_row != rc[0] || _col != rc[1])
+            {
+                if (m_text[offset] == '\n')
+                {
+                    _row += 1;
+                    _col = 0;
+                }
+                else
+                    _col ++;
+
+                offset ++;
+            }
+            return offset;
+        }
+
         void moveCaret(uint newRow, uint newCol)
         {
             if (newRow == row && newCol == col)
@@ -1098,7 +1248,7 @@ class TextArea
 
             if (newRow > row || (newRow == row && newCol > col))
             {
-                while(m_offset < m_text.length - 1 && (row != newRow || col != newCol))
+                while(m_offset < m_text.length && (row != newRow || col != newCol))
                     moveRight();
             }
             else

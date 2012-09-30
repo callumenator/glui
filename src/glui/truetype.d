@@ -216,6 +216,7 @@ public
     }
 
     // Render a string of characters at the current position
+    /++
     void renderCharacters(ref const(Font) font, string text, float[4] color, uint tabSpaces = 4)
     in
     {
@@ -260,10 +261,17 @@ public
 
         unbindFontBuffers(font);
     }
+    ++/
 
 
-    // Render a string of characters at the current position, with a background color
-    void renderCharacters(ref const(Font) font, string text, float[4] color, float[4] bgcolor, uint tabSpaces = 4)
+    /**
+    * Render a string of characters at the current position, with a single text color.
+    * Returns: 2-element static array containing [x,y] offsets after rendering text.
+    */
+    int[2] renderCharacters(ref const(Font) font, string text, float[4] color,
+                          float[4] bgcolor = [0.,0.,0.,0.],
+                          int[2] offset = [0,0],
+                          uint tabSpaces = 4)
     in
     {
         assert(font !is null, "Null font passed to truetype.renderCharacter");
@@ -272,13 +280,17 @@ public
     {
         bindFontBuffers(font);
 
-        int xoffset = 0;
         foreach(char c; text)
         {
             if (c == '\n')
             {
-                glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
-                xoffset = 0;
+                glTranslatef(-offset[0], -1*font.m_lineHeight, 0);
+                offset[0] = 0;
+                offset[1] += font.m_lineHeight;
+
+                glColor4fv(bgcolor.ptr);
+                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
                 continue;
             }
             else if (c == '\t')
@@ -290,7 +302,7 @@ public
                     glColor4fv(bgcolor.ptr);
                     glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
-                    xoffset += font.m_wids[index];
+                    offset[0] += font.m_wids[index];
                     glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
                 }
                 continue;
@@ -305,16 +317,23 @@ public
             glTranslatef(font.m_xoffs[index], 0, 0);
             glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
-            xoffset += font.m_wids[index];
+            offset[0] += font.m_wids[index];
             glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
         }
 
         unbindFontBuffers(font);
+        return offset;
     }
 
 
-    // Render a string of characters at the current position, with highlighted syntax
-    void renderCharacters(ref const(Font) font, string text, SyntaxHighlighter highlighter, uint tabSpaces = 4)
+    /**
+    * Render a string of characters at the current position, with highlighted syntax.
+    * Returns: 2-element static array containing [x,y] offsets after rendering text.
+    */
+    int[2] renderCharacters(ref const(Font) font, string text, SyntaxHighlighter highlighter,
+                          float[4] bgcolor = [0.,0.,0.,0.],
+                          int[2] offset = [0,0],
+                          uint tabSpaces = 4)
     in
     {
         assert(font !is null, "Null font passed to truetype.renderCharacter");
@@ -323,17 +342,19 @@ public
     {
         bindFontBuffers(font);
 
-        int xoffset = 0;
-        float[4] bgcolor = [0f,0f,0f,0f];
-
         foreach(item; highlighter.parse(text))
         {
             foreach(char c; item.text)
             {
                 if (c == '\n')
                 {
-                    glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
-                    xoffset = 0;
+                    glTranslatef(-offset[0], -1*font.m_lineHeight, 0);
+                    offset[0] = 0;
+                    offset[1] += font.m_lineHeight;
+
+                    glColor4fv(bgcolor.ptr);
+                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
                     continue;
                 }
                 else if (c == '\t')
@@ -345,7 +366,7 @@ public
                         glColor4fv(bgcolor.ptr);
                         glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
-                        xoffset += font.m_wids[index];
+                        offset[0] += font.m_wids[index];
                         glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
                     }
                     continue;
@@ -360,12 +381,13 @@ public
                 glTranslatef(font.m_xoffs[index], 0, 0);
                 glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
-                xoffset += font.m_wids[index];
+                offset[0] += font.m_wids[index];
                 glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
             }
         }
 
         unbindFontBuffers(font);
+        return offset;
     }
 
 
