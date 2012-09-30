@@ -97,11 +97,22 @@ class WidgetText : WidgetWindow
         void addLineHighlight(int line, RGBA color)
         {
             m_lineHighlights[line] = color;
+            m_refreshCache = true;
+            needRender();
         }
 
         void removeLineHighlight(int line)
         {
             m_lineHighlights.remove(line);
+            m_refreshCache = true;
+            needRender();
+        }
+
+        void removeAllLineHighlights()
+        {
+            m_lineHighlights.clear;
+            m_refreshCache = true;
+            needRender();
         }
 
         /**
@@ -1165,11 +1176,11 @@ class TextArea
                 }
                 else if (c == '\t')
                 {
-                    cpos[0] += tabSpaces*font.m_wids[(cast(uint)' ') - 32];
+                    cpos[0] += tabSpaces*font.width(' ');
                 }
                 else
                 {
-                    cpos[0] += font.m_wids[(cast(uint)c) - 32];
+                    cpos[0] += font.width(c);
                 }
             }
             return cpos;
@@ -1201,9 +1212,9 @@ class TextArea
                     break;
 
                 if (c == '\t')
-                    _x += tabSpaces*font.m_wids[(cast(uint)' ') - 32];
+                    _x += tabSpaces*font.width(' ');
                 else
-                    _x += font.m_wids[(cast(uint)c) - 32];
+                    _x += font.width(c);
 
                 cpos[1] ++;
             }

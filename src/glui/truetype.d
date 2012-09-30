@@ -66,6 +66,11 @@ public
             else
                 return 0;
         }
+
+        int width(char c) const
+        {
+            return m_wids[index(c)];
+        }
     }
 
     // Create a font from the given file, with the given size
