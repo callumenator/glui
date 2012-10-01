@@ -220,54 +220,6 @@ public
         unbindFontBuffers(font);
     }
 
-    // Render a string of characters at the current position
-    /++
-    void renderCharacters(ref const(Font) font, string text, float[4] color, uint tabSpaces = 4)
-    in
-    {
-        assert(font !is null, "Null font passed to truetype.renderCharacters");
-    }
-    body
-    {
-        bindFontBuffers(font);
-        glColor4fv(color.ptr);
-
-        int xoffset = 0;
-        foreach(char c; text)
-        {
-            if (c == '\n')
-            {
-                glTranslatef(-xoffset, -1*font.m_lineHeight, 0);
-                xoffset = 0;
-                continue;
-            }
-            else if (c == '\t')
-            {
-                foreach(i; 0..tabSpaces)
-                {
-                    auto index = font.index(' ');
-
-                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
-
-                    xoffset += font.m_wids[index];
-                    glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
-                }
-                continue;
-            }
-
-            auto index = font.index(c);
-
-            glTranslatef(font.m_xoffs[index], 0, 0);
-            glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
-
-            xoffset += font.m_wids[index];
-            glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
-        }
-
-        unbindFontBuffers(font);
-    }
-    ++/
-
 
     /**
     * Render a string of characters at the current position, with a single text color.
@@ -289,13 +241,12 @@ public
         {
             if (c == '\n')
             {
-                glTranslatef(-offset[0], -1*font.m_lineHeight, 0);
-                offset[0] = 0;
-                offset[1] += font.m_lineHeight;
-
                 glColor4fv(bgcolor.ptr);
                 glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
+                glTranslatef(-offset[0], -1*font.m_lineHeight, 0);
+                offset[0] = 0;
+                offset[1] += font.m_lineHeight;
                 continue;
             }
             else if (c == '\t')
@@ -353,13 +304,12 @@ public
             {
                 if (c == '\n')
                 {
-                    glTranslatef(-offset[0], -1*font.m_lineHeight, 0);
-                    offset[0] = 0;
-                    offset[1] += font.m_lineHeight;
-
                     glColor4fv(bgcolor.ptr);
                     glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
+                    glTranslatef(-offset[0], -1*font.m_lineHeight, 0);
+                    offset[0] = 0;
+                    offset[1] += font.m_lineHeight;
                     continue;
                 }
                 else if (c == '\t')

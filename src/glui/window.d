@@ -411,6 +411,14 @@ version(Windows)
             uint vk = MapVirtualKeyEx(scode, 3, m_layout);
             auto asciiConv = ToAsciiEx(vk, scode, state.ptr, &ascii, 0, m_layout);
 
+            // If key is ASCII, but CTRL is down, special case
+            if (asciiConv == 1 &&
+                cast(KEY)(vk + nonAsciiOffset) != KEY.KC_CTRL_RIGHT &&
+                cast(KEY)(vk + nonAsciiOffset) != KEY.KC_CTRL_LEFT &&
+                (m_keyState.keys[KEY.KC_CTRL_LEFT] ||
+                m_keyState.keys[KEY.KC_CTRL_RIGHT]))
+                return cast(KEY)vk;
+
             if (asciiConv == 1)
                 return cast(KEY)ascii;
             else if (asciiConv == 0)

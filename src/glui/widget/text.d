@@ -11,6 +11,7 @@
 module glui.widget.text;
 
 import
+    std.c.string,
     std.algorithm,
     std.array,
     std.conv,
@@ -23,6 +24,23 @@ import
 import
     glui.truetype,
     glui.widget.base;
+
+
+version(Windows)
+{
+    import core.sys.windows.windows;
+
+    extern(Windows)
+    {
+        HGLOBAL GlobalAlloc(UINT uFlags, SIZE_T dwBytes);
+        LPVOID GlobalLock(HGLOBAL hMem);
+        BOOL GlobalUnlock(HGLOBAL hMem);
+        BOOL OpenClipboard(HWND hWndNewOwner);
+        BOOL EmptyClipboard();
+        HANDLE SetClipboardData(UINT uFormat, HANDLE hMem);
+        BOOL CloseClipboard();
+    }
+}
 
 /**
 * Text box. This is a possibly editable box for rendering text.
@@ -312,11 +330,12 @@ class WidgetText : WidgetWindow
 
                 if (haveSelection)
                 {
-                    auto lower = min(m_selectionRange[0], m_selectionRange[1]);
-                    auto upper = max(m_selectionRange[0], m_selectionRange[1]);
+                    auto r = reduce!(min, max)(m_selectionRange);
+                    auto lower = r[0];
+                    auto upper = r[1];
 
                     auto pre = m_text.text[0..lower];
-                    auto mid= m_text.text[lower..upper];
+                    auto mid = m_text.text[lower..upper];
                     auto post = m_text.text[upper..$];
 
                     if (m_highlighter)
@@ -465,8 +484,6 @@ class WidgetText : WidgetWindow
                     auto rc = getRowCol(pos.x, pos.y);
 
                     m_text.moveCaret(rc.x, rc.y);
-
-                    std.stdio.writeln(m_selectionRange);
 
                     if (root.shiftIsDown)
                     {
@@ -631,9 +648,17 @@ class WidgetText : WidgetWindow
                 }
                 case KC_DELETE: // del
                 {
-                    char deleted = m_text.rightText();
-                    m_text.del();
-                    eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                    if (!haveSelection())
+                    {
+                        auto deleted = m_text.rightText();
+                        m_text.del();
+                        eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                    }
+                    else
+                    {
+                        deleteSelectedText();
+                    }
+
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender();
@@ -651,6 +676,8 @@ class WidgetText : WidgetWindow
                 {
                     if (m_editable)
                     {
+                        deleteSelectedText();
+
                         // If current line is indented (has tabs) replicate for this line
                         auto line = m_text.getCurrentLine();
 
@@ -675,9 +702,14 @@ class WidgetText : WidgetWindow
                 {
                     if (m_editable)
                     {
-                        char deleted = m_text.leftText();
-                        m_text.backspace();
-                        eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                        if (haveSelection())
+                            deleteSelectedText();
+                        else
+                        {
+                            char deleted = m_text.leftText();
+                            m_text.backspace();
+                            eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                        }
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
@@ -686,26 +718,34 @@ class WidgetText : WidgetWindow
                 }
                 case 32:..case 126: // printables
                 {
-                    if (m_editable)
+                    if (root.ctrlIsDown)
                     {
+                        switch(key) with (KEY)
+                        {
+                            case KC_C: // copy selection to clipboard
+                            {
+                                copyToClipboard();
+                                break;
+                            }
+
+
+                            default: break;
+                        }
+                    }
+                    else if (m_editable)
+                    {
+                        deleteSelectedText();
+
                         m_text.insert(cast(char)key);
                         eventSignal.emit(this, WidgetEvent(TextInsert(to!string(cast(char)key))));
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
                     }
-
                     break;
                 }
 
                 default:
-            }
-
-            if (!root.shiftIsDown)
-            {
-                clearSelection();
-                m_refreshCache = true;
-                needRender();
             }
 
             adjustVisiblePortion();
@@ -774,11 +814,57 @@ class WidgetText : WidgetWindow
         {
             m_selectionRange[] = [0,0];
             m_refreshCache = true;
+            needRender();
         }
 
         bool haveSelection()
         {
             return m_selectionRange[0] != m_selectionRange[1];
+        }
+
+        void deleteSelectedText()
+        {
+            if (!haveSelection())
+                return;
+
+            auto r = reduce!(min, max)(m_selectionRange);
+            auto deleted = m_text.text[r[0]..r[1]];
+            m_text.del(r[0], r[1]-1);
+            eventSignal.emit(this, WidgetEvent(TextRemove(deleted)));
+            clearSelection();
+        }
+
+        string getSelectedText()
+        in
+        {
+            assert(haveSelection());
+        }
+        body
+        {
+            auto r = reduce!(min, max)(m_selectionRange);
+            return m_text.text[r[0]..r[1]];
+        }
+
+        void copyToClipboard()
+        {
+            if (!haveSelection())
+                return;
+
+            if (OpenClipboard(null) && EmptyClipboard())
+            {
+                string selection;
+                foreach(line; splitLines(getSelectedText()))
+                    selection ~= line ~ '\r';
+
+                selection ~= '\0';
+
+                auto hnd = GlobalAlloc(0, selection.length);
+                char* pchData = cast(char*)GlobalLock(hnd);
+                strcpy(pchData, selection.ptr);
+                GlobalUnlock(hnd);
+                SetClipboardData(1 /** CF_TEXT **/, hnd);
+                CloseClipboard();
+            }
         }
 
     private:
@@ -953,14 +1039,34 @@ class TextArea
         void del()
         {
             if (m_offset < m_text.length)
-            {
                 deleteSelection(m_offset, m_offset);
-            }
+        }
+
+        void del(size_t from, size_t to)
+        {
+            deleteSelection(from, to);
         }
 
         void deleteSelection(size_t from, size_t to)
+        in
         {
-            m_text = m_text[0..from] ~ m_text[to+1..$];
+            assert(from < m_text.length);
+            assert(to < m_text.length);
+            assert(to >= from);
+        }
+        body
+        {
+            string newtext;
+            if (from > 0)
+                newtext = m_text[0..from] ~ m_text[to+1..$];
+            else
+                newtext = m_text[to+1..$];
+
+            if (m_offset != from && to-from > 0 )
+                foreach(i; 0..(to-from) + 1)
+                    moveLeft();
+
+            m_text = newtext;
         }
 
         /**
