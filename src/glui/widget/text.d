@@ -38,6 +38,7 @@ version(Windows)
         BOOL OpenClipboard(HWND hWndNewOwner);
         BOOL EmptyClipboard();
         HANDLE SetClipboardData(UINT uFormat, HANDLE hMem);
+        HANDLE GetClipboardData(UINT uFormat);
         BOOL CloseClipboard();
     }
 }
@@ -682,8 +683,6 @@ class WidgetText : WidgetWindow
                         auto line = m_text.getCurrentLine();
 
                         m_text.insert("\n");
-                        eventSignal.emit(this, WidgetEvent(TextReturn()));
-
                         foreach(char c; line)
                         {
                             if (c == '\t')
@@ -695,6 +694,8 @@ class WidgetText : WidgetWindow
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
+
+                        eventSignal.emit(this, WidgetEvent(TextInsert("\n")));
                     }
                     break;
                 }
@@ -727,7 +728,17 @@ class WidgetText : WidgetWindow
                                 copyToClipboard();
                                 break;
                             }
-
+                            case KC_V: // copy selection to clipboard
+                            {
+                                pasteFromClipboard();
+                                break;
+                            }
+                            case KC_X: // copy selection to clipboard and delete selection
+                            {
+                                copyToClipboard();
+                                deleteSelectedText();
+                                break;
+                            }
 
                             default: break;
                         }
@@ -847,25 +858,65 @@ class WidgetText : WidgetWindow
 
         void copyToClipboard()
         {
-            if (!haveSelection())
-                return;
-
-            if (OpenClipboard(null) && EmptyClipboard())
+            version(Windows)
             {
-                string selection;
-                foreach(line; splitLines(getSelectedText()))
-                    selection ~= line ~ '\r';
+                if (!haveSelection())
+                    return;
 
-                selection ~= '\0';
+                if (OpenClipboard(null) && EmptyClipboard())
+                {
+                    string selection;
+                    foreach(line; splitLines(getSelectedText()))
+                        selection ~= line ~ '\r';
 
-                auto hnd = GlobalAlloc(0, selection.length);
-                char* pchData = cast(char*)GlobalLock(hnd);
-                strcpy(pchData, selection.ptr);
-                GlobalUnlock(hnd);
-                SetClipboardData(1 /** CF_TEXT **/, hnd);
-                CloseClipboard();
+                    selection ~= '\0';
+
+                    auto hnd = GlobalAlloc(0, selection.length);
+                    char* pchData = cast(char*)GlobalLock(hnd);
+                    strcpy(pchData, selection.ptr);
+                    GlobalUnlock(hnd);
+                    SetClipboardData(1 /** CF_TEXT **/, hnd);
+                    CloseClipboard();
+                }
             }
         }
+
+        void pasteFromClipboard()
+        {
+            version(Windows)
+            {
+                if (OpenClipboard(null))
+                {
+                    scope(exit) { CloseClipboard(); }
+                    auto hData = GetClipboardData(1 /** CF_TEXT **/);
+
+                    char* buffer = cast(char*)GlobalLock(hData);
+                    scope(exit) { GlobalUnlock(hData); }
+
+                    uint bytes = 0;
+                    auto buffPtr = buffer;
+                    while(*(buffPtr++) != '\0')
+                        bytes ++;
+
+                    if (bytes == 0)
+                        return;
+
+                    char[] readin;
+                    readin.length = bytes;
+                    memcpy(readin.ptr, buffer, bytes);
+
+                    string paste;
+                    foreach(line; splitLines(readin))
+                        paste ~= line ~ '\n';
+
+                    m_text.insert(paste);
+                    m_refreshCache = true;
+                    needRender();
+                }
+            }
+        }
+
+
 
     private:
 
@@ -1009,22 +1060,10 @@ class TextArea
 
         void insert(string s)
         {
-            // TODO: the column and row changes don't correctly account for
-            // insertions which contain carriage returns
-
             insertInPlace(m_text, m_offset, s);
-            m_offset += s.length;
 
-            if (s.length == 1 && s[0] == '\n')
-            {
-                m_column = 0;
-                m_row++;
-            }
-            else
-            {
-                m_column += s.length;
-                m_seekColumn = m_column;
-            }
+            foreach(i; 0..s.length)
+                moveRight();
         }
 
         void backspace()
