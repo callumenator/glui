@@ -795,6 +795,8 @@ class DSyntaxHighlighter : SyntaxHighlighter
         ColoredText[] t;
         string buf;
 
+        bool inString = false;
+
         foreach(c; text)
         {
             switch (c)
@@ -803,10 +805,13 @@ class DSyntaxHighlighter : SyntaxHighlighter
                 case '\t':
                 case ' ':
                 {
-                    t ~= [ColoredText(buf, color(buf)),
-                          ColoredText([c], RGBA(0,0,0,0))];
-                    buf.clear;
-                    continue;
+                    if (!inString)
+                    {
+                        t ~= [ColoredText(buf, color(buf)),
+                              ColoredText([c], RGBA(0,0,0,0))];
+                        buf.clear;
+                        continue;
+                    }
                 }
                 case '(':
                 case ')':
@@ -816,11 +821,30 @@ class DSyntaxHighlighter : SyntaxHighlighter
                 case '}':
                 case ';':
                 {
-                    t ~= [ColoredText(buf, color(buf)),
-                          ColoredText([c], color([c]))];
-                    buf.clear;
-                    continue;
+                    if (!inString)
+                    {
+                        t ~= [ColoredText(buf, color(buf)),
+                            ColoredText([c], color([c]))];
+                        buf.clear;
+                        continue;
+                    }
+                    break;
                 }
+                case '"':
+                {
+                    if (inString)
+                    {
+                        t ~= [ColoredText(buf, RGBA(0,0,1,1)),
+                              ColoredText([c], RGBA(0,0,1,1))];
+                        buf.clear;
+                        inString = !inString;
+                        continue;
+                    }
+
+                    inString = !inString;
+                    break;
+                }
+
                 default:
             }
             buf ~= c;

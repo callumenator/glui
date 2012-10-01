@@ -210,7 +210,7 @@ class WidgetText : WidgetWindow
             // Set some reasonable defaults
             if (m_repeatDelayTime == -1) m_repeatDelayTime = 20;
             if (m_repeatHoldTime == -1)  m_repeatHoldTime = 500;
-            if (m_caretBlinkDelay == -1) m_caretBlinkDelay = 400;
+            if (m_caretBlinkDelay == -1) m_caretBlinkDelay = 600;
 
             // Request recurrent timer event from root for blinking the caret
             if (m_editable) requestTimer(m_caretBlinkDelay, &this.timerEvent, true);
