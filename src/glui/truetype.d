@@ -630,168 +630,137 @@ abstract class SyntaxHighlighter
     struct ColoredText
     {
         string text;
-        RGBA color;
+        RGBA color = {1,1,1,1};
+        RGBA background = {0,0,0,0};
+    }
+
+    enum SyntaxElement
+    {
+        KEYWORD,
+        PARENS,
+        OPERATOR,
+        NUMBER,
+        STRING
     }
 
     ColoredText[] parse(string text);
 
-    RGBA color(string word) pure
+    void setElement(SyntaxElement stx, RGBA fg, RGBA bg)
     {
-        auto ptr = word in m_syntax;
-        if (ptr)
-            return m_color[*ptr];
-        else
-            return m_defaultColor;
+        color[stx] = fg;
+        background[stx] = bg;
     }
 
     private:
-        int[string] m_syntax;
-        RGBA[] m_color;
-        RGBA m_defaultColor = {1,1,1,1};
+        RGBA[SyntaxElement] color;
+        RGBA[SyntaxElement] background;
+
+        RGBA defaultColor = {1,1,1,1};
+        RGBA defaultBackground = {1,1,1,1};
 }
+
+import pegged.grammar, pegged.peg;
+
+mixin(grammar(`
+    ParseD:
+
+        Line <- (Spaces (Keyword / Other / Number / String / Parens / Symbol) Spaces)*
+
+        Other <~ [a-zA-Z_]+
+
+        Number <~  digit+ / (digit+ '.' digit*) / (digit* '.' digit+)
+
+        String < FullString / PartialString
+
+        FullString <~ quote (!quote .)* quote
+                    / backquote (!backquote .)* backquote
+                    / doublequote (!doublequote .)* doublequote
+
+        PartialString <~ quote (!quote .)*
+                       / backquote (!backquote .)*
+                       / doublequote (!doublequote .)*
+
+        Symbol <- '~' / '!' / '@' / '#' / '$' / '%' / '^' / '&' / '*' / '/' /
+                  '+' / '=' / '<' / '.' / '>' / ',' / ':' / ';' / backslash
+
+        Parens <- '(' / ')' / '{' / '}' / '[' / ']'
+
+        Spaces <~ (' ' / '\n' / '\t')*
+
+        Keyword <- "abstract" / "alias" / "align" / "asm" / "assert" / "auto" / "body" / "bool" / "break" / "byte"
+                 / "case" / "cast" / "catch" / "cdouble" / "cent" / "cfloat" / "char" / "class" / "const" / "continue" / "creal" / "dchar"
+                 / "debug" / "default" / "delegate" / "delete" / "deprecated" / "double" / "do" / "else" / "enum" / "export" / "extern"
+                 / "false" / "finally" / "final" / "float" / "foreach_reverse" / "foreach" / "for" / "function" / "goto" / "idouble" / "if"
+                 / "ifloat" / "immutable" / "import" / "inout" / "interface" / "invariant" / "int" / "in" / "ireal" / "is" / "lazy"
+                 / "long" / "macro" / "mixin" / "module" / "new" / "nothrow" / "null" / "out" / "override" / "package" / "pragma"
+                 / "private" / "protected" / "public" / "pure" / "real" / "ref" / "return" / "scope" / "shared" / "short" / "static"
+                 / "struct" / "super" / "switch" / "synchronized" / "template" / "this" / "throw" / "true" / "try" / "typedef" / "typeid"
+                 / "typeof" / "ubyte" / "ucent" / "uint" / "ulong" / "union" / "unittest" / "ushort" / "version" / "void" / "volatile"
+                 / "wchar" / "while" / "with" / "__FILE__" / "__LINE__" / "__gshared" / "__thread" / "__traits"
+
+`));
 
 
 class DSyntaxHighlighter : SyntaxHighlighter
 {
     this()
     {
-        m_color =
-        [
-            RGBA(163,198,212,255),  // teal
-            RGBA(170,170,170,255), // light grey
-        ];
+        with(SyntaxHighlighter.SyntaxElement)
+        {
+            color[KEYWORD] =  RGBA(135,163,173,255);
+            color[OPERATOR] = RGBA(242,123,116,255);
+            color[NUMBER] =   RGBA(240,212, 89,255);
+            color[PARENS] =   RGBA(190,190,190,255);
+            color[STRING] =   RGBA( 89,110,168,255);
 
-        m_syntax =
-        [
-            // PARENTHESIS etc
-            "(" : 1,
-            ")" : 1,
-            "{" : 1,
-            "}" : 1,
-            "[" : 1,
-            "]" : 1,
-
-            // KEYWORDS
-            "abstract" : 0,
-            "alias" : 0,
-            "align" : 0,
-            "asm" : 0,
-            "assert" : 0,
-            "auto" : 0,
-            "body" : 0,
-            "bool" : 0,
-            "break" : 0,
-            "byte" : 0,
-            "case" : 0,
-            "cast" : 0,
-            "catch" : 0,
-            "cdouble" : 0,
-            "cent" : 0,
-            "cfloat" : 0,
-            "char" : 0,
-            "class" : 0,
-            "const" : 0,
-            "continue" : 0,
-            "creal" : 0,
-            "dchar" : 0,
-            "debug" : 0,
-            "default" : 0,
-            "delegate" : 0,
-            "delete" : 0,
-            "deprecated" : 0,
-            "@disable" : 0,
-            "do" : 0,
-            "double" : 0,
-            "dstring" : 0,
-            "else" : 0,
-            "enum" : 0,
-            "export" : 0,
-            "extern" : 0,
-            "false" : 0,
-            "__FILE__" : 0,
-            "finally" : 0,
-            "final" : 0,
-            "float" : 0,
-            "foreach_reverse" : 0,
-            "foreach" : 0,
-            "for" : 0,
-            "function" : 0,
-            "goto" : 0,
-            "__gshared" : 0,
-            "idouble" : 0,
-            "ifloat" : 0,
-            "if" : 0,
-            "immutable" : 0,
-            "import" : 0,
-            "inout" : 0,
-            "interface" : 0,
-            "in" : 0,
-            "int" : 0,
-            "invariant" : 0,
-            "ireal" : 0,
-            "is" : 0,
-            "lazy" : 0,
-            "__LINE__" : 0,
-            "long" : 0,
-            "macro" : 0,
-            "mixin" : 0,
-            "module" : 0,
-            "new" : 0,
-            "nothrow" : 0,
-            "null" : 0,
-            "out" : 0,
-            "override" : 0,
-            "package" : 0,
-            "pragma" : 0,
-            "private" : 0,
-            "@property" : 0,
-            "protected" : 0,
-            "public" : 0,
-            "pure" : 0,
-            "real" : 0,
-            "ref" : 0,
-            "return" : 0,
-            "@safe" : 0,
-            "scope" : 0,
-            "shared" : 0,
-            "short" : 0,
-            "static" : 0,
-            "string" : 0,
-            "struct" : 0,
-            "super" : 0,
-            "switch" : 0,
-            "synchronized" : 0,
-            "@system" : 0,
-            "template" : 0,
-            "this" : 0,
-            "__thread" : 0,
-            "throw" : 0,
-            "__traits" : 0,
-            "true" : 0,
-            "@trusted" : 0,
-            "try" : 0,
-            "typedef" : 0,
-            "typeid" : 0,
-            "typeof" : 0,
-            "ubyte" : 0,
-            "ucent" : 0,
-            "uint" : 0,
-            "ulong" : 0,
-            "union" : 0,
-            "unittest" : 0,
-            "ushort" : 0,
-            "version" : 0,
-            "void" : 0,
-            "volatile" : 0,
-            "wchar" : 0,
-            "while" : 0,
-            "with" : 0,
-            "wstring" : 0
-        ];
+            background[KEYWORD] = RGBA(0,0,0,0);
+            background[OPERATOR] = RGBA(0,0,0,0);
+            background[NUMBER] = RGBA(0,0,0,0);
+            background[PARENS] = RGBA(0,0,0,0);
+            background[STRING] = RGBA(0,0,0,0);
+        }
     }
 
     ColoredText[] parse(string text)
     {
+        Appender!(ColoredText[]) t;
+
+        auto result = ParseD(text);
+
+        foreach(child; result.children[0].children)
+        {
+            switch(child.name) with(SyntaxElement)
+            {
+                case "ParseD.Spaces":
+                    t.put(ColoredText(child.matches[0], RGBA(0,0,0,0), RGBA(0,0,0,0)));
+                    break;
+                case "ParseD.Keyword":
+                    t.put(ColoredText(child.matches[0], color[KEYWORD], background[KEYWORD]));
+                    break;
+                case "ParseD.Other":
+                    t.put(ColoredText(child.matches[0], defaultColor, defaultBackground));
+                    break;
+                case "ParseD.Symbol":
+                    t.put(ColoredText(child.matches[0], color[OPERATOR], background[OPERATOR]));
+                    break;
+                case "ParseD.Parens":
+                    t.put(ColoredText(child.matches[0], color[PARENS], background[PARENS]));
+                    break;
+                case "ParseD.Number":
+                    t.put(ColoredText(child.matches[0], color[NUMBER], background[NUMBER]));
+                    break;
+                case "ParseD.String":
+                    t.put(ColoredText(child.matches[0], color[STRING], background[STRING]));
+                    break;
+                default: break;
+            }
+        }
+
+        return t.data;
+
+
+
+        /++
         ColoredText[] t;
         string buf;
 
@@ -808,7 +777,7 @@ class DSyntaxHighlighter : SyntaxHighlighter
                     if (!inString)
                     {
                         t ~= [ColoredText(buf, color(buf)),
-                              ColoredText([c], RGBA(0,0,0,0))];
+                              ColoredText([c], RGBA(KEYWORD,0,0,0))];
                         buf.clear;
                         continue;
                     }
@@ -854,6 +823,7 @@ class DSyntaxHighlighter : SyntaxHighlighter
             t ~= ColoredText(buf, color(buf));
 
         return t;
+        ++/
     }
 
 } // class DSyntaxHighlighter

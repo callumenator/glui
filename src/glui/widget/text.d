@@ -11,6 +11,7 @@
 module glui.widget.text;
 
 import
+    std.ascii,
     std.c.string,
     std.algorithm,
     std.array,
@@ -571,6 +572,8 @@ class WidgetText : WidgetWindow
 
                     if (root.shiftIsDown)
                         updateSelectionRange();
+                    else
+                        clearSelection();
 
                     m_drawCaret = true;
                     needRender();
@@ -582,6 +585,8 @@ class WidgetText : WidgetWindow
 
                     if (root.shiftIsDown)
                         updateSelectionRange();
+                    else
+                        clearSelection();
 
                     m_drawCaret = true;
                     needRender();
@@ -596,6 +601,8 @@ class WidgetText : WidgetWindow
 
                     if (root.shiftIsDown)
                         updateSelectionRange();
+                    else
+                        clearSelection();
 
                     m_drawCaret = true;
                     needRender();
@@ -610,6 +617,8 @@ class WidgetText : WidgetWindow
 
                     if (root.shiftIsDown)
                         updateSelectionRange();
+                    else
+                        clearSelection();
 
                     m_drawCaret = true;
                     needRender();
@@ -621,6 +630,8 @@ class WidgetText : WidgetWindow
 
                     if (root.shiftIsDown)
                         updateSelectionRange();
+                    else
+                        clearSelection();
 
                     m_drawCaret = true;
                     needRender();
@@ -632,6 +643,8 @@ class WidgetText : WidgetWindow
 
                     if (root.shiftIsDown)
                         updateSelectionRange();
+                    else
+                        clearSelection();
 
                     m_drawCaret = true;
                     needRender();
@@ -723,6 +736,13 @@ class WidgetText : WidgetWindow
                     {
                         switch(key) with (KEY)
                         {
+                            case KC_A: // select all
+                            {
+                                m_selectionRange[0] = 0;
+                                m_text.gotoEndOfText();
+                                updateSelectionRange();
+                                break;
+                            }
                             case KC_C: // copy selection to clipboard
                             {
                                 copyToClipboard();
@@ -1141,10 +1161,16 @@ class TextArea
             if (col == 0)
                 return;
 
+            if (isDelim(leftText) && !isBlank(leftText))
+            {
+                moveLeft();
+                return;
+            }
+
             while(col > 0 && m_offset > 0 && isBlank(leftText))
                 moveLeft();
 
-            while(col > 0 && m_offset > 0 && !isBlank(leftText))
+            while(col > 0 && m_offset > 0 && !isDelim(leftText))
                 moveLeft();
         }
 
@@ -1179,14 +1205,14 @@ class TextArea
         {
             auto endCol = col + countToEndOfLine();
 
-            if (isBlank(rightText))
+            if (isDelim(rightText))
             {
-                while(col < endCol && m_offset < m_text.length && isBlank(rightText))
+                while(col < endCol && m_offset < m_text.length && isDelim(rightText))
                     moveRight();
             }
             else
             {
-                while(col < endCol && m_offset < m_text.length && !isBlank(rightText))
+                while(col < endCol && m_offset < m_text.length && !isDelim(rightText))
                     moveRight();
 
                 while(col < endCol && m_offset < m_text.length && isBlank(rightText))
@@ -1260,6 +1286,24 @@ class TextArea
                 return;
 
             while(m_offset < m_text.length && m_text[m_offset] != '\n')
+                moveRight();
+        }
+
+        /**
+        * Move caret to the start of the text
+        */
+        void gotoStartOfText()
+        {
+            while(m_offset > 0)
+                moveLeft();
+        }
+
+        /**
+        * Move caret to the end of the text
+        */
+        void gotoEndOfText()
+        {
+            while(m_offset < m_text.length)
                 moveRight();
         }
 
@@ -1427,10 +1471,16 @@ class TextArea
 
     private:
 
+        bool isDelim(char c)
+        {
+            return isBlank(c) ||
+                   !isAlphaNum(c);
+        }
+
         bool isBlank(char c)
         {
             return c == ' ' ||
-                   c == '\t';
+                   c == '\t' ;
         }
 
         uint m_offset = 0;
