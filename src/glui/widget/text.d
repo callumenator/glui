@@ -986,7 +986,7 @@ class WidgetLabel : WidgetText
     }
 
     public:
-        void set(Font font, WidgetArgs args)
+        override void set(Font font, WidgetArgs args)
         {
             super.set(font, args);
             m_type = "WIDGETLABEL";
@@ -1553,7 +1553,8 @@ class TextArea2
         uint count;
         auto span = spanFromIndex(index, Buffer.EDIT, count);
         //m_edit.insertAfter(m_edit[], s);
-        m_edit.remove([span]);
+        //m_edit.remove([span]);
+
     }
 }
 

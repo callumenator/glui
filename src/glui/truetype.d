@@ -722,7 +722,7 @@ class DSyntaxHighlighter : SyntaxHighlighter
         }
     }
 
-    ColoredText[] parse(string text)
+    override ColoredText[] parse(string text)
     {
         Appender!(ColoredText[]) t;
 
