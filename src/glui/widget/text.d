@@ -11,6 +11,7 @@
 module glui.widget.text;
 
 import
+    std.container,
     std.ascii,
     std.c.string,
     std.algorithm,
@@ -138,7 +139,7 @@ class WidgetText : WidgetWindow
         /**
         * x and y are absolute screen coords
         */
-        int[2] getRowCol(int x, int y)
+        TextArea.Location getLocation(int x, int y)
         {
             auto relx = x - m_screenPos.x - 5;
             if (m_allowHScroll)
@@ -149,25 +150,9 @@ class WidgetText : WidgetWindow
                 rely += m_vscroll.current * m_font.m_lineHeight;
 
             if (relx < 0 || rely < 0)
-                return [0,0];
+                return TextArea.Location();
 
-            return m_text.getRowCol(m_font, relx, rely);
-        }
-
-        uint getOffset(int x, int y)
-        {
-            auto relx = x - m_screenPos.x - 5;
-            if (m_allowHScroll)
-                relx += m_hscroll.current * m_font.m_maxWidth;
-
-            auto rely = y - m_screenPos.y - textOffsetY() - m_font.m_lineHeight/2;
-            if (m_allowVScroll)
-                rely += m_vscroll.current * m_font.m_lineHeight;
-
-            if (relx < 0 || rely < 0)
-                return 0;
-
-            return m_text.getOffset(m_font, relx, rely);
+            return m_text.getLocation(m_font, relx, rely);
         }
 
         void set(Font font, WidgetArgs args)
@@ -483,9 +468,9 @@ class WidgetText : WidgetWindow
                 {
                     auto preOffset = m_text.offset;
                     auto pos = event.get!MouseClick.pos;
-                    auto rc = getRowCol(pos.x, pos.y);
+                    auto rc = getLocation(pos.x, pos.y);
 
-                    m_text.moveCaret(rc.x, rc.y);
+                    m_text.moveCaret(rc.row, rc.col);
 
                     if (root.shiftIsDown)
                     {
@@ -692,17 +677,19 @@ class WidgetText : WidgetWindow
                     {
                         deleteSelectedText();
 
-                        // If current line is indented (has tabs) replicate for this line
-                        auto line = m_text.getCurrentLine();
-
+                        // If current line is indented (has tabs) replicate for the new line
+                        auto cLine = m_text.getCurrentLine();
                         m_text.insert("\n");
-                        foreach(char c; line)
+                        foreach(char c; cLine)
                         {
                             if (c == '\t')
                                 m_text.insert('\t');
                             else
                                 break;
                         }
+
+                        if (m_autoBraceIndent && strip(cLine) == "{") // If current line is a brace, check for auto indent
+                            m_text.insert("\t");
 
                         m_drawCaret = true;
                         m_refreshCache = true;
@@ -767,6 +754,17 @@ class WidgetText : WidgetWindow
                     {
                         deleteSelectedText();
 
+                        if (key == KC_BRACERIGHT)
+                        {
+                            auto cLine = m_text.getCurrentLine();
+                            if (m_autoBraceIndent && strip(cLine) == "}") // check for auto indent
+                            {
+                                auto loc = m_text.searchLeft('{');
+                                if (m_text.leftText() == '\t')
+                                    m_text.del();
+                            }
+                        }
+
                         m_text.insert(cast(char)key);
                         eventSignal.emit(this, WidgetEvent(TextInsert(to!string(cast(char)key))));
                         m_drawCaret = true;
@@ -820,16 +818,16 @@ class WidgetText : WidgetWindow
 
         override void drag(int[2] pos, int[2] delta)
         {
-            auto offset = getOffset(pos.x, pos.y);
+            auto loc = getLocation(pos.x, pos.y);
 
             if (m_pendingDrag)
             {
-                m_selectionRange[] = [offset, offset];
+                m_selectionRange[] = [loc.offset, loc.offset];
                 m_pendingDrag = false;
             }
             else
             {
-                m_selectionRange[1] = offset;
+                m_selectionRange[1] = loc.offset;
                 m_refreshCache = true;
                 needRender();
             }
@@ -936,8 +934,6 @@ class WidgetText : WidgetWindow
             }
         }
 
-
-
     private:
 
         KEY m_lastKey = KEY.KC_NULL;
@@ -976,6 +972,8 @@ class WidgetText : WidgetWindow
 
         bool m_pendingDrag = false;
         uint[2] m_selectionRange;
+
+        bool m_autoBraceIndent = true;
 }
 
 
@@ -1043,33 +1041,35 @@ class TextArea
 {
     public:
 
-        @property uint col() const { return m_column; }
-        @property uint row() const { return m_row; }
+        struct Location { uint offset, row, col; }
 
-        @property string text() { return m_text; }
-        @property uint offset() { return m_offset; }
+        @property Location loc() const { return m_loc; } // current caret m_location
+        @property uint col() const { return m_loc.col; } // current caret column
+        @property uint row() const { return m_loc.row; } // current caret row
+        @property uint offset() { return m_loc.offset; } // current caret 1-D offset
+        @property string text() { return m_text; } // current text
 
         // Get the character to the left of the current cursor/offset
         @property char leftText()
         {
-            if (m_offset <= 0)
+            if (m_loc.offset <= 0)
                 return cast(char)0;
 
-            return m_text[m_offset-1];
+            return m_text[m_loc.offset-1];
         }
 
         @property char rightText()
         {
-            if (cast(int)(m_offset) > cast(int)(m_text.length - 1))
+            if (cast(int)(m_loc.offset) > cast(int)(m_text.length - 1))
                 return cast(char)0;
 
-            return m_text[m_offset];
+            return m_text[m_loc.offset];
         }
 
         void set(string s)
         {
             m_text.clear;
-            m_offset = 0;
+            m_loc.offset = 0;
             insert(s);
         }
 
@@ -1080,7 +1080,7 @@ class TextArea
 
         void insert(string s)
         {
-            insertInPlace(m_text, m_offset, s);
+            insertInPlace(m_text, m_loc.offset, s);
 
             foreach(i; 0..s.length)
                 moveRight();
@@ -1088,17 +1088,17 @@ class TextArea
 
         void backspace()
         {
-            if (m_offset > 0)
+            if (m_loc.offset > 0)
             {
-                deleteSelection(m_offset-1, m_offset-1);
+                deleteSelection(m_loc.offset-1, m_loc.offset-1);
                 moveLeft();
             }
         }
 
         void del()
         {
-            if (m_offset < m_text.length)
-                deleteSelection(m_offset, m_offset);
+            if (m_loc.offset < m_text.length)
+                deleteSelection(m_loc.offset, m_loc.offset);
         }
 
         void del(size_t from, size_t to)
@@ -1121,7 +1121,7 @@ class TextArea
             else
                 newtext = m_text[to+1..$];
 
-            if (m_offset != from && to-from > 0 )
+            if (m_loc.offset != from && to-from > 0 )
                 foreach(i; 0..(to-from) + 1)
                     moveLeft();
 
@@ -1133,23 +1133,23 @@ class TextArea
         */
         void moveLeft(bool seeking = false)
         {
-            if (m_offset > 0)
+            if (m_loc.offset > 0)
             {
-                m_offset --;
-                if (m_column == 0)
+                m_loc.offset --;
+                if (m_loc.col == 0)
                 {
                     // Go up a line
-                    m_column = countToStartOfLine();
-                    m_row --;
+                    m_loc.col = countToStartOfLine();
+                    m_loc.row --;
                 }
                 else
                 {
-                    m_column --;
+                    m_loc.col --;
                 }
             }
 
             if (!seeking)
-                m_seekColumn = m_column;
+                m_seekColumn = m_loc.col;
         }
 
 
@@ -1167,10 +1167,10 @@ class TextArea
                 return;
             }
 
-            while(col > 0 && m_offset > 0 && isBlank(leftText))
+            while(col > 0 && m_loc.offset > 0 && isBlank(leftText))
                 moveLeft();
 
-            while(col > 0 && m_offset > 0 && !isDelim(leftText))
+            while(col > 0 && m_loc.offset > 0 && !isDelim(leftText))
                 moveLeft();
         }
 
@@ -1179,23 +1179,23 @@ class TextArea
         */
         void moveRight(bool seeking = false)
         {
-            if (m_offset < m_text.length)
+            if (m_loc.offset < m_text.length)
             {
-                if (m_text[m_offset] == '\n')
+                if (m_text[m_loc.offset] == '\n')
                 {
                     // Go down a line
-                    m_column = 0;
-                    m_row ++;
+                    m_loc.col = 0;
+                    m_loc.row ++;
                 }
                 else
                 {
-                    m_column ++;
+                    m_loc.col ++;
                 }
-                m_offset ++;
+                m_loc.offset ++;
             }
 
             if (!seeking)
-                m_seekColumn = m_column;
+                m_seekColumn = m_loc.col;
         }
 
         /**
@@ -1207,32 +1207,32 @@ class TextArea
 
             if (isDelim(rightText))
             {
-                while(col < endCol && m_offset < m_text.length && isDelim(rightText))
+                while(col < endCol && m_loc.offset < m_text.length && isDelim(rightText))
                     moveRight();
             }
             else
             {
-                while(col < endCol && m_offset < m_text.length && !isDelim(rightText))
+                while(col < endCol && m_loc.offset < m_text.length && !isDelim(rightText))
                     moveRight();
 
-                while(col < endCol && m_offset < m_text.length && isBlank(rightText))
+                while(col < endCol && m_loc.offset < m_text.length && isBlank(rightText))
                     moveRight();
             }
         }
 
         void moveUp()
         {
-            uint preMoveRow = m_row,
-                 preMoveColumn = m_column,
-                 preMoveOffset = m_offset;
+            uint preMoveRow = m_loc.row,
+                 preMoveColumn = m_loc.col,
+                 preMoveOffset = m_loc.offset;
 
             bool found = false;
-            while(m_offset > 0)
+            while(m_loc.offset > 0)
             {
                 moveLeft(true);
-                if (m_column == m_seekColumn ||
-                    m_column < m_seekColumn && countToEndOfLine() == 0 && m_row == preMoveRow - 1 ||
-                    (m_column == 0 && m_text[m_offset] == '\n'))
+                if (m_loc.col == m_seekColumn ||
+                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow - 1 ||
+                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
                 {
                     found = true;
                     break;
@@ -1241,25 +1241,25 @@ class TextArea
 
             if  (!found)
             {
-                m_offset = preMoveOffset;
-                m_column = preMoveColumn;
-                m_row = preMoveRow;
+                m_loc.offset = preMoveOffset;
+                m_loc.col = preMoveColumn;
+                m_loc.row = preMoveRow;
             }
         }
 
         void moveDown()
         {
-            uint preMoveRow = m_row,
-                 preMoveColumn = m_column,
-                 preMoveOffset = m_offset;
+            uint preMoveRow = m_loc.row,
+                 preMoveColumn = m_loc.col,
+                 preMoveOffset = m_loc.offset;
 
             bool found = false;
-            while(m_offset < m_text.length)
+            while(m_loc.offset < m_text.length)
             {
                 moveRight(true);
-                if (m_column == m_seekColumn ||
-                    m_column < m_seekColumn && countToEndOfLine() == 0 && m_row == preMoveRow + 1 ||
-                    (m_column == 0 && m_text[m_offset] == '\n'))
+                if (m_loc.col == m_seekColumn ||
+                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow + 1 ||
+                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
                 {
                     found = true;
                     break;
@@ -1268,24 +1268,24 @@ class TextArea
 
             if  (!found)
             {
-                m_offset = preMoveOffset;
-                m_column = preMoveColumn;
-                m_row = preMoveRow;
+                m_loc.offset = preMoveOffset;
+                m_loc.col = preMoveColumn;
+                m_loc.row = preMoveRow;
             }
         }
 
         void home() // home key
         {
-            while (m_column != 0)
+            while (m_loc.col != 0)
                 moveLeft();
         }
 
         void end() // end key
         {
-            if (m_offset == m_text.length)
+            if (m_loc.offset == m_text.length)
                 return;
 
-            while(m_offset < m_text.length && m_text[m_offset] != '\n')
+            while(m_loc.offset < m_text.length && m_text[m_loc.offset] != '\n')
                 moveRight();
         }
 
@@ -1294,7 +1294,7 @@ class TextArea
         */
         void gotoStartOfText()
         {
-            while(m_offset > 0)
+            while(m_loc.offset > 0)
                 moveLeft();
         }
 
@@ -1303,16 +1303,16 @@ class TextArea
         */
         void gotoEndOfText()
         {
-            while(m_offset < m_text.length)
+            while(m_loc.offset < m_text.length)
                 moveRight();
         }
 
         uint countToStartOfLine()
         {
-            if (m_offset == 0)
+            if (m_loc.offset == 0)
                 return 0;
 
-            int i = m_offset - 1, count = 0;
+            int i = m_loc.offset - 1, count = 0;
 
             if (m_text[i] == '\n')
                 return 0;
@@ -1327,7 +1327,7 @@ class TextArea
 
         uint countToEndOfLine()
         {
-            uint i = m_offset, count = 0;
+            uint i = m_loc.offset, count = 0;
             while (i < m_text.length && m_text[i] != '\n')
             {
                 i++;
@@ -1350,12 +1350,15 @@ class TextArea
             return getLine(row);
         }
 
+        /**
+        * Return x,y caret position in screen coords, relative to first character
+        */
         int[2] getCaretPosition(ref const(Font) font)
         {
             int[2] cpos = [0,0];
             foreach(i, char c; m_text)
             {
-                if (i == m_offset)
+                if (i == m_loc.offset)
                     break;
 
                 if (c == '\n')
@@ -1380,22 +1383,28 @@ class TextArea
         * left corner of first character. Returned row and col are always
         * inside the available text.
         */
-        int[2] getRowCol(ref const(Font) font, int x, int y)
+        Location getLocation(ref const(Font) font, int x, int y)
         {
-            int[2] cpos = [0,0];
+            Location _loc;
+
+            //int[2] cpos = [0,0];
 
             if (m_text.length == 0)
-                return cpos;
+                return _loc;
 
-            // y is determined solely by font.m_lineHeight
-            cpos[0] = cast(int) (y / font.m_lineHeight);
+            // row is determined solely by font.m_lineHeight
+            _loc.row = cast(int) (y / font.m_lineHeight);
 
             auto lines = splitLines(m_text);
-            if (cpos[0] > lines.length - 1)
-                cpos[0] = lines.length - 1;
+            if (_loc.row > lines.length - 1)
+                _loc.row = lines.length - 1;
+
+            if (_loc.row > 0)
+                foreach(l; lines[0.._loc.row])
+                    _loc.offset += l.length;
 
             float _x = 0;
-            foreach(char c; lines[cpos[0]])
+            foreach(char c; lines[_loc.row])
             {
                 if (_x > x)
                     break;
@@ -1405,40 +1414,10 @@ class TextArea
                 else
                     _x += font.width(c);
 
-                cpos[1] ++;
+                _loc.col ++;
+                _loc.offset ++;
             }
-            return cpos;
-        }
-
-        /**
-        * Return the 1-D text offset at screen position x, y relative to lower
-        * left corner of first character. Returned offset is always
-        * inside the available text.
-        */
-        uint getOffset(ref const(Font) font, int x, int y)
-        {
-            uint offset = 0;
-
-            if (m_text.length == 0)
-                return offset;
-
-            auto rc = getRowCol(font, x, y);
-
-            int _row, _col;
-
-            while(_row != rc[0] || _col != rc[1])
-            {
-                if (m_text[offset] == '\n')
-                {
-                    _row += 1;
-                    _col = 0;
-                }
-                else
-                    _col ++;
-
-                offset ++;
-            }
-            return offset;
+            return _loc;
         }
 
         void moveCaret(uint newRow, uint newCol)
@@ -1448,26 +1427,53 @@ class TextArea
 
             if (newRow > row || (newRow == row && newCol > col))
             {
-                while(m_offset < m_text.length && (row != newRow || col != newCol))
+                while(m_loc.offset < m_text.length && (row != newRow || col != newCol))
                     moveRight();
             }
             else
             {
-                while(m_offset > 0 && (row != newRow || col != newCol))
+                while(m_loc.offset > 0 && (row != newRow || col != newCol))
                     moveLeft();
             }
+        }
+
+        /**
+        * Move left from caret until given char is found, return row, column and offset
+        */
+        Location searchLeft(char c)
+        {
+            auto store = m_loc;
+            while (m_loc.offset > 0 && m_text[m_loc.offset] != c)
+                moveLeft();
+
+            auto rVal = m_loc;
+            m_loc = store;
+            return rVal;
+        }
+
+        /**
+        * Move right from caret until given char is found, return row, column and offset
+        */
+        Location searchRight(char c)
+        {
+            auto store = m_loc;
+            while (m_loc.offset < m_text.length && m_text[m_loc.offset] != c)
+                moveRight();
+
+            auto rVal = m_loc;
+            m_loc = store;
+            return rVal;
         }
 
         // Clear all text
         void clear()
         {
             m_text.clear;
-            m_offset = 0;
-            m_row = 0;
-            m_column = 0;
+            m_loc.offset = 0;
+            m_loc.row = 0;
+            m_loc.col = 0;
             m_seekColumn = 0;
         }
-
 
     private:
 
@@ -1483,17 +1489,80 @@ class TextArea
                    c == '\t' ;
         }
 
-        uint m_offset = 0;
         string m_text = "";
 
         // Default number of spaces for a tab
         uint tabSpaces = 4;
 
         // Current column and row of the caret (insertion point)
-        uint m_column = 0;
-        uint m_row = 0;
+        Location m_loc;
 
         // When moving up and down through carriage returns, try to get to this column
         uint m_seekColumn = 0;
 }
+
+
+
+class TextArea2
+{
+    enum Buffer
+    {
+        ORIGINAL,
+        EDIT
+    }
+
+    struct Span
+    {
+        Buffer buffer;
+        size_t index, length;
+    }
+
+    struct Location
+    {
+        size_t row, col;
+    }
+
+    string m_original;
+    SList!(string) m_edit;
+    DList!(Span) m_spans;
+
+    Span spanFromIndex(size_t index, Buffer buf, out uint count)
+    {
+        size_t currentIndex = 0;
+
+        foreach(span; m_spans[])
+        {
+            if (span.buffer == buf &&
+                (index >= span.index && index < span.index + span.length))
+                return span;
+
+            currentIndex += span.length;
+            count ++;
+        }
+
+        return m_spans.back();
+    }
+
+    void insertAt(size_t index, string s)
+    {
+        /**
+        * Find the span which contains the given index,
+        * split it into two, add a new span containing
+        * the string s in between the split.
+        */
+        uint count;
+        auto span = spanFromIndex(index, Buffer.EDIT, count);
+        //m_edit.insertAfter(m_edit[], s);
+        m_edit.remove([span]);
+    }
+}
+
+unittest /** TextArea2 **/
+{
+
+    assert(false, "End of Uinttest");
+
+}
+
+
 

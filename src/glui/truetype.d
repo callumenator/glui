@@ -668,7 +668,7 @@ mixin(grammar(`
 
         Other <~ [a-zA-Z_]+
 
-        Number <~  digit+ / (digit+ '.' digit*) / (digit* '.' digit+)
+        Number <~ digit+ / (digit+ '.' digit*) / (digit* '.' digit+)
 
         String < FullString / PartialString
 
@@ -708,8 +708,8 @@ class DSyntaxHighlighter : SyntaxHighlighter
         with(SyntaxHighlighter.SyntaxElement)
         {
             color[KEYWORD] =  RGBA(135,163,173,255);
-            color[OPERATOR] = RGBA(242,123,116,255);
-            color[NUMBER] =   RGBA(240,212, 89,255);
+            color[OPERATOR] = RGBA(232,170, 66,255);
+            color[NUMBER] =   RGBA(159,214,152,255);
             color[PARENS] =   RGBA(190,190,190,255);
             color[STRING] =   RGBA( 89,110,168,255);
 
@@ -718,6 +718,7 @@ class DSyntaxHighlighter : SyntaxHighlighter
             background[NUMBER] = RGBA(0,0,0,0);
             background[PARENS] = RGBA(0,0,0,0);
             background[STRING] = RGBA(0,0,0,0);
+
         }
     }
 
@@ -725,9 +726,11 @@ class DSyntaxHighlighter : SyntaxHighlighter
     {
         Appender!(ColoredText[]) t;
 
-        auto result = ParseD(text);
+        auto result = ParseD(text).children[0];
 
-        foreach(child; result.children[0].children)
+        writeln(result);
+
+        foreach(child; result.children)
         {
             switch(child.name) with(SyntaxElement)
             {
