@@ -11,6 +11,8 @@
 module glui.widget.text;
 
 import
+    std.stdio,
+    std.range,
     std.container,
     std.ascii,
     std.c.string,
@@ -18,7 +20,8 @@ import
     std.array,
     std.conv,
     std.string,
-    std.datetime;
+    std.datetime,
+    std.typetuple;
 
 import
     derelict.opengl.gl;
@@ -1502,68 +1505,484 @@ class TextArea
 }
 
 
-
+/++
 class TextArea2
-{
-    enum Buffer
-    {
-        ORIGINAL,
-        EDIT
-    }
-
-    struct Span
-    {
-        Buffer buffer;
-        size_t index, length;
-    }
-
-    struct Location
-    {
-        size_t row, col;
-    }
+{    struct Location { size_t row, col; }
 
     string m_original;
-    SList!(string) m_edit;
+    Appender!string m_edit;
     DList!(Span) m_spans;
 
-    Span spanFromIndex(size_t index, Buffer buf, out uint count)
-    {
-        size_t currentIndex = 0;
-
-        foreach(span; m_spans[])
-        {
-            if (span.buffer == buf &&
-                (index >= span.index && index < span.index + span.length))
-                return span;
-
-            currentIndex += span.length;
-            count ++;
-        }
-
-        return m_spans.back();
-    }
-
+    /**
+    * Insert text at the given logical index in the text sequence. Indexes larger
+    * than the largest index are inserted at the end of the sequence. Therefore use
+    * index = -1 to insert at the end.
+    */
     void insertAt(size_t index, string s)
     {
         /**
-        * Find the span which contains the given index,
-        * split it into two, add a new span containing
-        * the string s in between the split.
+        * Find the span which contains the given index, split it into two,
+        * add a new span in between pointing to the edit buffer
         */
-        uint count;
-        auto span = spanFromIndex(index, Buffer.EDIT, count);
-        //m_edit.insertAfter(m_edit[], s);
-        //m_edit.remove([span]);
+        auto newSpan = Span(Buffer.EDIT, m_edit.data.length, s.length);
+        m_edit.put(s);
+
+        auto oldSpan = findSpan(index);
+        if (!oldSpan.empty)
+        {
+            auto spanOffset = index - oldSpan.front.index;
+            if (spanOffset == 0) // insert at beginning, no need to split
+            {
+                m_spans.insertBefore(oldSpan, newSpan);
+            }
+            else
+            {
+                auto split = oldSpan.front.split(spanOffset);
+                m_spans.insertAfter(oldSpan, [split[0], newSpan, split[1]]);
+                m_spans.linearRemove(oldSpan.takeOne());
+            }
+        }
+        else
+        {
+            // See if we can simply extend the previous span in the list
+            if (!m_spans.empty &&
+                newSpan.buffer == m_spans.back.buffer &&
+                newSpan.index == m_spans.back.index + m_spans.back.length)
+            {
+                //m_spans.back = Span(newSpan.buffer, m_spans.back.index, m_spans.back.length + s.length);
+            }
+            else
+            {
+                m_spans.insertBack(newSpan);
+            }
+        }
 
     }
+
+    unittest /** insertAt **/
+    {
+        auto text = new TextArea2();
+        text.insertAt(0, "hello there");
+        text.insertAt(11, "(span boundary)");
+        text.insertAt(0, "(beginning)");
+        text.insertAt(-1, ", end !!!");
+        text.insertAt(-1, ",");
+        text.insertAt(-1, ",");
+        //assert(text.to!string == "(beginning)hello there(span boundary), end !!!,,");
+    }
+
+    /**
+    * Delete text in range [from, from + length)
+    */
+    void deleteRange(size_t from, size_t length)
+    in
+    {
+        assert(length > 0);
+        assert(!findSpan(from).empty);
+    }
+    body
+    {
+        auto spanFrom = findSpan(from);
+
+        if (from == spanFrom.front.index &&
+            length == spanFrom.front.length) // range covers exactly one span, remove it
+        {
+            m_spans.linearRemove(spanFrom);
+            return;
+        }
+        else if (from == spanFrom.front.index &&
+                 length < spanFrom.front.length) // range lies within one span, and is at the start
+        {
+            m_spans.linearRemove(spanFrom);
+        }
+        else // range covers more than one span, general case
+        {
+
+        }
+    }
+
+    unittest /** deleteRange **/
+    {
+
+    }
+
+    /**
+    * Return the contained text as a single string (char sequence)
+    */
+    override string toString()
+    {
+        Appender!string text;
+        foreach(span; m_spans)
+            text.put(extractText(span));
+        return text.data();
+    }
+
+    /**
+    * Extract text spanned by Span
+    */
+    string extractText(Span s)
+    {
+        if (s.buffer == Buffer.ORIGINAL)
+            return s.extract(m_original);
+        else
+            return s.extract(m_edit.data);
+    }
+
+    auto findSpan(size_t idx)
+    {
+        return m_spans[].find!( (Span s) { return idx >= s.index && idx < s.index + s.length; })();
+    }
+
+    unittest /** findSpan **/
+    {
+        auto text = new TextArea2();
+        auto spanList = [Span(Buffer.EDIT, 0, 10),
+                         Span(Buffer.EDIT, 10, 5),
+                         Span(Buffer.EDIT, 15, 20)];
+        text.m_spans.insertFront(spanList);
+        assert( text.findSpan(0).front == spanList[0] );
+        assert( text.findSpan(14).front == spanList[1] );
+        assert( text.findSpan(80).empty );
+    }
+
 }
+
 
 unittest /** TextArea2 **/
 {
 
-    assert(false, "End of Uinttest");
+}
+++/
+
+enum Buffer
+{
+    ORIGINAL,
+    EDIT
+}
+
+struct Span
+{
+    string buffer;
+    size_t newLines;
+
+    this(string _buffer)
+    {
+        buffer = _buffer;
+        countNewLines();
+    }
+
+    @property size_t length()
+    {
+        return buffer.length;
+    }
+
+    /**
+    * Count number of newlines in the buffer
+    */
+    size_t countNewLines()
+    {
+        newLines = 0;
+        foreach(char c; buffer)
+            if (c == '\n')
+                newLines ++;
+
+        return newLines;
+    }
+
+    /**
+    * Create two new spans, by splitting this span at splitAt.
+    * A left and right span are returned as a Tuple. The left
+    * span contains the original span up to and including splitAt - 1,
+    * the right span contains the original span from splitAt to length.
+    */
+    Tuple!(Span, Span) split(size_t splitAt)
+    in
+    {
+        assert(splitAt > 0 && splitAt < buffer.length);
+    }
+    body
+    {
+        auto left = Span(buffer[0..splitAt]);
+        auto right = Span(buffer[splitAt..$]);
+        return tuple(left, right);
+    }
+}
+
+
+class Node
+{
+    Node prev, next;
+    Span payload;
+
+    this() {}
+    this(Span data) { payload = data; }
+}
+
+class SpanList
+{
+    Node head, tail; // sentinels
+
+    this()
+    {
+        head = new Node;
+        tail = new Node;
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    @property bool empty() { return head.next == tail && tail.prev == head; };
+    @property ref Span front() { return head.next.payload; }
+    @property ref Span back() { return tail.prev.payload; }
+
+    void insertAfter()(Node n, Span payload)
+    {
+        auto newNode = new Node(payload);
+        newNode.next = n.next;
+        newNode.prev = n;
+        n.next.prev = newNode;
+        n.next = newNode;
+    }
+
+    void insertAfter(Range)(Node n, Range r) if (is(ElementType!Range == Span))
+    {
+        foreach(s; r)
+        {
+            insertAfter(n, s);
+            n = n.next;
+        }
+    }
+
+    void insertBefore(Node n, Span payload)
+    {
+        insertAfter(n.prev, payload);
+    }
+
+    void insertFront(Span payload)
+    {
+        insertAfter(head, payload);
+    }
+
+    void insertBack(Span payload)
+    {
+        insertAfter(tail.prev, payload);
+    }
+
+    void insertAt(size_t index, Span s)
+    {
+        if (index == 0)
+            insertAfter(head, s);
+        else
+        {
+            auto node = findNode(index);
+
+            if (node[2] == 0)
+                insertBefore(node[0], s);
+            else if (node[2] == node[1].length)
+                insertAfter(node[0], s);
+            else
+            {
+                auto splitNode = node[1].split(node[2]);
+                insertAfter(node[0], [splitNode[0], s, splitNode[1]]);
+                remove(node[0]);
+            }
+        }
+    }
+
+    /**
+    * Remove a single Node
+    */
+    void remove(Node node)
+    {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    /**
+    * Remove all Nodes between left and right, inclusive
+    */
+    void remove(Node lNode, Node rNode)
+    {
+        lNode.prev.next = rNode.next;
+        rNode.next.prev = lNode.prev;
+    }
+
+    /**
+    * Remove spans covering a arange of logical indices, taking
+    * care of fractional spans (from and to are inclusive)
+    */
+    void remove(size_t from, size_t to)
+    {
+        auto left = findNode(from);
+        auto right = findNode(to);
+
+        if (left[2] > 0)
+            insertBefore(left[0], Span(left[1].buffer[0..left[2]]));
+
+        if (right[2] + 1 < right[1].buffer.length)
+            insertAfter(right[0], Span(right[1].buffer[right[2]+1..$]));
+
+        remove(left[0], right[0]);
+    }
+
+    /**
+    * Return the Node and Span which spans the corresponding logical index
+    * and the local offset into that span.
+    */
+    Tuple!(Node, Span, size_t) findNode(size_t idx)
+    {
+        size_t offset = 0, spanOffset = 0;
+        for(auto c = head.next; c != tail; c = c.next)
+        {
+            spanOffset = idx - offset;
+
+            if (idx >= offset && idx < offset + c.payload.buffer.length)
+                return tuple(c, c.payload, spanOffset);
+
+            offset += c.payload.buffer.length;
+        }
+
+        return tuple(tail.prev, tail.prev.payload, tail.prev.payload.buffer.length);
+    }
+
+    struct Range
+    {
+        Node current, last;
+
+        this(Node start, Node last)
+        {
+            current = start;
+        }
+
+        @property bool empty()
+        {
+            return current.next == last;
+        }
+
+        @property ref Span front()
+        {
+            return current.payload;
+        }
+
+        @property ref Node frontNode()
+        {
+            return current;
+        }
+
+        void popFront()
+        {
+            current = current.next;
+        }
+    }
+
+    Range opSlice()
+    {
+        return Range(head.next, tail);
+    }
 
 }
 
 
+class TextArea2
+{
+    string m_original;
+    Appender!string m_edit;
+    SpanList m_spans;
+
+    this()
+    {
+        m_spans = new SpanList();
+    }
+
+    void insertAt(size_t index, string s)
+    {
+        auto begin = m_edit.data.length;
+        m_edit.put(s);
+        auto newSpan = Span(m_edit.data[begin..$]);
+        m_spans.insertAt(index, newSpan);
+    }
+
+    void remove(size_t from, size_t to)
+    {
+        m_spans.remove(from, to);
+    }
+
+    string getLine(size_t line)
+    {
+        return "";
+    }
+
+    struct LineRange
+    {
+        SpanList.Range r;
+
+        string[] lines;
+        size_t bufferIndex;
+
+        this(SpanList.Range list, size_t startLine)
+        {
+            r = list;
+
+            if (startLine > 0)
+            {
+                size_t cline = 0;
+                while( !r.empty && !(startLine >= cline && startLine < cline + r.front.newLines) )
+                {
+                    cline += r.front.newLines;
+                    r.popFront();
+                }
+
+                lines = splitLines(r.front);
+                bufferIndex = startLine - cline;
+            }
+            else
+            {
+
+            }
+        }
+
+        @property bool empty()
+        {
+            return r.empty;
+        }
+
+        @property string front()
+        {
+            return lineBuffer;
+        }
+
+        void popFront()
+        {
+            r.popFront();
+        }
+    }
+
+    LineRange byLine(size_t startLine = 0)
+    {
+        return LineRange(m_spans[], startLine);
+    }
+
+    /**
+    * Return the contained text as a single string (char sequence)
+    */
+    override string toString()
+    {
+        Appender!string text;
+        foreach(span; m_spans)
+            text.put(span.buffer);
+        return text.data();
+    }
+}
+
+unittest /** List **/
+{
+    auto text = new TextArea2();
+    text.insertAt(0, "line 0\nline 1\n");
+    text.insertAt(16, "line 2\nline 3\nline 4\n");
+    text.insertAt(32, "line 5\n");
+
+    foreach(line; text.byLine(3))
+        writeln(line);
+
+    assert(false);
+}
 
