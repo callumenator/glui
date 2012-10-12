@@ -11,10 +11,17 @@
 module glui.widget.text;
 
 import
+    std.stdio,
+    std.range,
+    std.container,
+    std.ascii,
+    std.c.string,
+    std.algorithm,
     std.array,
     std.conv,
     std.string,
-    std.datetime;
+    std.datetime,
+    std.typetuple;
 
 import
     derelict.opengl.gl;
@@ -22,6 +29,24 @@ import
 import
     glui.truetype,
     glui.widget.base;
+
+
+version(Windows)
+{
+    import core.sys.windows.windows;
+
+    extern(Windows)
+    {
+        HGLOBAL GlobalAlloc(UINT uFlags, SIZE_T dwBytes);
+        LPVOID GlobalLock(HGLOBAL hMem);
+        BOOL GlobalUnlock(HGLOBAL hMem);
+        BOOL OpenClipboard(HWND hWndNewOwner);
+        BOOL EmptyClipboard();
+        HANDLE SetClipboardData(UINT uFormat, HANDLE hMem);
+        HANDLE GetClipboardData(UINT uFormat);
+        BOOL CloseClipboard();
+    }
+}
 
 /**
 * Text box. This is a possibly editable box for rendering text.
@@ -96,17 +121,28 @@ class WidgetText : WidgetWindow
         void addLineHighlight(int line, RGBA color)
         {
             m_lineHighlights[line] = color;
+            m_refreshCache = true;
+            needRender();
         }
 
         void removeLineHighlight(int line)
         {
             m_lineHighlights.remove(line);
+            m_refreshCache = true;
+            needRender();
+        }
+
+        void removeAllLineHighlights()
+        {
+            m_lineHighlights.clear;
+            m_refreshCache = true;
+            needRender();
         }
 
         /**
         * x and y are absolute screen coords
         */
-        int[2] getRowCol(int x, int y)
+        TextArea.Location getLocation(int x, int y)
         {
             auto relx = x - m_screenPos.x - 5;
             if (m_allowHScroll)
@@ -116,12 +152,10 @@ class WidgetText : WidgetWindow
             if (m_allowVScroll)
                 rely += m_vscroll.current * m_font.m_lineHeight;
 
-            std.stdio.writeln(relx, ", ", rely);
-
             if (relx < 0 || rely < 0)
-                return [0,0];
+                return TextArea.Location();
 
-            return m_text.getRowCol(m_font, relx, rely);
+            return m_text.getLocation(m_font, relx, rely);
         }
 
         void set(Font font, WidgetArgs args)
@@ -165,7 +199,7 @@ class WidgetText : WidgetWindow
             // Set some reasonable defaults
             if (m_repeatDelayTime == -1) m_repeatDelayTime = 20;
             if (m_repeatHoldTime == -1)  m_repeatHoldTime = 500;
-            if (m_caretBlinkDelay == -1) m_caretBlinkDelay = 400;
+            if (m_caretBlinkDelay == -1) m_caretBlinkDelay = 600;
 
             // Request recurrent timer event from root for blinking the caret
             if (m_editable) requestTimer(m_caretBlinkDelay, &this.timerEvent, true);
@@ -284,10 +318,40 @@ class WidgetText : WidgetWindow
                     glEnd();
                 }
 
-                if (m_highlighter)
-                    renderCharacters(m_font, m_text.text, m_highlighter);
+                if (haveSelection)
+                {
+                    auto r = reduce!(min, max)(m_selectionRange);
+                    auto lower = r[0];
+                    auto upper = r[1];
+
+                    auto pre = m_text.text[0..lower];
+                    auto mid = m_text.text[lower..upper];
+                    auto post = m_text.text[upper..$];
+
+                    if (m_highlighter)
+                    {
+                        int[2] offset;
+                        offset = renderCharacters(m_font, pre, m_highlighter);
+                        offset = renderCharacters(m_font, mid, m_highlighter, [0.,0.,1.,1.], offset);
+                        offset = renderCharacters(m_font, post, m_highlighter, [0.,0.,0.,0.], offset);
+                    }
+                    else
+                    {
+                        int[2] offset;
+                        offset = renderCharacters(m_font, pre, m_textColor);
+                        offset = renderCharacters(m_font, mid, m_textColor, [0.,0.,1.,1.], offset);
+                        offset = renderCharacters(m_font, post, m_textColor, [0.,0.,0.,0.], offset);
+                    }
+
+                }
                 else
-                    renderCharacters(m_font, m_text.text, m_textColor);
+                {
+                    if (m_highlighter)
+                        renderCharacters(m_font, m_text.text, m_highlighter);
+                    else
+                        renderCharacters(m_font, m_text.text, m_textColor);
+                }
+
                 glEndList();
                 m_refreshCache = false;
             }
@@ -323,11 +387,23 @@ class WidgetText : WidgetWindow
         // Setup draw coords
         void setCoords()
         {
-            glTranslatef(0*m_pos.x + 5, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
+            resetXCoord();
+            resetYCoord();
+        }
 
+        void resetXCoord()
+        {
+            glTranslatef(0*m_pos.x + 5, 0, 0);
             // Translate by the scroll amounts as well...
             if (m_allowHScroll)
                 glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
+        }
+
+        void resetYCoord()
+        {
+            glTranslatef(0, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
+
+            // Translate by the scroll amounts as well...
             if (m_allowVScroll)
                 glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
@@ -393,9 +469,27 @@ class WidgetText : WidgetWindow
                 }
                 case MOUSECLICK:
                 {
+                    auto preOffset = m_text.offset;
                     auto pos = event.get!MouseClick.pos;
-                    auto rc = getRowCol(pos.x, pos.y);
-                    m_text.moveCaret(rc.x, rc.y);
+                    auto rc = getLocation(pos.x, pos.y);
+
+                    m_text.moveCaret(rc.row, rc.col);
+
+                    if (root.shiftIsDown)
+                    {
+                        if (m_selectionRange[0] == m_selectionRange[1])
+                        {
+                            clearSelection();
+                            m_selectionRange[0] = preOffset;
+                        }
+
+                        updateSelectionRange();
+                    }
+                    else
+                    {
+                        clearSelection();
+                    }
+
                     m_caretPos = m_text.getCaretPosition(m_font);
                     m_drawCaret = true;
                     needRender();
@@ -458,18 +552,17 @@ class WidgetText : WidgetWindow
         {
             m_lastKey = key;
 
-            if (root.ctrlIsDown())
-            {
-                handleCtrlCombo(key);
-                adjustVisiblePortion();
-                return;
-            }
-
             switch(cast(uint)key) with (KEY)
             {
                 case KC_HOME: // home key
                 {
                     m_text.home();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -477,20 +570,44 @@ class WidgetText : WidgetWindow
                 case KC_END: // end key
                 {
                     m_text.end();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
                     m_drawCaret = true;
                     needRender();
                     break;
                 }
                 case KC_LEFT: // left arrow
                 {
-                    m_text.moveLeft();
+                    if (root.ctrlIsDown)
+                        m_text.jumpLeft();
+                    else
+                        m_text.moveLeft();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
                     m_drawCaret = true;
                     needRender();
                     break;
                 }
                 case KC_RIGHT: // right arrow
                 {
-                    m_text.moveRight();
+                    if (root.ctrlIsDown)
+                        m_text.jumpRight();
+                    else
+                        m_text.moveRight();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -498,6 +615,12 @@ class WidgetText : WidgetWindow
                 case KC_UP: // up arrow
                 {
                     m_text.moveUp();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -505,6 +628,12 @@ class WidgetText : WidgetWindow
                 case KC_DOWN: // down arrow
                 {
                     m_text.moveDown();
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -521,25 +650,40 @@ class WidgetText : WidgetWindow
                 }
                 case KC_DELETE: // del
                 {
-                    char deleted = m_text.rightText();
-                    m_text.del();
-                    eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                    if (!haveSelection())
+                    {
+                        auto deleted = m_text.rightText();
+                        m_text.del();
+                        eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                    }
+                    else
+                    {
+                        deleteSelectedText();
+                    }
+
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender();
+                    break;
+                }
+                case KC_SHIFT_LEFT:
+                case KC_SHIFT_RIGHT:
+                {
+                    if (!haveSelection())
+                        m_selectionRange[] = [m_text.offset, m_text.offset];
+
                     break;
                 }
                 case KC_RETURN: // Carriage return
                 {
                     if (m_editable)
                     {
-                        // If current line is indented (has tabs) replicate for this line
-                        auto line = m_text.getCurrentLine();
+                        deleteSelectedText();
 
+                        // If current line is indented (has tabs) replicate for the new line
+                        auto cLine = m_text.getCurrentLine();
                         m_text.insert("\n");
-                        eventSignal.emit(this, WidgetEvent(TextReturn()));
-
-                        foreach(char c; line)
+                        foreach(char c; cLine)
                         {
                             if (c == '\t')
                                 m_text.insert('\t');
@@ -547,9 +691,14 @@ class WidgetText : WidgetWindow
                                 break;
                         }
 
+                        if (m_autoBraceIndent && strip(cLine) == "{") // If current line is a brace, check for auto indent
+                            m_text.insert("\t");
+
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
+
+                        eventSignal.emit(this, WidgetEvent(TextInsert("\n")));
                     }
                     break;
                 }
@@ -557,9 +706,14 @@ class WidgetText : WidgetWindow
                 {
                     if (m_editable)
                     {
-                        char deleted = m_text.leftText();
-                        m_text.backspace();
-                        eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                        if (haveSelection())
+                            deleteSelectedText();
+                        else
+                        {
+                            char deleted = m_text.leftText();
+                            m_text.backspace();
+                            eventSignal.emit(this, WidgetEvent(TextRemove(deleted.to!string)));
+                        }
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
@@ -568,15 +722,58 @@ class WidgetText : WidgetWindow
                 }
                 case 32:..case 126: // printables
                 {
-                    if (m_editable)
+                    if (root.ctrlIsDown)
                     {
+                        switch(key) with (KEY)
+                        {
+                            case KC_A: // select all
+                            {
+                                m_selectionRange[0] = 0;
+                                m_text.gotoEndOfText();
+                                updateSelectionRange();
+                                break;
+                            }
+                            case KC_C: // copy selection to clipboard
+                            {
+                                copyToClipboard();
+                                break;
+                            }
+                            case KC_V: // copy selection to clipboard
+                            {
+                                pasteFromClipboard();
+                                break;
+                            }
+                            case KC_X: // copy selection to clipboard and delete selection
+                            {
+                                copyToClipboard();
+                                deleteSelectedText();
+                                break;
+                            }
+
+                            default: break;
+                        }
+                    }
+                    else if (m_editable)
+                    {
+                        deleteSelectedText();
+
+                        if (key == KC_BRACERIGHT)
+                        {
+                            auto cLine = m_text.getCurrentLine();
+                            if (m_autoBraceIndent && strip(cLine) == "}") // check for auto indent
+                            {
+                                auto loc = m_text.searchLeft('{');
+                                if (m_text.leftText() == '\t')
+                                    m_text.del();
+                            }
+                        }
+
                         m_text.insert(cast(char)key);
                         eventSignal.emit(this, WidgetEvent(TextInsert(to!string(cast(char)key))));
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
                     }
-
                     break;
                 }
 
@@ -584,7 +781,6 @@ class WidgetText : WidgetWindow
             }
 
             adjustVisiblePortion();
-
         } // handleKey
 
 
@@ -617,42 +813,129 @@ class WidgetText : WidgetWindow
             }
         }
 
-        void handleCtrlCombo(in KEY key)
+        override bool requestDrag(int[2] pos)
         {
-            switch(cast(uint)key) with (KEY)
+            m_pendingDrag = true;
+            return true;
+        }
+
+        override void drag(int[2] pos, int[2] delta)
+        {
+            auto loc = getLocation(pos.x, pos.y);
+
+            if (m_pendingDrag)
             {
-                case KC_LEFT: // left arrow
-                {
-                    m_text.jumpLeft();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                case KC_RIGHT: // right arrow
-                {
-                    m_text.jumpRight();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                case KC_UP: // up arrow
-                {
-                    m_text.moveUp();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                case KC_DOWN: // down arrow
-                {
-                    m_text.moveDown();
-                    m_drawCaret = true;
-                    needRender();
-                    break;
-                }
-                default:
+                m_selectionRange[] = [loc.offset, loc.offset];
+                m_pendingDrag = false;
+            }
+            else
+            {
+                m_selectionRange[1] = loc.offset;
+                m_refreshCache = true;
+                needRender();
             }
         }
 
+        void updateSelectionRange()
+        {
+            m_selectionRange[1] = m_text.offset;
+            m_refreshCache = true;
+        }
+
+        void clearSelection()
+        {
+            m_selectionRange[] = [0,0];
+            m_refreshCache = true;
+            needRender();
+        }
+
+        bool haveSelection()
+        {
+            return m_selectionRange[0] != m_selectionRange[1];
+        }
+
+        void deleteSelectedText()
+        {
+            if (!haveSelection())
+                return;
+
+            auto r = reduce!(min, max)(m_selectionRange);
+            auto deleted = m_text.text[r[0]..r[1]];
+            m_text.del(r[0], r[1]-1);
+            eventSignal.emit(this, WidgetEvent(TextRemove(deleted)));
+            clearSelection();
+        }
+
+        string getSelectedText()
+        in
+        {
+            assert(haveSelection());
+        }
+        body
+        {
+            auto r = reduce!(min, max)(m_selectionRange);
+            return m_text.text[r[0]..r[1]];
+        }
+
+        void copyToClipboard()
+        {
+            version(Windows)
+            {
+                if (!haveSelection())
+                    return;
+
+                if (OpenClipboard(null) && EmptyClipboard())
+                {
+                    string selection;
+                    foreach(line; splitLines(getSelectedText()))
+                        selection ~= line ~ '\r';
+
+                    selection ~= '\0';
+
+                    auto hnd = GlobalAlloc(0, selection.length);
+                    char* pchData = cast(char*)GlobalLock(hnd);
+                    strcpy(pchData, selection.ptr);
+                    GlobalUnlock(hnd);
+                    SetClipboardData(1 /** CF_TEXT **/, hnd);
+                    CloseClipboard();
+                }
+            }
+        }
+
+        void pasteFromClipboard()
+        {
+            version(Windows)
+            {
+                if (OpenClipboard(null))
+                {
+                    scope(exit) { CloseClipboard(); }
+                    auto hData = GetClipboardData(1 /** CF_TEXT **/);
+
+                    char* buffer = cast(char*)GlobalLock(hData);
+                    scope(exit) { GlobalUnlock(hData); }
+
+                    uint bytes = 0;
+                    auto buffPtr = buffer;
+                    while(*(buffPtr++) != '\0')
+                        bytes ++;
+
+                    if (bytes == 0)
+                        return;
+
+                    char[] readin;
+                    readin.length = bytes;
+                    memcpy(readin.ptr, buffer, bytes);
+
+                    string paste;
+                    foreach(line; splitLines(readin))
+                        paste ~= line ~ '\n';
+
+                    m_text.insert(paste);
+                    m_refreshCache = true;
+                    needRender();
+                }
+            }
+        }
 
     private:
 
@@ -689,6 +972,11 @@ class WidgetText : WidgetWindow
         bool m_refreshCache = true;
 
         RGBA[int] m_lineHighlights;
+
+        bool m_pendingDrag = false;
+        uint[2] m_selectionRange;
+
+        bool m_autoBraceIndent = true;
 }
 
 
@@ -701,7 +989,7 @@ class WidgetLabel : WidgetText
     }
 
     public:
-        void set(Font font, WidgetArgs args)
+        override void set(Font font, WidgetArgs args)
         {
             super.set(font, args);
             m_type = "WIDGETLABEL";
@@ -756,33 +1044,35 @@ class TextArea
 {
     public:
 
-        @property uint col() const { return m_column; }
-        @property uint row() const { return m_row; }
+        struct Location { uint offset, row, col; }
 
-        @property string text() { return m_text; }
-        @property uint offset() { return m_offset; }
+        @property Location loc() const { return m_loc; } // current caret m_location
+        @property uint col() const { return m_loc.col; } // current caret column
+        @property uint row() const { return m_loc.row; } // current caret row
+        @property uint offset() { return m_loc.offset; } // current caret 1-D offset
+        @property string text() { return m_text; } // current text
 
         // Get the character to the left of the current cursor/offset
         @property char leftText()
         {
-            if (m_offset <= 0)
+            if (m_loc.offset <= 0)
                 return cast(char)0;
 
-            return m_text[m_offset-1];
+            return m_text[m_loc.offset-1];
         }
 
         @property char rightText()
         {
-            if (cast(int)(m_offset) > cast(int)(m_text.length - 1))
+            if (cast(int)(m_loc.offset) > cast(int)(m_text.length - 1))
                 return cast(char)0;
 
-            return m_text[m_offset];
+            return m_text[m_loc.offset];
         }
 
         void set(string s)
         {
             m_text.clear;
-            m_offset = 0;
+            m_loc.offset = 0;
             insert(s);
         }
 
@@ -793,44 +1083,52 @@ class TextArea
 
         void insert(string s)
         {
-            // TODO: the column and row changes don't correctly account for
-            // insertions which contain carriage returns
+            insertInPlace(m_text, m_loc.offset, s);
 
-            insertInPlace(m_text, m_offset, s);
-            m_offset += s.length;
-
-            if (s.length == 1 && s[0] == '\n')
-            {
-                m_column = 0;
-                m_row++;
-            }
-            else
-            {
-                m_column += s.length;
-                m_seekColumn = m_column;
-            }
+            foreach(i; 0..s.length)
+                moveRight();
         }
 
         void backspace()
         {
-            if (m_offset > 0)
+            if (m_loc.offset > 0)
             {
-                deleteSelection(m_offset-1, m_offset-1);
+                deleteSelection(m_loc.offset-1, m_loc.offset-1);
                 moveLeft();
             }
         }
 
         void del()
         {
-            if (m_offset < m_text.length)
-            {
-                deleteSelection(m_offset, m_offset);
-            }
+            if (m_loc.offset < m_text.length)
+                deleteSelection(m_loc.offset, m_loc.offset);
+        }
+
+        void del(size_t from, size_t to)
+        {
+            deleteSelection(from, to);
         }
 
         void deleteSelection(size_t from, size_t to)
+        in
         {
-            m_text = m_text[0..from] ~ m_text[to+1..$];
+            assert(from < m_text.length);
+            assert(to < m_text.length);
+            assert(to >= from);
+        }
+        body
+        {
+            string newtext;
+            if (from > 0)
+                newtext = m_text[0..from] ~ m_text[to+1..$];
+            else
+                newtext = m_text[to+1..$];
+
+            if (m_loc.offset != from && to-from > 0 )
+                foreach(i; 0..(to-from) + 1)
+                    moveLeft();
+
+            m_text = newtext;
         }
 
         /**
@@ -838,23 +1136,23 @@ class TextArea
         */
         void moveLeft(bool seeking = false)
         {
-            if (m_offset > 0)
+            if (m_loc.offset > 0)
             {
-                m_offset --;
-                if (m_column == 0)
+                m_loc.offset --;
+                if (m_loc.col == 0)
                 {
                     // Go up a line
-                    m_column = countToStartOfLine();
-                    m_row --;
+                    m_loc.col = countToStartOfLine();
+                    m_loc.row --;
                 }
                 else
                 {
-                    m_column --;
+                    m_loc.col --;
                 }
             }
 
             if (!seeking)
-                m_seekColumn = m_column;
+                m_seekColumn = m_loc.col;
         }
 
 
@@ -866,10 +1164,16 @@ class TextArea
             if (col == 0)
                 return;
 
-            while(col > 0 && m_offset > 0 && isBlank(leftText))
+            if (isDelim(leftText) && !isBlank(leftText))
+            {
+                moveLeft();
+                return;
+            }
+
+            while(col > 0 && m_loc.offset > 0 && isBlank(leftText))
                 moveLeft();
 
-            while(col > 0 && m_offset > 0 && !isBlank(leftText))
+            while(col > 0 && m_loc.offset > 0 && !isDelim(leftText))
                 moveLeft();
         }
 
@@ -878,23 +1182,23 @@ class TextArea
         */
         void moveRight(bool seeking = false)
         {
-            if (m_offset < m_text.length)
+            if (m_loc.offset < m_text.length)
             {
-                if (m_text[m_offset] == '\n')
+                if (m_text[m_loc.offset] == '\n')
                 {
                     // Go down a line
-                    m_column = 0;
-                    m_row ++;
+                    m_loc.col = 0;
+                    m_loc.row ++;
                 }
                 else
                 {
-                    m_column ++;
+                    m_loc.col ++;
                 }
-                m_offset ++;
+                m_loc.offset ++;
             }
 
             if (!seeking)
-                m_seekColumn = m_column;
+                m_seekColumn = m_loc.col;
         }
 
         /**
@@ -904,34 +1208,34 @@ class TextArea
         {
             auto endCol = col + countToEndOfLine();
 
-            if (isBlank(rightText))
+            if (isDelim(rightText))
             {
-                while(col < endCol && m_offset < m_text.length && isBlank(rightText))
+                while(col < endCol && m_loc.offset < m_text.length && isDelim(rightText))
                     moveRight();
             }
             else
             {
-                while(col < endCol && m_offset < m_text.length && !isBlank(rightText))
+                while(col < endCol && m_loc.offset < m_text.length && !isDelim(rightText))
                     moveRight();
 
-                while(col < endCol && m_offset < m_text.length && isBlank(rightText))
+                while(col < endCol && m_loc.offset < m_text.length && isBlank(rightText))
                     moveRight();
             }
         }
 
         void moveUp()
         {
-            uint preMoveRow = m_row,
-                 preMoveColumn = m_column,
-                 preMoveOffset = m_offset;
+            uint preMoveRow = m_loc.row,
+                 preMoveColumn = m_loc.col,
+                 preMoveOffset = m_loc.offset;
 
             bool found = false;
-            while(m_offset > 0)
+            while(m_loc.offset > 0)
             {
                 moveLeft(true);
-                if (m_column == m_seekColumn ||
-                    m_column < m_seekColumn && countToEndOfLine() == 0 && m_row == preMoveRow - 1 ||
-                    (m_column == 0 && m_text[m_offset] == '\n'))
+                if (m_loc.col == m_seekColumn ||
+                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow - 1 ||
+                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
                 {
                     found = true;
                     break;
@@ -940,25 +1244,25 @@ class TextArea
 
             if  (!found)
             {
-                m_offset = preMoveOffset;
-                m_column = preMoveColumn;
-                m_row = preMoveRow;
+                m_loc.offset = preMoveOffset;
+                m_loc.col = preMoveColumn;
+                m_loc.row = preMoveRow;
             }
         }
 
         void moveDown()
         {
-            uint preMoveRow = m_row,
-                 preMoveColumn = m_column,
-                 preMoveOffset = m_offset;
+            uint preMoveRow = m_loc.row,
+                 preMoveColumn = m_loc.col,
+                 preMoveOffset = m_loc.offset;
 
             bool found = false;
-            while(m_offset < m_text.length)
+            while(m_loc.offset < m_text.length)
             {
                 moveRight(true);
-                if (m_column == m_seekColumn ||
-                    m_column < m_seekColumn && countToEndOfLine() == 0 && m_row == preMoveRow + 1 ||
-                    (m_column == 0 && m_text[m_offset] == '\n'))
+                if (m_loc.col == m_seekColumn ||
+                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow + 1 ||
+                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
                 {
                     found = true;
                     break;
@@ -967,33 +1271,51 @@ class TextArea
 
             if  (!found)
             {
-                m_offset = preMoveOffset;
-                m_column = preMoveColumn;
-                m_row = preMoveRow;
+                m_loc.offset = preMoveOffset;
+                m_loc.col = preMoveColumn;
+                m_loc.row = preMoveRow;
             }
         }
 
         void home() // home key
         {
-            while (m_column != 0)
+            while (m_loc.col != 0)
                 moveLeft();
         }
 
         void end() // end key
         {
-            if (m_offset == m_text.length)
+            if (m_loc.offset == m_text.length)
                 return;
 
-            while(m_offset < m_text.length && m_text[m_offset] != '\n')
+            while(m_loc.offset < m_text.length && m_text[m_loc.offset] != '\n')
+                moveRight();
+        }
+
+        /**
+        * Move caret to the start of the text
+        */
+        void gotoStartOfText()
+        {
+            while(m_loc.offset > 0)
+                moveLeft();
+        }
+
+        /**
+        * Move caret to the end of the text
+        */
+        void gotoEndOfText()
+        {
+            while(m_loc.offset < m_text.length)
                 moveRight();
         }
 
         uint countToStartOfLine()
         {
-            if (m_offset == 0)
+            if (m_loc.offset == 0)
                 return 0;
 
-            int i = m_offset - 1, count = 0;
+            int i = m_loc.offset - 1, count = 0;
 
             if (m_text[i] == '\n')
                 return 0;
@@ -1008,7 +1330,7 @@ class TextArea
 
         uint countToEndOfLine()
         {
-            uint i = m_offset, count = 0;
+            uint i = m_loc.offset, count = 0;
             while (i < m_text.length && m_text[i] != '\n')
             {
                 i++;
@@ -1031,12 +1353,15 @@ class TextArea
             return getLine(row);
         }
 
+        /**
+        * Return x,y caret position in screen coords, relative to first character
+        */
         int[2] getCaretPosition(ref const(Font) font)
         {
             int[2] cpos = [0,0];
             foreach(i, char c; m_text)
             {
-                if (i == m_offset)
+                if (i == m_loc.offset)
                     break;
 
                 if (c == '\n')
@@ -1046,11 +1371,11 @@ class TextArea
                 }
                 else if (c == '\t')
                 {
-                    cpos[0] += tabSpaces*font.m_wids[(cast(uint)' ') - 32];
+                    cpos[0] += tabSpaces*font.width(' ');
                 }
                 else
                 {
-                    cpos[0] += font.m_wids[(cast(uint)c) - 32];
+                    cpos[0] += font.width(c);
                 }
             }
             return cpos;
@@ -1061,34 +1386,41 @@ class TextArea
         * left corner of first character. Returned row and col are always
         * inside the available text.
         */
-        int[2] getRowCol(ref const(Font) font, int x, int y)
+        Location getLocation(ref const(Font) font, int x, int y)
         {
-            int[2] cpos = [0,0];
+            Location _loc;
+
+            //int[2] cpos = [0,0];
 
             if (m_text.length == 0)
-                return cpos;
+                return _loc;
 
-            // y is determined solely by font.m_lineHeight
-            cpos[0] = cast(int) (y / font.m_lineHeight);
+            // row is determined solely by font.m_lineHeight
+            _loc.row = cast(int) (y / font.m_lineHeight);
 
             auto lines = splitLines(m_text);
-            if (cpos[0] > lines.length - 1)
-                cpos[0] = lines.length - 1;
+            if (_loc.row > lines.length - 1)
+                _loc.row = lines.length - 1;
+
+            if (_loc.row > 0)
+                foreach(l; lines[0.._loc.row])
+                    _loc.offset += l.length;
 
             float _x = 0;
-            foreach(char c; lines[cpos[0]])
+            foreach(char c; lines[_loc.row])
             {
                 if (_x > x)
                     break;
 
                 if (c == '\t')
-                    _x += tabSpaces*font.m_wids[(cast(uint)' ') - 32];
+                    _x += tabSpaces*font.width(' ');
                 else
-                    _x += font.m_wids[(cast(uint)c) - 32];
+                    _x += font.width(c);
 
-                cpos[1] ++;
+                _loc.col ++;
+                _loc.offset ++;
             }
-            return cpos;
+            return _loc;
         }
 
         void moveCaret(uint newRow, uint newCol)
@@ -1098,46 +1430,559 @@ class TextArea
 
             if (newRow > row || (newRow == row && newCol > col))
             {
-                while(m_offset < m_text.length - 1 && (row != newRow || col != newCol))
+                while(m_loc.offset < m_text.length && (row != newRow || col != newCol))
                     moveRight();
             }
             else
             {
-                while(m_offset > 0 && (row != newRow || col != newCol))
+                while(m_loc.offset > 0 && (row != newRow || col != newCol))
                     moveLeft();
             }
+        }
+
+        /**
+        * Move left from caret until given char is found, return row, column and offset
+        */
+        Location searchLeft(char c)
+        {
+            auto store = m_loc;
+            while (m_loc.offset > 0 && m_text[m_loc.offset] != c)
+                moveLeft();
+
+            auto rVal = m_loc;
+            m_loc = store;
+            return rVal;
+        }
+
+        /**
+        * Move right from caret until given char is found, return row, column and offset
+        */
+        Location searchRight(char c)
+        {
+            auto store = m_loc;
+            while (m_loc.offset < m_text.length && m_text[m_loc.offset] != c)
+                moveRight();
+
+            auto rVal = m_loc;
+            m_loc = store;
+            return rVal;
         }
 
         // Clear all text
         void clear()
         {
             m_text.clear;
-            m_offset = 0;
-            m_row = 0;
-            m_column = 0;
+            m_loc.offset = 0;
+            m_loc.row = 0;
+            m_loc.col = 0;
             m_seekColumn = 0;
         }
 
-
     private:
+
+        bool isDelim(char c)
+        {
+            return isBlank(c) ||
+                   !isAlphaNum(c);
+        }
 
         bool isBlank(char c)
         {
             return c == ' ' ||
-                   c == '\t';
+                   c == '\t' ;
         }
 
-        uint m_offset = 0;
         string m_text = "";
 
         // Default number of spaces for a tab
         uint tabSpaces = 4;
 
         // Current column and row of the caret (insertion point)
-        uint m_column = 0;
-        uint m_row = 0;
+        Location m_loc;
 
         // When moving up and down through carriage returns, try to get to this column
         uint m_seekColumn = 0;
+}
+
+
+/++
+class TextArea2
+{    struct Location { size_t row, col; }
+
+    string m_original;
+    Appender!string m_edit;
+    DList!(Span) m_spans;
+
+    /**
+    * Insert text at the given logical index in the text sequence. Indexes larger
+    * than the largest index are inserted at the end of the sequence. Therefore use
+    * index = -1 to insert at the end.
+    */
+    void insertAt(size_t index, string s)
+    {
+        /**
+        * Find the span which contains the given index, split it into two,
+        * add a new span in between pointing to the edit buffer
+        */
+        auto newSpan = Span(Buffer.EDIT, m_edit.data.length, s.length);
+        m_edit.put(s);
+
+        auto oldSpan = findSpan(index);
+        if (!oldSpan.empty)
+        {
+            auto spanOffset = index - oldSpan.front.index;
+            if (spanOffset == 0) // insert at beginning, no need to split
+            {
+                m_spans.insertBefore(oldSpan, newSpan);
+            }
+            else
+            {
+                auto split = oldSpan.front.split(spanOffset);
+                m_spans.insertAfter(oldSpan, [split[0], newSpan, split[1]]);
+                m_spans.linearRemove(oldSpan.takeOne());
+            }
+        }
+        else
+        {
+            // See if we can simply extend the previous span in the list
+            if (!m_spans.empty &&
+                newSpan.buffer == m_spans.back.buffer &&
+                newSpan.index == m_spans.back.index + m_spans.back.length)
+            {
+                //m_spans.back = Span(newSpan.buffer, m_spans.back.index, m_spans.back.length + s.length);
+            }
+            else
+            {
+                m_spans.insertBack(newSpan);
+            }
+        }
+
+    }
+
+    unittest /** insertAt **/
+    {
+        auto text = new TextArea2();
+        text.insertAt(0, "hello there");
+        text.insertAt(11, "(span boundary)");
+        text.insertAt(0, "(beginning)");
+        text.insertAt(-1, ", end !!!");
+        text.insertAt(-1, ",");
+        text.insertAt(-1, ",");
+        //assert(text.to!string == "(beginning)hello there(span boundary), end !!!,,");
+    }
+
+    /**
+    * Delete text in range [from, from + length)
+    */
+    void deleteRange(size_t from, size_t length)
+    in
+    {
+        assert(length > 0);
+        assert(!findSpan(from).empty);
+    }
+    body
+    {
+        auto spanFrom = findSpan(from);
+
+        if (from == spanFrom.front.index &&
+            length == spanFrom.front.length) // range covers exactly one span, remove it
+        {
+            m_spans.linearRemove(spanFrom);
+            return;
+        }
+        else if (from == spanFrom.front.index &&
+                 length < spanFrom.front.length) // range lies within one span, and is at the start
+        {
+            m_spans.linearRemove(spanFrom);
+        }
+        else // range covers more than one span, general case
+        {
+
+        }
+    }
+
+    unittest /** deleteRange **/
+    {
+
+    }
+
+    /**
+    * Return the contained text as a single string (char sequence)
+    */
+    override string toString()
+    {
+        Appender!string text;
+        foreach(span; m_spans)
+            text.put(extractText(span));
+        return text.data();
+    }
+
+    /**
+    * Extract text spanned by Span
+    */
+    string extractText(Span s)
+    {
+        if (s.buffer == Buffer.ORIGINAL)
+            return s.extract(m_original);
+        else
+            return s.extract(m_edit.data);
+    }
+
+    auto findSpan(size_t idx)
+    {
+        return m_spans[].find!( (Span s) { return idx >= s.index && idx < s.index + s.length; })();
+    }
+
+    unittest /** findSpan **/
+    {
+        auto text = new TextArea2();
+        auto spanList = [Span(Buffer.EDIT, 0, 10),
+                         Span(Buffer.EDIT, 10, 5),
+                         Span(Buffer.EDIT, 15, 20)];
+        text.m_spans.insertFront(spanList);
+        assert( text.findSpan(0).front == spanList[0] );
+        assert( text.findSpan(14).front == spanList[1] );
+        assert( text.findSpan(80).empty );
+    }
+
+}
+
+
+unittest /** TextArea2 **/
+{
+
+}
+++/
+
+enum Buffer
+{
+    ORIGINAL,
+    EDIT
+}
+
+struct Span
+{
+    string buffer;
+    size_t newLines;
+
+    this(string _buffer)
+    {
+        buffer = _buffer;
+        countNewLines();
+    }
+
+    @property size_t length()
+    {
+        return buffer.length;
+    }
+
+    /**
+    * Count number of newlines in the buffer
+    */
+    size_t countNewLines()
+    {
+        newLines = 0;
+        foreach(char c; buffer)
+            if (c == '\n')
+                newLines ++;
+
+        return newLines;
+    }
+
+    /**
+    * Create two new spans, by splitting this span at splitAt.
+    * A left and right span are returned as a Tuple. The left
+    * span contains the original span up to and including splitAt - 1,
+    * the right span contains the original span from splitAt to length.
+    */
+    Tuple!(Span, Span) split(size_t splitAt)
+    in
+    {
+        assert(splitAt > 0 && splitAt < buffer.length);
+    }
+    body
+    {
+        auto left = Span(buffer[0..splitAt]);
+        auto right = Span(buffer[splitAt..$]);
+        return tuple(left, right);
+    }
+}
+
+
+class Node
+{
+    Node prev, next;
+    Span payload;
+
+    this() {}
+    this(Span data) { payload = data; }
+}
+
+class SpanList
+{
+    Node head, tail; // sentinels
+
+    this()
+    {
+        head = new Node;
+        tail = new Node;
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    @property bool empty() { return head.next == tail && tail.prev == head; };
+    @property ref Span front() { return head.next.payload; }
+    @property ref Span back() { return tail.prev.payload; }
+
+    void insertAfter()(Node n, Span payload)
+    {
+        auto newNode = new Node(payload);
+        newNode.next = n.next;
+        newNode.prev = n;
+        n.next.prev = newNode;
+        n.next = newNode;
+    }
+
+    void insertAfter(Range)(Node n, Range r) if (is(ElementType!Range == Span))
+    {
+        foreach(s; r)
+        {
+            insertAfter(n, s);
+            n = n.next;
+        }
+    }
+
+    void insertBefore(Node n, Span payload)
+    {
+        insertAfter(n.prev, payload);
+    }
+
+    void insertFront(Span payload)
+    {
+        insertAfter(head, payload);
+    }
+
+    void insertBack(Span payload)
+    {
+        insertAfter(tail.prev, payload);
+    }
+
+    void insertAt(size_t index, Span s)
+    {
+        if (index == 0)
+            insertAfter(head, s);
+        else
+        {
+            auto node = findNode(index);
+
+            if (node[2] == 0)
+                insertBefore(node[0], s);
+            else if (node[2] == node[1].length)
+                insertAfter(node[0], s);
+            else
+            {
+                auto splitNode = node[1].split(node[2]);
+                insertAfter(node[0], [splitNode[0], s, splitNode[1]]);
+                remove(node[0]);
+            }
+        }
+    }
+
+    /**
+    * Remove a single Node
+    */
+    void remove(Node node)
+    {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    /**
+    * Remove all Nodes between left and right, inclusive
+    */
+    void remove(Node lNode, Node rNode)
+    {
+        lNode.prev.next = rNode.next;
+        rNode.next.prev = lNode.prev;
+    }
+
+    /**
+    * Remove spans covering a arange of logical indices, taking
+    * care of fractional spans (from and to are inclusive)
+    */
+    void remove(size_t from, size_t to)
+    {
+        auto left = findNode(from);
+        auto right = findNode(to);
+
+        if (left[2] > 0)
+            insertBefore(left[0], Span(left[1].buffer[0..left[2]]));
+
+        if (right[2] + 1 < right[1].buffer.length)
+            insertAfter(right[0], Span(right[1].buffer[right[2]+1..$]));
+
+        remove(left[0], right[0]);
+    }
+
+    /**
+    * Return the Node and Span which spans the corresponding logical index
+    * and the local offset into that span.
+    */
+    Tuple!(Node, Span, size_t) findNode(size_t idx)
+    {
+        size_t offset = 0, spanOffset = 0;
+        for(auto c = head.next; c != tail; c = c.next)
+        {
+            spanOffset = idx - offset;
+
+            if (idx >= offset && idx < offset + c.payload.buffer.length)
+                return tuple(c, c.payload, spanOffset);
+
+            offset += c.payload.buffer.length;
+        }
+
+        return tuple(tail.prev, tail.prev.payload, tail.prev.payload.buffer.length);
+    }
+
+    struct Range
+    {
+        Node current, last;
+
+        this(Node start, Node last)
+        {
+            current = start;
+        }
+
+        @property bool empty()
+        {
+            return current.next == last;
+        }
+
+        @property ref Span front()
+        {
+            return current.payload;
+        }
+
+        @property ref Node frontNode()
+        {
+            return current;
+        }
+
+        void popFront()
+        {
+            current = current.next;
+        }
+    }
+
+    Range opSlice()
+    {
+        return Range(head.next, tail);
+    }
+
+}
+
+
+class TextArea2
+{
+    string m_original;
+    Appender!string m_edit;
+    SpanList m_spans;
+
+    this()
+    {
+        m_spans = new SpanList();
+    }
+
+    void insertAt(size_t index, string s)
+    {
+        auto begin = m_edit.data.length;
+        m_edit.put(s);
+        auto newSpan = Span(m_edit.data[begin..$]);
+        m_spans.insertAt(index, newSpan);
+    }
+
+    void remove(size_t from, size_t to)
+    {
+        m_spans.remove(from, to);
+    }
+
+    string getLine(size_t line)
+    {
+        return "";
+    }
+
+    struct LineRange
+    {
+        SpanList.Range r;
+
+        string[] lines;
+        size_t bufferIndex;
+
+        this(SpanList.Range list, size_t startLine)
+        {
+            r = list;
+
+            if (startLine > 0)
+            {
+                size_t cline = 0;
+                while( !r.empty && !(startLine >= cline && startLine < cline + r.front.newLines) )
+                {
+                    cline += r.front.newLines;
+                    r.popFront();
+                }
+
+                lines = splitLines(r.front);
+                bufferIndex = startLine - cline;
+            }
+            else
+            {
+
+            }
+        }
+
+        @property bool empty()
+        {
+            return r.empty;
+        }
+
+        @property string front()
+        {
+            return lineBuffer;
+        }
+
+        void popFront()
+        {
+            r.popFront();
+        }
+    }
+
+    LineRange byLine(size_t startLine = 0)
+    {
+        return LineRange(m_spans[], startLine);
+    }
+
+    /**
+    * Return the contained text as a single string (char sequence)
+    */
+    override string toString()
+    {
+        Appender!string text;
+        foreach(span; m_spans)
+            text.put(span.buffer);
+        return text.data();
+    }
+}
+
+unittest /** List **/
+{
+    auto text = new TextArea2();
+    text.insertAt(0, "line 0\nline 1\n");
+    text.insertAt(16, "line 2\nline 3\nline 4\n");
+    text.insertAt(32, "line 5\n");
+
+    foreach(line; text.byLine(3))
+        writeln(line);
+
+    assert(false);
 }
 

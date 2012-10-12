@@ -1036,7 +1036,7 @@ class WidgetRoot : Widget
         }
 
         // Render all widgets which have this root
-        void render(Flag!"RenderChildren" recurse)
+        override void render(Flag!"RenderChildren" recurse)
         {
             // Update screen positions
             foreach(child; m_children)
@@ -1438,27 +1438,27 @@ class WidgetRoot : Widget
         }
 
         // Get the current elapsed time in milliseconds from the stopwatch
-        @property long timerMsecs() const { return m_eventTimer.peek().msecs; }
+        override @property long timerMsecs() const { return m_eventTimer.peek().msecs; }
 
         // Get the platform window we are running in
         @property Window window() { return m_window; }
 
         // Return true if CTRL key is down
-        @property bool ctrlIsDown() const
+        override @property bool ctrlIsDown() const
         {
             return (m_window.keyState.keys[KEY.KC_CTRL_LEFT] ||
                     m_window.keyState.keys[KEY.KC_CTRL_RIGHT]);
         }
 
         // Return true if SHIFT key is down
-        @property bool shiftIsDown() const
+        override @property bool shiftIsDown() const
         {
             return (m_window.keyState.keys[KEY.KC_SHIFT_LEFT] ||
                     m_window.keyState.keys[KEY.KC_SHIFT_RIGHT]);
         }
 
         // Flag that a widget needs to be rendered
-        void needRender()
+        override void needRender()
         {
             m_needRender = true;
         }
@@ -1648,7 +1648,7 @@ class WidgetWindow : Widget
             needRender();
         }
 
-        void set(WidgetArgs args)
+        override void set(WidgetArgs args)
         {
             super.set(args);
 
@@ -1773,7 +1773,7 @@ class WidgetPanWindow : WidgetWindow
 
     public:
 
-        void set(WidgetArgs args)
+        override void set(WidgetArgs args)
         {
             super.set(args);
             m_canDrag = true;
@@ -1906,7 +1906,7 @@ class WidgetScroll : WidgetWindow
 
     public:
 
-        void set(WidgetArgs args)
+        override void set(WidgetArgs args)
         {
             super.set(args);
             m_type = "WIDGETSCROLL";
@@ -2268,7 +2268,7 @@ class WidgetTree : WidgetWindow
 
     public:
 
-        void set(WidgetArgs args)
+        override void set(WidgetArgs args)
         {
             super.set(args);
             m_type = "WIDGETTREE";
