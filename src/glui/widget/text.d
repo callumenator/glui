@@ -1505,160 +1505,6 @@ class TextArea
 }
 
 
-/++
-class TextArea2
-{    struct Location { size_t row, col; }
-
-    string m_original;
-    Appender!string m_edit;
-    DList!(Span) m_spans;
-
-    /**
-    * Insert text at the given logical index in the text sequence. Indexes larger
-    * than the largest index are inserted at the end of the sequence. Therefore use
-    * index = -1 to insert at the end.
-    */
-    void insertAt(size_t index, string s)
-    {
-        /**
-        * Find the span which contains the given index, split it into two,
-        * add a new span in between pointing to the edit buffer
-        */
-        auto newSpan = Span(Buffer.EDIT, m_edit.data.length, s.length);
-        m_edit.put(s);
-
-        auto oldSpan = findSpan(index);
-        if (!oldSpan.empty)
-        {
-            auto spanOffset = index - oldSpan.front.index;
-            if (spanOffset == 0) // insert at beginning, no need to split
-            {
-                m_spans.insertBefore(oldSpan, newSpan);
-            }
-            else
-            {
-                auto split = oldSpan.front.split(spanOffset);
-                m_spans.insertAfter(oldSpan, [split[0], newSpan, split[1]]);
-                m_spans.linearRemove(oldSpan.takeOne());
-            }
-        }
-        else
-        {
-            // See if we can simply extend the previous span in the list
-            if (!m_spans.empty &&
-                newSpan.buffer == m_spans.back.buffer &&
-                newSpan.index == m_spans.back.index + m_spans.back.length)
-            {
-                //m_spans.back = Span(newSpan.buffer, m_spans.back.index, m_spans.back.length + s.length);
-            }
-            else
-            {
-                m_spans.insertBack(newSpan);
-            }
-        }
-
-    }
-
-    unittest /** insertAt **/
-    {
-        auto text = new TextArea2();
-        text.insertAt(0, "hello there");
-        text.insertAt(11, "(span boundary)");
-        text.insertAt(0, "(beginning)");
-        text.insertAt(-1, ", end !!!");
-        text.insertAt(-1, ",");
-        text.insertAt(-1, ",");
-        //assert(text.to!string == "(beginning)hello there(span boundary), end !!!,,");
-    }
-
-    /**
-    * Delete text in range [from, from + length)
-    */
-    void deleteRange(size_t from, size_t length)
-    in
-    {
-        assert(length > 0);
-        assert(!findSpan(from).empty);
-    }
-    body
-    {
-        auto spanFrom = findSpan(from);
-
-        if (from == spanFrom.front.index &&
-            length == spanFrom.front.length) // range covers exactly one span, remove it
-        {
-            m_spans.linearRemove(spanFrom);
-            return;
-        }
-        else if (from == spanFrom.front.index &&
-                 length < spanFrom.front.length) // range lies within one span, and is at the start
-        {
-            m_spans.linearRemove(spanFrom);
-        }
-        else // range covers more than one span, general case
-        {
-
-        }
-    }
-
-    unittest /** deleteRange **/
-    {
-
-    }
-
-    /**
-    * Return the contained text as a single string (char sequence)
-    */
-    override string toString()
-    {
-        Appender!string text;
-        foreach(span; m_spans)
-            text.put(extractText(span));
-        return text.data();
-    }
-
-    /**
-    * Extract text spanned by Span
-    */
-    string extractText(Span s)
-    {
-        if (s.buffer == Buffer.ORIGINAL)
-            return s.extract(m_original);
-        else
-            return s.extract(m_edit.data);
-    }
-
-    auto findSpan(size_t idx)
-    {
-        return m_spans[].find!( (Span s) { return idx >= s.index && idx < s.index + s.length; })();
-    }
-
-    unittest /** findSpan **/
-    {
-        auto text = new TextArea2();
-        auto spanList = [Span(Buffer.EDIT, 0, 10),
-                         Span(Buffer.EDIT, 10, 5),
-                         Span(Buffer.EDIT, 15, 20)];
-        text.m_spans.insertFront(spanList);
-        assert( text.findSpan(0).front == spanList[0] );
-        assert( text.findSpan(14).front == spanList[1] );
-        assert( text.findSpan(80).empty );
-    }
-
-}
-
-
-unittest /** TextArea2 **/
-{
-
-}
-++/
-
-enum Buffer
-{
-    ORIGINAL,
-    EDIT
-}
 
 struct Span
 {
@@ -1709,81 +1555,91 @@ struct Span
 }
 
 
-class Node
-{
-    Node prev, next;
-    Span payload;
-
-    this() {}
-    this(Span data) { payload = data; }
-}
-
 class SpanList
 {
+    class Node
+    {
+        Node prev, next;
+        Span payload;
+
+        this() {}
+        this(Span data) { payload = data; }
+    }
+
     Node head, tail; // sentinels
 
     this()
     {
-        head = new Node;
-        tail = new Node;
-        head.next = tail;
-        tail.prev = head;
+        clear();
     }
 
     @property bool empty() { return head.next == tail && tail.prev == head; };
     @property ref Span front() { return head.next.payload; }
     @property ref Span back() { return tail.prev.payload; }
+    @property Node frontNode() { return head.next; }
+    @property Node backNode() { return tail.prev; }
 
-    void insertAfter()(Node n, Span payload)
+    Node insertAfter()(Node n, Span payload)
     {
         auto newNode = new Node(payload);
         newNode.next = n.next;
         newNode.prev = n;
         n.next.prev = newNode;
         n.next = newNode;
+        return newNode;
     }
 
-    void insertAfter(Range)(Node n, Range r) if (is(ElementType!Range == Span))
+    Node[] insertAfter(Range)(Node n, Range r) if (is(ElementType!Range == Span))
     {
+        Node[] newNodes;
         foreach(s; r)
         {
-            insertAfter(n, s);
+            newNodes ~= insertAfter(n, s);
             n = n.next;
         }
+        return newNodes;
     }
 
-    void insertBefore(Node n, Span payload)
+    Node insertBefore(Node n, Span payload)
     {
-        insertAfter(n.prev, payload);
+        return insertAfter(n.prev, payload);
     }
 
-    void insertFront(Span payload)
+    Node insertFront(Span payload)
     {
-        insertAfter(head, payload);
+        return insertAfter(head, payload);
     }
 
-    void insertBack(Span payload)
+    Node insertBack(Span payload)
     {
-        insertAfter(tail.prev, payload);
+        return insertAfter(tail.prev, payload);
     }
 
-    void insertAt(size_t index, Span s)
+    /**
+    * Inserts the span at the given logical index.
+    * Returns: the Node corresponding to the new Span
+    */
+    Node insertAt(size_t index, Span s)
     {
         if (index == 0)
-            insertAfter(head, s);
+            return insertAfter(head, s);
         else
         {
-            auto node = findNode(index);
+            auto found = findNode(index);
 
-            if (node[2] == 0)
-                insertBefore(node[0], s);
-            else if (node[2] == node[1].length)
-                insertAfter(node[0], s);
+            if (found.node is head || found.node is tail)
+                return insertBack(s);
+
+            if (found.offset == 0)
+                return insertBefore(found.node, s);
+            else if (found.offset == found.span.length)
+                return insertAfter(found.node, s);
             else
             {
-                auto splitNode = node[1].split(node[2]);
-                insertAfter(node[0], [splitNode[0], s, splitNode[1]]);
-                remove(node[0]);
+                auto splitNode = found.span.split(found.offset);
+                auto newNodes = insertAfter(found.node, [splitNode[0], s, splitNode[1]]);
+                remove(found.node);
+                return newNodes[1];
             }
         }
     }
@@ -1798,64 +1654,178 @@ class SpanList
     }
 
     /**
-    * Remove all Nodes between left and right, inclusive
+    * Remove all Nodes between left and right, inclusive.
+    * Returns: An array of Spans which were removed.
     */
-    void remove(Node lNode, Node rNode)
+    Span[] remove(Node lNode, Node rNode)
+    in
+    {
+        assert(lNode !is head && lNode !is tail);
+        assert(rNode !is head && rNode !is tail);
+    }
+    body
     {
         lNode.prev.next = rNode.next;
         rNode.next.prev = lNode.prev;
+
+        Appender!(Span[]) removed;
+        while(lNode !is rNode)
+        {
+            removed.put(lNode.payload);
+            lNode = lNode.next;
+        }
+        removed.put(rNode.payload);
+
+        return removed.data;
     }
 
     /**
     * Remove spans covering a arange of logical indices, taking
-    * care of fractional spans (from and to are inclusive)
+    * care of fractional spans (from and to are inclusive).
+    * Returns: A Tuple containing an array of Spans removed, and
+    * spans inserted at the left and right 'edges' of the removed Spans.
     */
-    void remove(size_t from, size_t to)
+    Tuple!(Span[],"del",Node,"lAdd",Node,"rAdd") remove(size_t from, size_t to)
     {
+        Tuple!(Span[],"del",Node,"lAdd",Node,"rAdd") result;
+
         auto left = findNode(from);
+        if (left.node is tail) return result;
+
         auto right = findNode(to);
 
-        if (left[2] > 0)
-            insertBefore(left[0], Span(left[1].buffer[0..left[2]]));
+        if (left.offset > 0)
+        {
+            auto newSpan = Span(left.span.buffer[0..left.offset]);
+            result.lAdd = insertBefore(left.node, newSpan);
+        }
 
-        if (right[2] + 1 < right[1].buffer.length)
-            insertAfter(right[0], Span(right[1].buffer[right[2]+1..$]));
+        if (right.node is tail)
+            right.node = tail.prev;
+        else if (right.offset + 1 < right.span.length)
+        {
+            auto newSpan = Span(right.span.buffer[right.offset+1..$]);
+            result.rAdd = insertAfter(right.node, newSpan);
+        }
 
-        remove(left[0], right[0]);
+        result.del = remove(left.node, right.node);
+        return result;
     }
 
     /**
     * Return the Node and Span which spans the corresponding logical index
     * and the local offset into that span.
     */
-    Tuple!(Node, Span, size_t) findNode(size_t idx)
+    Tuple!(Node,"node",Span,"span",size_t,"offset") findNode(size_t idx)
     {
+        Tuple!(Node,"node",Span,"span",size_t,"offset") result;
+
         size_t offset = 0, spanOffset = 0;
         for(auto c = head.next; c != tail; c = c.next)
         {
             spanOffset = idx - offset;
 
             if (idx >= offset && idx < offset + c.payload.buffer.length)
-                return tuple(c, c.payload, spanOffset);
+            {
+                result.span = c.payload;
+                result.node = c;
+                result.offset = spanOffset;
+                return result;
+            }
 
             offset += c.payload.buffer.length;
         }
 
-        return tuple(tail.prev, tail.prev.payload, tail.prev.payload.buffer.length);
+        result.node = tail;
+        return result;
     }
 
+    /**
+    * Standard bidirectional range which can shrink from both ends
+    */
     struct Range
     {
-        Node current, last;
+        Node first, last;
 
-        this(Node start, Node last)
+        this(Node _first, Node _last)
         {
-            current = start;
+            first = _first;
+            last = _last;
         }
 
         @property bool empty()
         {
-            return current.next == last;
+            return first is null;
+        }
+
+        @property ref Span front()
+        {
+            return first.payload;
+        }
+
+        @property ref Span back()
+        {
+            return last.payload;
+        }
+
+        @property ref Node frontNode()
+        {
+            return first;
+        }
+
+        @property ref Node backNode()
+        {
+            return last;
+        }
+
+        void popFront()
+        {
+            if (first is last)
+            {
+                first = null;
+                last = null;
+            }
+            else
+                first = first.next;
+        }
+
+        void popBack()
+        {
+            if (first is last)
+            {
+                first = null;
+                last = null;
+            }
+            else
+                last = last.prev;
+        }
+    }
+
+    /**
+    * Not really a range...
+    */
+    struct IndexRange
+    {
+        Node first, last, current;
+
+        this(Node _first, Node _last, Node _current = null)
+        {
+            first = _first;
+            last = _last;
+            current = _current;
+
+            if (!current)
+                current = first;
+        }
+
+        @property bool emptyForward()
+        {
+            return current is last;
+        }
+
+        @property bool emptyBackward()
+        {
+            return current is first;
         }
 
         @property ref Span front()
@@ -1868,97 +1838,521 @@ class SpanList
             return current;
         }
 
-        void popFront()
+        void next()
         {
+            assert(!emptyForward);
             current = current.next;
         }
+
+        void prev()
+        {
+            assert(!emptyBackward);
+            current = current.prev;
+        }
+    }
+
+    IndexRange indexer(Node starter = null)
+    {
+        return IndexRange(head.next, tail.prev, starter);
     }
 
     Range opSlice()
     {
-        return Range(head.next, tail);
+        return Range(head.next, tail.prev);
     }
 
+    Range opSlice(Node first, Node last)
+    {
+        return Range(first, last);
+    }
+
+    void clear()
+    {
+        head = new Node;
+        tail = new Node;
+        head.next = tail;
+        tail.prev = head;
+    }
 }
 
 
 class TextArea2
 {
+    struct Caret { size_t offset, row, col; }
+
     string m_original;
     Appender!string m_edit;
     SpanList m_spans;
+    Caret m_caret;
+
+    uint m_tabSpaces = 4;
+    uint m_totalNewLines;
+    string m_currentLine;
+
+    size_t m_seekColumn;
 
     this()
     {
         m_spans = new SpanList();
     }
 
-    void insertAt(size_t index, string s)
+    this(string originalText)
+    {
+        this();
+        loadOriginal(originalText);
+    }
+
+    void loadOriginal(string text)
+    {
+        clear();
+        m_original = text;
+        auto newSpan = Span(m_original[0..$]);
+        auto newNode = m_spans.insertAt(0, newSpan);
+        m_totalNewLines = newSpan.newLines;
+        setCaret(newSpan.length);
+    }
+
+    /**
+    * Insert text at the caret position
+    */
+    void insert(string s)
+    {
+        insertAt(m_caret.offset, s);
+    }
+
+    void insertAt(size_t index /** logical index **/, string s)
     {
         auto begin = m_edit.data.length;
         m_edit.put(s);
         auto newSpan = Span(m_edit.data[begin..$]);
-        m_spans.insertAt(index, newSpan);
+        auto newNode = m_spans.insertAt(index, newSpan);
+        m_totalNewLines += newSpan.newLines;
+        setCaret(m_caret.offset + newSpan.length);
     }
 
-    void remove(size_t from, size_t to)
+    /**
+    * Insert text at the end of the sequence
+    */
+    void append(string s)
     {
-        m_spans.remove(from, to);
+        insertAt(-1, s);
+    }
+
+    /**
+    * Remove text between [from,to] (inclusive)
+    */
+    void remove(size_t from, size_t to)
+    in
+    {
+        assert(from < to);
+    }
+    body
+    {
+        auto mods = m_spans.remove(from, to);
+        if (mods.del.length == 0)
+            return;
+
+        auto totalDel = reduce!("a + b.newLines")(0, mods.del);
+
+        if (mods.lAdd !is null)
+            totalDel -= mods.lAdd.payload.newLines;
+        if (mods.rAdd !is null)
+            totalDel -= mods.rAdd.payload.newLines;
+
+        m_totalNewLines -= totalDel;
+        setCaret(from);
+    }
+
+    void del()
+    {
+        remove(m_caret.offset, m_caret.offset+1);
+    }
+
+    void backspace()
+    {
+        if (m_caret.offset > 0)
+            remove(m_caret.offset-1, m_caret.offset);
+    }
+
+    void setCaret(size_t index)
+    {
+        auto row = m_caret.row;
+
+        auto rc = getRowCol(index);
+        m_caret.row = rc.row;
+        m_caret.col = rc.col;
+        m_caret.offset = index;
+
+        m_seekColumn = m_caret.col;
+
+        if (row != m_caret.row)
+            m_currentLine = getLine(m_caret.row);
+    }
+
+    char leftText()
+    {
+        if (m_caret.offset == 0)
+            return cast(char)0;
+        else if (m_caret.col == 0)
+            return '\n';
+        else return m_currentLine[m_caret.col-1];
+    }
+
+    char rightText()
+    {
+        if (m_caret.row == m_totalNewLines && m_caret.col == m_currentLine.length)
+            return cast(char)0;
+        else if (m_caret.col == m_currentLine.length)
+            return '\n';
+        else return m_currentLine[m_caret.col+1];
     }
 
     string getLine(size_t line)
     {
-        return "";
+        return byLine(line).front;
     }
 
+    /**
+    * Return the row and column corresponding to the given logical index
+    */
+    Tuple!(int,"row",int,"col") getRowCol(size_t index)
+    {
+        Tuple!(int,"row",int,"col") result;
+
+        size_t offset;
+        auto r = byLine();
+        while(!r.empty && offset + r.front.length + 1 < index)
+        {
+            offset += r.front.length + 1; // count the newline
+            result.col = r.front.length;
+            result.row ++;
+            r.popFront();
+        }
+
+        if (r.empty)
+            return result;
+
+        if (index == offset + r.front.length + 1)
+        {
+            result.row ++;
+            result.col = 0;
+        }
+        else
+            result.col = index - offset;
+
+        return result;
+    }
+
+
+    /**
+    * Return the row, col at screen position x, y relative to lower
+    * left corner of first character. Returned row and col are always
+    * inside the available text.
+    */
+    Tuple!(int,"row",int,"col",int,"offset") getRowCol(ref const(Font) font, int x, int y)
+    {
+        Tuple!(int,"row",int,"col",int,"offset") loc;
+
+        if (m_spans.empty)
+            return loc;
+
+        // row is determined solely by font.m_lineHeight
+        loc.row = cast(int) (y / font.m_lineHeight);
+        loc.row = min(loc.row, m_totalNewLines);
+
+        if (loc.row > 0)
+        {
+            int r = 0;
+            auto range = byLine(0);
+            while(r != loc.row)
+            {
+                loc.offset += range.front.length + 1; // +1 counts the newline '\n'
+                range.popFront();
+                r ++;
+            }
+        }
+
+        float _x = 0;
+        foreach(char c; getLine(loc.row))
+        {
+            if (_x > x)
+                break;
+
+            if (c == '\t')
+                _x += m_tabSpaces*font.width(' ');
+            else
+                _x += font.width(c);
+
+            loc.col ++;
+            //loc.offset ++;
+        }
+        return loc;
+    }
+
+    /**
+    * For the given font, resturn the x,y coordinates of the caret
+    * relative to the first character of the entire tet sequence.
+    */
+    Tuple!(int,"x",int,"y") getCaretPosition(ref const(Font) font)
+    {
+        Tuple!(int,"x",int,"y") loc;
+        loc.y = m_caret.row * font.m_lineHeight;
+
+        auto row = byLine(m_caret.row).front;
+        while(loc.x != m_caret.col)
+        {
+            if (row[loc.x] == '\t')
+                loc.x += m_tabSpaces*font.width(' ');
+            else
+                loc.x += font.width(row[loc.x]);
+            loc.x ++;
+        }
+
+        return loc;
+    }
+
+
+    /**
+    * Move the caret left by one character.
+    * Returns: true if move succeeded, else false.
+    */
+    bool moveLeft()
+    {
+        if (m_caret.col > 0)
+        {
+            m_caret.col --;
+            m_caret.offset --;
+            m_seekColumn = m_caret.col;
+            return true;
+        }
+        else
+        {
+            if (m_caret.row > 0)
+            {
+                m_caret.row --;
+                m_caret.offset --;
+                m_currentLine = getLine(m_caret.row);
+                m_caret.col = m_currentLine.length;
+                m_seekColumn = m_caret.col;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+    * Move the caret right by one character.
+    * Returns: true if move succeeded, else false.
+    */
+    bool moveRight()
+    {
+        if (m_caret.col <= m_currentLine.length)
+        {
+            m_caret.col ++;
+            m_caret.offset ++;
+            m_seekColumn = m_caret.col;
+            return true;
+        }
+        else
+        {
+            if (m_caret.row < m_totalNewLines)
+            {
+                m_caret.col = 0;
+                m_caret.row ++;
+                m_caret.offset ++;
+                m_currentLine = getLine(m_caret.row);
+                m_seekColumn = m_caret.col;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+    * Move caret up one line.
+    * Returns: true if move succeeded, else false.
+    */
+    bool moveUp()
+    {
+        if (m_caret.row > 0)
+        {
+            auto temp = m_caret.col + 1;
+            m_caret.row --;
+            m_currentLine = getLine(m_caret.row);
+            m_caret.col = min(m_currentLine.length, m_seekColumn);
+            m_caret.offset -= temp + (m_currentLine.length - m_caret.col);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+    * Move caret down one line.
+    * Returns: true if move succeeded, else false.
+    */
+    bool moveDown()
+    {
+        if (m_caret.row < m_totalNewLines)
+        {
+            auto temp = (m_currentLine.length - m_caret.col) + 1;
+            m_caret.row ++;
+            m_currentLine = getLine(m_caret.row);
+            m_caret.col = min(m_currentLine.length, m_seekColumn);
+            m_caret.offset += temp + m_caret.col;
+            return true;
+        }
+        return false;
+    }
+
+    void jumpLeft()
+    {
+    }
+
+    void jumpRight()
+    {
+    }
+
+    /**
+    * Move caret to start of line
+    */
+    void home()
+    {
+        m_caret.offset += m_currentLine.length - m_caret.col;
+        m_caret.col = m_currentLine.length;
+    }
+
+    /**
+    * Move caret to end of line
+    */
+    void end()
+    {
+        m_caret.offset -= m_caret.col;
+        m_caret.col = 0;
+    }
+
+    /**
+    * Move the caret as close to the given row and column as possible.
+    */
+    void moveCaret(size_t newRow, size_t newCol)
+    {
+        if (newRow == m_caret.row && newCol == m_caret.col)
+            return;
+
+        if (newRow > m_caret.row || (newRow == m_caret.row && newCol > m_caret.col))
+            while(moveRight() && (m_caret.row != newRow || m_caret.col != newCol)) {}
+        else
+            while(moveLeft() && (m_caret.row != newRow || m_caret.col != newCol)) {}
+    }
+
+    /**
+    * Return a Range for iterating through the text by line, starting
+    * at the given line number.
+    */
     struct LineRange
     {
         SpanList.Range r;
-
-        string[] lines;
-        size_t bufferIndex;
+        string buffer;
+        string lineSlice;
 
         this(SpanList.Range list, size_t startLine)
         {
             r = list;
-
-            if (startLine > 0)
+            size_t bufferStartRow = 0;
+            while(!r.empty && bufferStartRow + r.front.newLines < startLine)
             {
-                size_t cline = 0;
-                while( !r.empty && !(startLine >= cline && startLine < cline + r.front.newLines) )
+                bufferStartRow += r.front.newLines;
+                r.popFront();
+            }
+
+            if (r.empty)
+                return;
+
+            int chomp = 0;
+            buffer = r.front.buffer;
+            r.popFront();
+            foreach(c; buffer)
+            {
+                if (c == '\n') bufferStartRow ++;
+                if (bufferStartRow == startLine) break;
+                chomp ++;
+            }
+
+            buffer = buffer[chomp..$];
+            if (count(buffer, '\n') == 0)
+            {
+                while(!r.empty && r.front.newLines == 0)
                 {
-                    cline += r.front.newLines;
+                    buffer ~= r.front.buffer;
                     r.popFront();
                 }
-
-                lines = splitLines(r.front);
-                bufferIndex = startLine - cline;
             }
-            else
-            {
 
-            }
+            setSlice();
         }
+
 
         @property bool empty()
         {
-            return r.empty;
+            return lineSlice is null;
         }
 
         @property string front()
         {
-            return lineBuffer;
+            return lineSlice;
+        }
+
+        void setSlice()
+        {
+            auto newAt = countUntil(buffer, '\n');
+            if (newAt == -1)
+                lineSlice = buffer;
+            else
+                lineSlice = buffer[0..newAt];
         }
 
         void popFront()
         {
-            r.popFront();
+            auto newAt = countUntil(buffer, '\n');
+            if (newAt != -1)
+                buffer = buffer[newAt+1..$];
+            else
+            {
+                lineSlice.clear;
+                return;
+            }
+
+            newAt = countUntil(buffer, '\n');
+            if (newAt == -1)
+            {
+                int gotLines = 0;
+                while(!r.empty && gotLines == 0)
+                {
+                    buffer ~= r.front.buffer;
+                    gotLines += r.front.newLines;
+                    r.popFront();
+                }
+                setSlice();
+            }
+            else
+            {
+                lineSlice = buffer[0..newAt];
+            }
         }
     }
 
     LineRange byLine(size_t startLine = 0)
     {
         return LineRange(m_spans[], startLine);
+    }
+
+    void clear()
+    {
+        m_caret = Caret();
+        m_original.clear;
+        m_edit.clear;
+        m_currentLine = null;
+        m_totalNewLines = 0;
+        m_spans.clear;
     }
 
     /**
@@ -1975,14 +2369,42 @@ class TextArea2
 
 unittest /** List **/
 {
+
+
     auto text = new TextArea2();
-    text.insertAt(0, "line 0\nline 1\n");
-    text.insertAt(16, "line 2\nline 3\nline 4\n");
-    text.insertAt(32, "line 5\n");
 
-    foreach(line; text.byLine(3))
-        writeln(line);
+    text.append("line 0\nline 1\n");
+    assert(text.m_caret.col == 0);
+    assert(text.m_caret.row == 2);
+    assert(text.m_caret.offset == 14);
 
-    assert(false);
+    text.append("line 2");
+    assert(text.m_caret.col == 6);
+    assert(text.m_caret.row == 2);
+    assert(text.m_caret.offset == 20);
+
+    text.append("line 2 plus some more stuff \nblah blah");
+    assert(text.m_caret.col == 9);
+    assert(text.m_caret.row == 3);
+    assert(text.m_caret.offset == 58);
+
+    text.append("line 3 and stuff ");
+    assert(text.m_caret.col == 26);
+    assert(text.m_caret.row == 3);
+    assert(text.m_caret.offset == 75);
+
+    assert(text.getRowCol(10).row == 1);
+    assert(text.getRowCol(10).col == 3);
+    assert(text.getRowCol(19).row == 2);
+    assert(text.getRowCol(19).col == 5);
+    assert(text.getRowCol(57).row == 3);
+    assert(text.getRowCol(57).col == 8);
+
+    writeln(text.m_caret);
+    text.remove(10,300);
+    writeln("|",text,"|");
+    writeln(text.m_totalNewLines);
+
+    assert(false, "End of test");
 }
 
