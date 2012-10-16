@@ -73,7 +73,7 @@ class WidgetText : WidgetWindow
         }
 
         // Get
-        @property TextArea text() { return m_text; }
+        @property TextArea2 text() { return m_text; }
         @property RGBA textColor() const { return m_textColor; }
         @property RGBA textBgColor() const { return m_textBgColor; }
         @property uint row() const { return m_text.row; }
@@ -142,7 +142,7 @@ class WidgetText : WidgetWindow
         /**
         * x and y are absolute screen coords
         */
-        TextArea.Location getLocation(int x, int y)
+        TextArea2.Location getLocation(int x, int y)
         {
             auto relx = x - m_screenPos.x - 5;
             if (m_allowHScroll)
@@ -153,7 +153,7 @@ class WidgetText : WidgetWindow
                 rely += m_vscroll.current * m_font.m_lineHeight;
 
             if (relx < 0 || rely < 0)
-                return TextArea.Location();
+                return TextArea2.Location();
 
             return m_text.getLocation(m_font, relx, rely);
         }
@@ -164,7 +164,7 @@ class WidgetText : WidgetWindow
 
             m_type = "WIDGETTEXT";
             m_cacheId = glGenLists(1);
-            m_text = new TextArea;
+            m_text = new TextArea2;
 
             m_font = font;
             m_repeatDelayTime = -1;
@@ -757,6 +757,7 @@ class WidgetText : WidgetWindow
                     {
                         deleteSelectedText();
 
+                        /++
                         if (key == KC_BRACERIGHT)
                         {
                             auto cLine = m_text.getCurrentLine();
@@ -767,6 +768,7 @@ class WidgetText : WidgetWindow
                                     m_text.del();
                             }
                         }
+                        ++/
 
                         m_text.insert(cast(char)key);
                         eventSignal.emit(this, WidgetEvent(TextInsert(to!string(cast(char)key))));
@@ -861,7 +863,8 @@ class WidgetText : WidgetWindow
 
             auto r = reduce!(min, max)(m_selectionRange);
             auto deleted = m_text.text[r[0]..r[1]];
-            m_text.del(r[0], r[1]-1);
+            //m_text.del(r[0], r[1]-1);
+            m_text.remove(r[0], r[1]-1);
             eventSignal.emit(this, WidgetEvent(TextRemove(deleted)));
             clearSelection();
         }
@@ -942,7 +945,7 @@ class WidgetText : WidgetWindow
         KEY m_lastKey = KEY.KC_NULL;
 
         Font m_font = null;
-        TextArea m_text;
+        TextArea2 m_text;
         RGBA m_textColor = {1,1,1,1};
         RGBA m_textBgColor = {0,0,0,0};
 
@@ -1879,6 +1882,7 @@ class SpanList
 class TextArea2
 {
     struct Caret { size_t offset, row, col; }
+    struct Location { uint offset, row, col; }
 
     string m_original;
     Appender!string m_edit;
@@ -1890,6 +1894,10 @@ class TextArea2
     string m_currentLine;
 
     size_t m_seekColumn;
+
+    @property size_t row() const { return m_caret.row; }
+    @property size_t col() const { return m_caret.col; }
+    @property size_t offset() { return m_caret.offset; }
 
     this()
     {
@@ -1920,6 +1928,11 @@ class TextArea2
         insertAt(m_caret.offset, s);
     }
 
+    void insert(char s)
+    {
+        insertAt(m_caret.offset, s.to!string);
+    }
+
     void insertAt(size_t index /** logical index **/, string s)
     {
         auto begin = m_edit.data.length;
@@ -1928,6 +1941,8 @@ class TextArea2
         auto newNode = m_spans.insertAt(index, newSpan);
         m_totalNewLines += newSpan.newLines;
         setCaret(m_caret.offset + newSpan.length);
+        m_currentLine = getLine(m_caret.row);
+        std.stdio.writeln("LINE:", m_currentLine);
     }
 
     /**
@@ -1961,6 +1976,7 @@ class TextArea2
 
         m_totalNewLines -= totalDel;
         setCaret(from);
+        m_currentLine = getLine(m_caret.row);
     }
 
     void del()
@@ -1984,9 +2000,6 @@ class TextArea2
         m_caret.offset = index;
 
         m_seekColumn = m_caret.col;
-
-        if (row != m_caret.row)
-            m_currentLine = getLine(m_caret.row);
     }
 
     char leftText()
@@ -2009,8 +2022,17 @@ class TextArea2
 
     string getLine(size_t line)
     {
-        return byLine(line).front;
+        if (line == m_caret.row)
+            return m_currentLine;
+        else
+            return byLine(line).front;
     }
+
+    string getCurrentLine()
+    {
+        return m_currentLine;
+    }
+
 
     /**
     * Return the row and column corresponding to the given logical index
@@ -2049,12 +2071,12 @@ class TextArea2
     * left corner of first character. Returned row and col are always
     * inside the available text.
     */
-    Tuple!(int,"row",int,"col",int,"offset") getRowCol(ref const(Font) font, int x, int y)
+    Location getLocation(ref const(Font) font, int x, int y)
     {
         Tuple!(int,"row",int,"col",int,"offset") loc;
 
         if (m_spans.empty)
-            return loc;
+            return Location(loc.offset, loc.row, loc.col);
 
         // row is determined solely by font.m_lineHeight
         loc.row = cast(int) (y / font.m_lineHeight);
@@ -2086,29 +2108,31 @@ class TextArea2
             loc.col ++;
             //loc.offset ++;
         }
-        return loc;
+        return Location(loc.offset, loc.row, loc.col);
     }
 
     /**
     * For the given font, resturn the x,y coordinates of the caret
-    * relative to the first character of the entire tet sequence.
+    * relative to the first character of the entire text sequence.
     */
-    Tuple!(int,"x",int,"y") getCaretPosition(ref const(Font) font)
+    int[2] getCaretPosition(ref const(Font) font)
     {
         Tuple!(int,"x",int,"y") loc;
         loc.y = m_caret.row * font.m_lineHeight;
 
         auto row = byLine(m_caret.row).front;
-        while(loc.x != m_caret.col)
+        size_t _x;
+        while(_x < row.length && _x != m_caret.col)
         {
-            if (row[loc.x] == '\t')
+            std.stdio.writeln("getcaret: ", row[_x]);
+            if (row[_x] == '\t')
                 loc.x += m_tabSpaces*font.width(' ');
             else
-                loc.x += font.width(row[loc.x]);
-            loc.x ++;
+                loc.x += font.width(row[_x]);
+            _x ++;
         }
 
-        return loc;
+        return [loc.x, loc.y];
     }
 
 
@@ -2230,6 +2254,17 @@ class TextArea2
         m_caret.col = 0;
     }
 
+    void gotoEndOfText()
+    {
+        while(moveDown()) {}
+        while(moveRight()) {}
+    }
+
+    void gotoStartOfText()
+    {
+        setCaret(0);
+    }
+
     /**
     * Move the caret as close to the given row and column as possible.
     */
@@ -2345,6 +2380,12 @@ class TextArea2
         return LineRange(m_spans[], startLine);
     }
 
+    void set(string s)
+    {
+        clear();
+        loadOriginal(s);
+    }
+
     void clear()
     {
         m_caret = Caret();
@@ -2405,6 +2446,6 @@ unittest /** List **/
     writeln("|",text,"|");
     writeln(text.m_totalNewLines);
 
-    assert(false, "End of test");
+    //assert(false, "End of test");
 }
 
