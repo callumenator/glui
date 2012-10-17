@@ -1933,24 +1933,38 @@ class TextArea2
         insertAt(m_caret.offset, s.to!string);
     }
 
-    void insertAt(size_t index /** logical index **/, string s)
+    private void insertAt(size_t index /** logical index **/, string s)
     {
         auto begin = m_edit.data.length;
         m_edit.put(s);
         auto newSpan = Span(m_edit.data[begin..$]);
         auto newNode = m_spans.insertAt(index, newSpan);
         m_totalNewLines += newSpan.newLines;
-        setCaret(m_caret.offset + newSpan.length);
-        m_currentLine = getLine(m_caret.row);
-        std.stdio.writeln("LINE:", m_currentLine);
-    }
 
-    /**
-    * Insert text at the end of the sequence
-    */
-    void append(string s)
-    {
-        insertAt(-1, s);
+        if (index == m_caret.offset)
+        {
+            if (newSpan.newLines > 0)
+            {
+                m_caret.row += newSpan.newLines;
+                if (s[$-1] == '\n')
+                    m_caret.col = 0;
+                else
+                    m_caret.col = (splitLines(s))[$-1].length;
+            }
+            else
+            {
+                m_caret.col += s.length;
+            }
+
+            m_caret.offset += s.length;
+            m_seekColumn = m_caret.col;
+        }
+        else
+        {
+            setCaret(index + s.length);
+        }
+
+        m_currentLine = byLine(m_caret.row).front;
     }
 
     /**
@@ -1976,7 +1990,7 @@ class TextArea2
 
         m_totalNewLines -= totalDel;
         setCaret(from);
-        m_currentLine = getLine(m_caret.row);
+        m_currentLine = byLine(m_caret.row).front;
     }
 
     void del()
@@ -1990,15 +2004,15 @@ class TextArea2
             remove(m_caret.offset-1, m_caret.offset);
     }
 
+    /**
+    * Slow way of setting the caret
+    */
     void setCaret(size_t index)
     {
-        auto row = m_caret.row;
-
         auto rc = getRowCol(index);
         m_caret.row = rc.row;
         m_caret.col = rc.col;
         m_caret.offset = index;
-
         m_seekColumn = m_caret.col;
     }
 
@@ -2017,7 +2031,7 @@ class TextArea2
             return cast(char)0;
         else if (m_caret.col == m_currentLine.length)
             return '\n';
-        else return m_currentLine[m_caret.col+1];
+        else return m_currentLine[m_caret.col];
     }
 
     string getLine(size_t line)
@@ -2124,7 +2138,6 @@ class TextArea2
         size_t _x;
         while(_x < row.length && _x != m_caret.col)
         {
-            std.stdio.writeln("getcaret: ", row[_x]);
             if (row[_x] == '\t')
                 loc.x += m_tabSpaces*font.width(' ');
             else
@@ -2155,7 +2168,7 @@ class TextArea2
             {
                 m_caret.row --;
                 m_caret.offset --;
-                m_currentLine = getLine(m_caret.row);
+                m_currentLine = byLine(m_caret.row).front;
                 m_caret.col = m_currentLine.length;
                 m_seekColumn = m_caret.col;
                 return true;
@@ -2184,7 +2197,7 @@ class TextArea2
                 m_caret.col = 0;
                 m_caret.row ++;
                 m_caret.offset ++;
-                m_currentLine = getLine(m_caret.row);
+                m_currentLine = byLine(m_caret.row).front;
                 m_seekColumn = m_caret.col;
                 return true;
             }
@@ -2202,7 +2215,7 @@ class TextArea2
         {
             auto temp = m_caret.col + 1;
             m_caret.row --;
-            m_currentLine = getLine(m_caret.row);
+            m_currentLine = byLine(m_caret.row).front;
             m_caret.col = min(m_currentLine.length, m_seekColumn);
             m_caret.offset -= temp + (m_currentLine.length - m_caret.col);
             return true;
@@ -2220,7 +2233,7 @@ class TextArea2
         {
             auto temp = (m_currentLine.length - m_caret.col) + 1;
             m_caret.row ++;
-            m_currentLine = getLine(m_caret.row);
+            m_currentLine = byLine(m_caret.row).front;
             m_caret.col = min(m_currentLine.length, m_seekColumn);
             m_caret.offset += temp + m_caret.col;
             return true;
@@ -2241,8 +2254,8 @@ class TextArea2
     */
     void home()
     {
-        m_caret.offset += m_currentLine.length - m_caret.col;
-        m_caret.col = m_currentLine.length;
+        m_caret.offset -= m_caret.col;
+        m_caret.col = 0;
     }
 
     /**
@@ -2250,8 +2263,8 @@ class TextArea2
     */
     void end()
     {
-        m_caret.offset -= m_caret.col;
-        m_caret.col = 0;
+        m_caret.offset += m_currentLine.length - m_caret.col;
+        m_caret.col = m_currentLine.length;
     }
 
     void gotoEndOfText()
@@ -2288,6 +2301,7 @@ class TextArea2
         SpanList.Range r;
         string buffer;
         string lineSlice;
+        bool finished;
 
         this(SpanList.Range list, size_t startLine)
         {
@@ -2305,30 +2319,36 @@ class TextArea2
             int chomp = 0;
             buffer = r.front.buffer;
             r.popFront();
-            foreach(c; buffer)
+            if (bufferStartRow != startLine)
             {
-                if (c == '\n') bufferStartRow ++;
-                if (bufferStartRow == startLine) break;
-                chomp ++;
+                uint i = 0;
+                while(i < buffer.length && bufferStartRow != startLine)
+                {
+                    if (buffer[i] == '\n')
+                        bufferStartRow ++;
+                    chomp++;
+                    i++;
+                }
+                buffer = buffer[chomp..$];
             }
 
-            buffer = buffer[chomp..$];
             if (count(buffer, '\n') == 0)
             {
-                while(!r.empty && r.front.newLines == 0)
+                int gotNewlines = 0;
+                while(!r.empty && gotNewlines == 0)
                 {
                     buffer ~= r.front.buffer;
+                    gotNewlines += r.front.newLines;
                     r.popFront();
                 }
             }
-
             setSlice();
         }
 
 
         @property bool empty()
         {
-            return lineSlice is null;
+            return finished;
         }
 
         @property string front()
@@ -2352,6 +2372,7 @@ class TextArea2
                 buffer = buffer[newAt+1..$];
             else
             {
+                finished = true;
                 lineSlice.clear;
                 return;
             }
@@ -2410,26 +2431,24 @@ class TextArea2
 
 unittest /** List **/
 {
-
-
     auto text = new TextArea2();
 
-    text.append("line 0\nline 1\n");
+    text.insert("line 0\nline 1\n");
     assert(text.m_caret.col == 0);
     assert(text.m_caret.row == 2);
     assert(text.m_caret.offset == 14);
 
-    text.append("line 2");
+    text.insert("line 2");
     assert(text.m_caret.col == 6);
     assert(text.m_caret.row == 2);
     assert(text.m_caret.offset == 20);
 
-    text.append("line 2 plus some more stuff \nblah blah");
+    text.insert("line 2 plus some more stuff \nblah blah");
     assert(text.m_caret.col == 9);
     assert(text.m_caret.row == 3);
     assert(text.m_caret.offset == 58);
 
-    text.append("line 3 and stuff ");
+    text.insert("line 3 and stuff ");
     assert(text.m_caret.col == 26);
     assert(text.m_caret.row == 3);
     assert(text.m_caret.offset == 75);
