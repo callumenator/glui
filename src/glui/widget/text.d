@@ -276,6 +276,11 @@ class WidgetText : WidgetWindow
             if (m_font is null)
                 return;
 
+            debug
+            {
+                long perf_tick_in = Clock.currSystemTick().msecs();
+            }
+
             glPushMatrix();
             setCoords();
             glScalef(1,-1,1);
@@ -360,6 +365,12 @@ class WidgetText : WidgetWindow
 
             if (m_editable && m_drawCaret && (amIFocused || isAChildFocused) )
                 renderCaret();
+
+            debug
+            {
+                long perf_tick_diff = Clock.currSystemTick().msecs() - perf_tick_in;
+                std.stdio.writeln("TEXT Render time: ", perf_tick_diff);
+            }
 
             if (recurse)
                 renderChildren();
@@ -863,7 +874,6 @@ class WidgetText : WidgetWindow
 
             auto r = reduce!(min, max)(m_selectionRange);
             auto deleted = m_text.text[r[0]..r[1]];
-            //m_text.del(r[0], r[1]-1);
             m_text.remove(r[0], r[1]-1);
             eventSignal.emit(this, WidgetEvent(TextRemove(deleted)));
             clearSelection();
@@ -1108,6 +1118,11 @@ class TextArea
         }
 
         void del(size_t from, size_t to)
+        {
+            deleteSelection(from, to);
+        }
+
+        void remove(size_t from, size_t to)
         {
             deleteSelection(from, to);
         }
@@ -1895,6 +1910,11 @@ class TextArea2
 
     size_t m_seekColumn;
 
+    debug
+    {
+        alias std.datetime.Clock clock;
+    }
+
     @property size_t row() const { return m_caret.row; }
     @property size_t col() const { return m_caret.col; }
     @property size_t offset() { return m_caret.offset; }
@@ -1964,23 +1984,28 @@ class TextArea2
             setCaret(index + s.length);
         }
 
-        m_currentLine = byLine(m_caret.row).front;
+        m_currentLine = byLine(m_caret.row).front;  // optimize
     }
 
     /**
-    * Remove text between [from,to] (inclusive)
+    * Remove text between [from,to] (inclusive). Either from or to must
+    * be the current caret location.
     */
     void remove(size_t from, size_t to)
     in
     {
-        assert(from < to);
+        //assert(from < to);
+        //writeln("REMOVE: ", from, ", ", to);
+        //assert(from == m_caret.offset || to == m_caret.offset);
     }
     body
     {
         auto mods = m_spans.remove(from, to);
+
         if (mods.del.length == 0)
             return;
 
+        // Calculate new caret location
         auto totalDel = reduce!("a + b.newLines")(0, mods.del);
 
         if (mods.lAdd !is null)
@@ -1989,19 +2014,34 @@ class TextArea2
             totalDel -= mods.rAdd.payload.newLines;
 
         m_totalNewLines -= totalDel;
-        setCaret(from);
-        m_currentLine = byLine(m_caret.row).front;
+        auto length = to - from + 1; // this includes newlines
+
+        if (from == m_caret.offset)
+        {
+            m_currentLine = byLine(m_caret.row).front; // optimize
+            return;
+        }
+
+        m_caret.offset = from;
+
+        if (totalDel > 0) // optimize for single newline deletion
+            setCaret(from);
+        else
+            m_caret.col -= (length - totalDel);
+
+        m_currentLine = byLine(m_caret.row).front; // optimize
+        //setCaret(from);
     }
 
     void del()
     {
-        remove(m_caret.offset, m_caret.offset+1);
+        remove(m_caret.offset, m_caret.offset);
     }
 
     void backspace()
     {
         if (m_caret.offset > 0)
-            remove(m_caret.offset-1, m_caret.offset);
+            remove(m_caret.offset-1, m_caret.offset-1);
     }
 
     /**
@@ -2183,7 +2223,7 @@ class TextArea2
     */
     bool moveRight()
     {
-        if (m_caret.col <= m_currentLine.length)
+        if (m_caret.col < m_currentLine.length) // move right along the current line
         {
             m_caret.col ++;
             m_caret.offset ++;
@@ -2192,7 +2232,7 @@ class TextArea2
         }
         else
         {
-            if (m_caret.row < m_totalNewLines)
+            if (m_caret.row < m_totalNewLines) // move down to the next line
             {
                 m_caret.col = 0;
                 m_caret.row ++;
@@ -2256,6 +2296,7 @@ class TextArea2
     {
         m_caret.offset -= m_caret.col;
         m_caret.col = 0;
+        m_seekColumn = m_caret.col;
     }
 
     /**
@@ -2265,6 +2306,7 @@ class TextArea2
     {
         m_caret.offset += m_currentLine.length - m_caret.col;
         m_caret.col = m_currentLine.length;
+        m_seekColumn = m_caret.col;
     }
 
     void gotoEndOfText()
@@ -2431,6 +2473,7 @@ class TextArea2
 
 unittest /** List **/
 {
+    /++
     auto text = new TextArea2();
 
     text.insert("line 0\nline 1\n");
@@ -2460,11 +2503,7 @@ unittest /** List **/
     assert(text.getRowCol(57).row == 3);
     assert(text.getRowCol(57).col == 8);
 
-    writeln(text.m_caret);
-    text.remove(10,300);
-    writeln("|",text,"|");
-    writeln(text.m_totalNewLines);
-
     //assert(false, "End of test");
+    ++/
 }
 
