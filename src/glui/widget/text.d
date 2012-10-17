@@ -97,7 +97,11 @@ class WidgetText : WidgetWindow
         {
             m_text.set(v);
             if (m_allowVScroll)
+            {
                 m_vscroll.current = 0;
+                m_vscroll.range = [0, m_text.nLines];
+            }
+
             m_refreshCache = true;
             needRender();
         }
@@ -218,6 +222,8 @@ class WidgetText : WidgetWindow
                                     "background", scrollBg,
                                     "cornerRadius", scrollCr,
                                     "orientation", Orientation.VERTICAL));
+
+                m_vscroll.eventSignal.connect(&this.scrollEvent);
             }
 
             if (m_allowHScroll)
@@ -269,6 +275,14 @@ class WidgetText : WidgetWindow
             }
         }
 
+        int scrollEvent(Widget widget, WidgetEvent event)
+        {
+            std.stdio.writeln("SCROLL");
+            m_refreshCache = true;
+            needRender();
+            return 0;
+        }
+
         override void render(Flag!"RenderChildren" recurse = Flag!"RenderChildren".yes)
         {
             super.render(Flag!"RenderChildren".no);
@@ -302,6 +316,14 @@ class WidgetText : WidgetWindow
                 clipboxToScreen(clip);
                 glScissor(clip[0], clip[1], clip[2], clip[3]);
 
+                auto startRow = 0;
+                if (m_allowVScroll)
+                    startRow = m_vscroll.current;
+
+                std.stdio.writeln("RENDERING");
+
+                auto _text = m_text.getText(startRow, m_dim.y / m_font.m_lineHeight);
+
                 // Handle line highlights
                 uint width;
                 if (m_allowHScroll)
@@ -323,15 +345,16 @@ class WidgetText : WidgetWindow
                     glEnd();
                 }
 
+                /++
                 if (haveSelection)
                 {
                     auto r = reduce!(min, max)(m_selectionRange);
                     auto lower = r[0];
                     auto upper = r[1];
 
-                    auto pre = m_text.text[0..lower];
-                    auto mid = m_text.text[lower..upper];
-                    auto post = m_text.text[upper..$];
+                    auto pre = _text[0..lower];
+                    auto mid = _text[lower..upper];
+                    auto post = _text[upper..$];
 
                     if (m_highlighter)
                     {
@@ -351,11 +374,12 @@ class WidgetText : WidgetWindow
                 }
                 else
                 {
+                ++/
                     if (m_highlighter)
-                        renderCharacters(m_font, m_text.text, m_highlighter);
+                        renderCharacters(m_font, _text, m_highlighter);
                     else
-                        renderCharacters(m_font, m_text.text, m_textColor);
-                }
+                        renderCharacters(m_font, _text, m_textColor);
+                //}
 
                 glEndList();
                 m_refreshCache = false;
@@ -369,7 +393,7 @@ class WidgetText : WidgetWindow
             debug
             {
                 long perf_tick_diff = Clock.currSystemTick().msecs() - perf_tick_in;
-                std.stdio.writeln("TEXT Render time: ", perf_tick_diff);
+                //std.stdio.writeln("TEXT Render time: ", perf_tick_diff);
             }
 
             if (recurse)
@@ -383,6 +407,10 @@ class WidgetText : WidgetWindow
                 glLoadIdentity();
                 glTranslatef(m_parent.screenPos.x + m_pos.x, m_parent.screenPos.y + m_pos.y, 0);
                 setCoords();
+
+                if (m_allowVScroll)
+                    glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
+
                 glTranslatef(m_caretPos[0], m_caretPos[1], 0);
                 glScalef(1,-1,1);
                 glColor4fv(m_textColor.ptr);
@@ -415,8 +443,8 @@ class WidgetText : WidgetWindow
             glTranslatef(0, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
 
             // Translate by the scroll amounts as well...
-            if (m_allowVScroll)
-                glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
+            //if (m_allowVScroll)
+            //    glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
 
         int textOffsetY()
@@ -427,7 +455,7 @@ class WidgetText : WidgetWindow
             {
                 case CENTER:
                 {
-                    auto lines = split(m_text.text, "\n").length;
+                    auto lines = m_text.nLines;
                     auto height = lines * m_font.m_lineHeight;
                     yoffset = m_dim.y/2.0f + m_font.m_maxHoss/2.0f - height/2.0f - m_font.m_lineHeight/2.0f;
 
@@ -436,7 +464,7 @@ class WidgetText : WidgetWindow
                 }
                 case BOTTOM:
                 {
-                    auto lines = split(m_text.text, "\n").length;
+                    auto lines = m_text.nLines;
                     auto height = lines * m_font.m_lineHeight;
                     yoffset = (cast(float)m_dim.y - height)/2;
                     if (yoffset < 0) yoffset = 0;
@@ -873,8 +901,7 @@ class WidgetText : WidgetWindow
                 return;
 
             auto r = reduce!(min, max)(m_selectionRange);
-            auto deleted = m_text.text[r[0]..r[1]];
-            m_text.remove(r[0], r[1]-1);
+            auto deleted = m_text.remove(r[0], r[1]-1);
             eventSignal.emit(this, WidgetEvent(TextRemove(deleted)));
             clearSelection();
         }
@@ -1060,10 +1087,10 @@ class TextArea
         struct Location { uint offset, row, col; }
 
         @property Location loc() const { return m_loc; } // current caret m_location
-        @property uint col() const { return m_loc.col; } // current caret column
-        @property uint row() const { return m_loc.row; } // current caret row
-        @property uint offset() { return m_loc.offset; } // current caret 1-D offset
-        @property string text() { return m_text; } // current text
+        @property size_t col() const { return m_loc.col; } // current caret column
+        @property size_t row() const { return m_loc.row; } // current caret row
+        @property size_t offset() const { return m_loc.offset; } // current caret 1-D offset
+        @property size_t nLines() const { return m_text.count('\n') + 1; }
 
         // Get the character to the left of the current cursor/offset
         @property char leftText()
@@ -1111,23 +1138,24 @@ class TextArea
             }
         }
 
-        void del()
+        string del()
         {
             if (m_loc.offset < m_text.length)
-                deleteSelection(m_loc.offset, m_loc.offset);
+                return deleteSelection(m_loc.offset, m_loc.offset);
+            else return "";
         }
 
-        void del(size_t from, size_t to)
+        string del(size_t from, size_t to)
         {
-            deleteSelection(from, to);
+            return deleteSelection(from, to);
         }
 
-        void remove(size_t from, size_t to)
+        string remove(size_t from, size_t to)
         {
-            deleteSelection(from, to);
+            return deleteSelection(from, to);
         }
 
-        void deleteSelection(size_t from, size_t to)
+        string deleteSelection(size_t from, size_t to)
         in
         {
             assert(from < m_text.length);
@@ -1136,6 +1164,7 @@ class TextArea
         }
         body
         {
+            auto removed = m_text[from..to];
             string newtext;
             if (from > 0)
                 newtext = m_text[0..from] ~ m_text[to+1..$];
@@ -1147,6 +1176,7 @@ class TextArea
                     moveLeft();
 
             m_text = newtext;
+            return removed;
         }
 
         /**
@@ -1494,6 +1524,26 @@ class TextArea
             m_loc.row = 0;
             m_loc.col = 0;
             m_seekColumn = 0;
+        }
+
+        string getText(size_t from = 0, int n_lines = -1)
+        {
+            auto lines = splitLines(m_text);
+            if (from >= lines.length)
+                return "";
+
+            lines = lines[from..$];
+
+            Appender!string text;
+            size_t gotLines = 0;
+            while(!lines.empty && gotLines != n_lines)
+            {
+                text.put(lines.front);
+                text.put("\n");
+                gotLines ++;
+                lines.popFront();
+            }
+            return text.data;
         }
 
     private:
@@ -1918,6 +1968,7 @@ class TextArea2
     @property size_t row() const { return m_caret.row; }
     @property size_t col() const { return m_caret.col; }
     @property size_t offset() { return m_caret.offset; }
+    @property size_t nLines() const { return m_totalNewLines + 1; }
 
     this()
     {
@@ -1991,7 +2042,7 @@ class TextArea2
     * Remove text between [from,to] (inclusive). Either from or to must
     * be the current caret location.
     */
-    void remove(size_t from, size_t to)
+    string remove(size_t from, size_t to)
     in
     {
         //assert(from < to);
@@ -2003,10 +2054,11 @@ class TextArea2
         auto mods = m_spans.remove(from, to);
 
         if (mods.del.length == 0)
-            return;
+            return "";
 
         // Calculate new caret location
         auto totalDel = reduce!("a + b.newLines")(0, mods.del);
+        auto removed = reduce!("a ~ b.buffer")("", mods.del);
 
         if (mods.lAdd !is null)
             totalDel -= mods.lAdd.payload.newLines;
@@ -2019,7 +2071,7 @@ class TextArea2
         if (from == m_caret.offset)
         {
             m_currentLine = byLine(m_caret.row).front; // optimize
-            return;
+            return removed;
         }
 
         m_caret.offset = from;
@@ -2030,18 +2082,19 @@ class TextArea2
             m_caret.col -= (length - totalDel);
 
         m_currentLine = byLine(m_caret.row).front; // optimize
-        //setCaret(from);
+        return removed;
     }
 
-    void del()
+    string del()
     {
-        remove(m_caret.offset, m_caret.offset);
+        return remove(m_caret.offset, m_caret.offset);
     }
 
-    void backspace()
+    string backspace()
     {
         if (m_caret.offset > 0)
-            remove(m_caret.offset-1, m_caret.offset-1);
+            return remove(m_caret.offset-1, m_caret.offset-1);
+        else return "";
     }
 
     /**
@@ -2174,7 +2227,7 @@ class TextArea2
         Tuple!(int,"x",int,"y") loc;
         loc.y = m_caret.row * font.m_lineHeight;
 
-        auto row = byLine(m_caret.row).front;
+        auto row = m_currentLine;
         size_t _x;
         while(_x < row.length && _x != m_caret.col)
         {
@@ -2328,10 +2381,34 @@ class TextArea2
         if (newRow == m_caret.row && newCol == m_caret.col)
             return;
 
-        if (newRow > m_caret.row || (newRow == m_caret.row && newCol > m_caret.col))
-            while(moveRight() && (m_caret.row != newRow || m_caret.col != newCol)) {}
+        auto r = byLine();
+        string copy;
+        size_t offset = 0, row = 0;
+        while(!r.empty && row != newRow)
+        {
+            offset += r.front.length + 1;
+            row ++;
+            copy = r.front;
+            r.popFront();
+        }
+
+        if (r.empty)
+        {
+            row --;
+            m_currentLine = copy;
+            m_caret.row = row;
+            m_caret.col = 0;
+            m_caret.offset = offset;
+            m_seekColumn = m_caret.col;
+        }
         else
-            while(moveLeft() && (m_caret.row != newRow || m_caret.col != newCol)) {}
+        {
+            m_caret.row = row;
+            m_currentLine = r.front;
+            m_caret.col = min(newCol, m_currentLine.length);
+            m_caret.offset = offset + m_caret.col;
+            m_seekColumn = m_caret.col;
+        }
     }
 
     /**
@@ -2347,6 +2424,8 @@ class TextArea2
 
         this(SpanList.Range list, size_t startLine)
         {
+            auto tick_in = clock.currSystemTick().msecs();
+
             r = list;
             size_t bufferStartRow = 0;
             while(!r.empty && bufferStartRow + r.front.newLines < startLine)
@@ -2385,6 +2464,9 @@ class TextArea2
                 }
             }
             setSlice();
+
+            auto tick_out = clock.currSystemTick().msecs();
+            std.stdio.writeln("BYLINE CONSTRUCTOR: ", tick_out - tick_in);
         }
 
 
@@ -2457,6 +2539,22 @@ class TextArea2
         m_currentLine = null;
         m_totalNewLines = 0;
         m_spans.clear;
+    }
+
+    string getText(size_t from = 0, int n_lines = -1)
+    {
+        Appender!string text;
+
+        auto range = byLine(from);
+        size_t gotLines = 0;
+        while(!range.empty && gotLines != n_lines)
+        {
+            text.put(range.front);
+            text.put("\n");
+            gotLines ++;
+            range.popFront();
+        }
+        return text.data;
     }
 
     /**
