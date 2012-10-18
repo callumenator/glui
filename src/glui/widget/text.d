@@ -73,7 +73,7 @@ class WidgetText : WidgetWindow
         }
 
         // Get
-        @property TextArea2 text() { return m_text; }
+        @property TextArea text() { return m_text; }
         @property RGBA textColor() const { return m_textColor; }
         @property RGBA textBgColor() const { return m_textBgColor; }
         @property uint row() const { return m_text.row; }
@@ -146,7 +146,7 @@ class WidgetText : WidgetWindow
         /**
         * x and y are absolute screen coords
         */
-        TextArea2.Location getLocation(int x, int y)
+        TextArea.Caret getLocation(int x, int y)
         {
             auto relx = x - m_screenPos.x - 5;
             if (m_allowHScroll)
@@ -157,7 +157,7 @@ class WidgetText : WidgetWindow
                 rely += m_vscroll.current * m_font.m_lineHeight;
 
             if (relx < 0 || rely < 0)
-                return TextArea2.Location();
+                return TextArea.Caret();
 
             return m_text.getLocation(m_font, relx, rely);
         }
@@ -168,7 +168,7 @@ class WidgetText : WidgetWindow
 
             m_type = "WIDGETTEXT";
             m_cacheId = glGenLists(1);
-            m_text = new TextArea2;
+            m_text = new TextArea;
 
             m_font = font;
             m_repeatDelayTime = -1;
@@ -345,7 +345,7 @@ class WidgetText : WidgetWindow
                     glEnd();
                 }
 
-                /++
+
                 if (haveSelection)
                 {
                     auto r = reduce!(min, max)(m_selectionRange);
@@ -374,12 +374,11 @@ class WidgetText : WidgetWindow
                 }
                 else
                 {
-                ++/
                     if (m_highlighter)
                         renderCharacters(m_font, _text, m_highlighter);
                     else
                         renderCharacters(m_font, _text, m_textColor);
-                //}
+                }
 
                 glEndList();
                 m_refreshCache = false;
@@ -433,6 +432,7 @@ class WidgetText : WidgetWindow
         void resetXCoord()
         {
             glTranslatef(0*m_pos.x + 5, 0, 0);
+
             // Translate by the scroll amounts as well...
             if (m_allowHScroll)
                 glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
@@ -1082,8 +1082,51 @@ class WidgetLabel : WidgetText
 }
 
 
+
+/++
+interface TextArea(LineRangeType)
+{
+    struct Caret { size_t offset, row, col; }
+
+    @property size_t row() const;
+    @property size_t col() const;
+    @property size_t offset() const;
+    @property size_t nLines() const;
+
+    void insert(string s);
+    void insert(char s);
+    string remove(size_t from, size_t to);
+    string del();
+    string backspace();
+    char leftText();
+    char rightText();
+    string getLine(size_t line);
+    string getCurrentLine();
+    Caret getRowCol(size_t index);
+    Caret getLocation(ref const(Font) font, int x, int y);
+    int[2] getCaretPosition(ref const(Font) font);
+    bool moveLeft();
+    bool moveRight();
+    bool moveUp();
+    bool moveDown();
+    void jumpLeft();
+    void jumpRight();
+    void home();
+    void end();
+    void gotoEndOfText();
+    void gotoStartOfText();
+    void moveCaret(size_t newRow, size_t newCol);
+    //LineRange byLine(size_t startLine = 0);
+    void set(string s);
+    void clear();
+    string getText(size_t from = 0, int n_lines = -1);
+}
+++/
+
+
+
 // Handles text storage and manipulation for WidgetText
-class TextArea
+class SimpleTextArea
 {
     public:
 
@@ -1576,7 +1619,6 @@ class TextArea
 }
 
 
-
 struct Span
 {
     string buffer;
@@ -1947,7 +1989,7 @@ class SpanList
 }
 
 
-class TextArea2
+class TextArea
 {
     struct Caret { size_t offset, row, col; }
     struct Location { uint offset, row, col; }
@@ -2168,15 +2210,15 @@ class TextArea2
     /**
     * Return the row and column corresponding to the given logical index
     */
-    Tuple!(int,"row",int,"col") getRowCol(size_t index)
+    Caret getRowCol(size_t index)
     {
-        Tuple!(int,"row",int,"col") result;
+        Caret result;
 
         size_t offset;
         auto r = byLine();
-        while(!r.empty && offset + r.front.length + 1 < index)
+        while(!r.empty && result.offset + r.front.length + 1 < index)
         {
-            offset += r.front.length + 1; // count the newline
+            result.offset += r.front.length + 1; // count the newline
             result.col = r.front.length;
             result.row ++;
             r.popFront();
@@ -2185,13 +2227,16 @@ class TextArea2
         if (r.empty)
             return result;
 
-        if (index == offset + r.front.length + 1)
+        if (index == result.offset + r.front.length + 1)
         {
             result.row ++;
             result.col = 0;
         }
         else
-            result.col = index - offset;
+        {
+            result.col = index - result.offset;
+            result.offset += result.col;
+        }
 
         return result;
     }
@@ -2202,12 +2247,12 @@ class TextArea2
     * left corner of first character. Returned row and col are always
     * inside the available text.
     */
-    Location getLocation(ref const(Font) font, int x, int y)
+    Caret getLocation(ref const(Font) font, int x, int y)
     {
-        Tuple!(int,"row",int,"col",int,"offset") loc;
+        Caret loc;
 
         if (m_spans.empty)
-            return Location(loc.offset, loc.row, loc.col);
+            return loc;
 
         // row is determined solely by font.m_lineHeight
         loc.row = cast(int) (y / font.m_lineHeight);
@@ -2239,7 +2284,7 @@ class TextArea2
             loc.col ++;
             //loc.offset ++;
         }
-        return Location(loc.offset, loc.row, loc.col);
+        return loc;
     }
 
     /**
@@ -2248,17 +2293,16 @@ class TextArea2
     */
     int[2] getCaretPosition(ref const(Font) font)
     {
-        Tuple!(int,"x",int,"y") loc;
-        loc.y = m_caret.row * font.m_lineHeight;
+        int[2] loc;
+        loc[1] = m_caret.row * font.m_lineHeight;
 
-        auto row = m_currentLine;
         size_t _x;
-        while(_x < row.length && _x != m_caret.col)
+        while(_x < m_currentLine.length && _x != m_caret.col)
         {
-            if (row[_x] == '\t')
-                loc.x += m_tabSpaces*font.width(' ');
+            if (m_currentLine[_x] == '\t')
+                loc[0] += m_tabSpaces*font.width(' ');
             else
-                loc.x += font.width(row[_x]);
+                loc[0] += font.width(m_currentLine[_x]);
             _x ++;
         }
 
