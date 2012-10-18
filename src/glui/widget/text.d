@@ -885,6 +885,9 @@ class WidgetText : WidgetWindow
 
         void clearSelection()
         {
+            if (!haveSelection())
+                return;
+
             m_selectionRange[] = [0,0];
             m_refreshCache = true;
             needRender();
@@ -1953,8 +1956,6 @@ class TextArea2
     Appender!string m_edit;
     SpanList m_spans;
     Caret m_caret;
-
-    int[2] m_caretXY = [0,0];
 
     uint m_tabSpaces = 4;
     uint m_totalNewLines;
