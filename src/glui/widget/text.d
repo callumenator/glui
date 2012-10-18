@@ -146,7 +146,7 @@ class WidgetText : WidgetWindow
         /**
         * x and y are absolute screen coords
         */
-        TextArea.Caret getLocation(int x, int y)
+        TextArea.Caret getCaret(int x, int y)
         {
             auto relx = x - m_screenPos.x - 5;
             if (m_allowHScroll)
@@ -159,7 +159,7 @@ class WidgetText : WidgetWindow
             if (relx < 0 || rely < 0)
                 return TextArea.Caret();
 
-            return m_text.getLocation(m_font, relx, rely);
+            return m_text.getCaret(m_font, relx, rely);
         }
 
         void set(Font font, WidgetArgs args)
@@ -168,7 +168,7 @@ class WidgetText : WidgetWindow
 
             m_type = "WIDGETTEXT";
             m_cacheId = glGenLists(1);
-            m_text = new TextArea;
+            m_text = new PieceTableTextArea;
 
             m_font = font;
             m_repeatDelayTime = -1;
@@ -510,7 +510,7 @@ class WidgetText : WidgetWindow
                 {
                     auto preOffset = m_text.offset;
                     auto pos = event.get!MouseClick.pos;
-                    auto rc = getLocation(pos.x, pos.y);
+                    auto rc = getCaret(pos.x, pos.y);
 
                     m_text.moveCaret(rc.row, rc.col);
 
@@ -862,7 +862,7 @@ class WidgetText : WidgetWindow
 
         override void drag(int[2] pos, int[2] delta)
         {
-            auto loc = getLocation(pos.x, pos.y);
+            auto loc = getCaret(pos.x, pos.y);
 
             if (m_pendingDrag)
             {
@@ -985,7 +985,7 @@ class WidgetText : WidgetWindow
         KEY m_lastKey = KEY.KC_NULL;
 
         Font m_font = null;
-        TextArea2 m_text;
+        TextArea m_text;
         RGBA m_textColor = {1,1,1,1};
         RGBA m_textBgColor = {0,0,0,0};
 
@@ -1082,78 +1082,193 @@ class WidgetLabel : WidgetText
 }
 
 
-
-/++
-interface TextArea(LineRangeType)
+/**
+* This interface defines a TextArea, a class which manages text sequences,
+* insertion, deletion, and caret operations.
+*/
+interface TextArea
 {
+    /**
+    *The caret defines the input/operation point in the text sequence.
+    */
     struct Caret { size_t offset, row, col; }
 
+    /**
+    * Return the current caret row.
+    */
     @property size_t row() const;
+
+    /**
+    * Return the current caret column.
+    */
     @property size_t col() const;
+
+    /**
+    * Return the current caret 1-D offset.
+    */
     @property size_t offset() const;
+
+    /**
+    * Return the number of lines in the text.
+    */
     @property size_t nLines() const;
 
-    void insert(string s);
-    void insert(char s);
-    string remove(size_t from, size_t to);
-    string del();
-    string backspace();
-    char leftText();
-    char rightText();
-    string getLine(size_t line);
-    string getCurrentLine();
-    Caret getRowCol(size_t index);
-    Caret getLocation(ref const(Font) font, int x, int y);
-    int[2] getCaretPosition(ref const(Font) font);
-    bool moveLeft();
-    bool moveRight();
-    bool moveUp();
-    bool moveDown();
-    void jumpLeft();
-    void jumpRight();
-    void home();
-    void end();
-    void gotoEndOfText();
-    void gotoStartOfText();
-    void moveCaret(size_t newRow, size_t newCol);
-    //LineRange byLine(size_t startLine = 0);
+    /**
+    * Set the text to the given string. This implies a clear().
+    */
     void set(string s);
-    void clear();
-    string getText(size_t from = 0, int n_lines = -1);
-}
-++/
 
+    /**
+    * Clear all current text, and reset the caret to 0,0,0.
+    */
+    void clear();
+
+    /**
+    * Insert a char at the current caret location.
+    */
+    void insert(char s);
+
+    /**
+    * Insert a string at the current caret location.
+    */
+    void insert(string s);
+
+    /**
+    * Apply the keyboard delete operation at the current caret location.
+    */
+    string del();
+
+    /**
+    * Apply the keyboard backspace operation at the current caret location.
+    */
+    string backspace();
+
+    /**
+    * Remove all text between [from,to] (inclusive) offsets into the text sequence.
+    */
+    string remove(size_t from, size_t to);
+
+    /**
+    * Return the text to the left of the caret.
+    */
+    char leftText();
+
+    /**
+    * Return the text to the right of the caret (i.e. at the caret).
+    */
+    char rightText();
+
+    /**
+    * Get text in the given line as a string.
+    */
+    string getLine(size_t line);
+
+    /**
+    * Get the text in the line at the current caret location.
+    */
+    string getCurrentLine();
+
+    /**
+    * Get all text between lines [from, from + n_lines] (inclusive). If
+    * n_lines is not set, all lines beginning at from are returned. Text
+    * is returned as a single string.
+    */
+    string getText(size_t from = 0, int n_lines = -1);
+
+    /**
+    * Get the caret corresponding to the given 1-D offset.
+    */
+    Caret getCaret(size_t index);
+
+    /**
+    * Get the caret corresponding to the given (x,y) coordinates relative
+    * to the first character in the text sequence, assuming the given font.
+    */
+    Caret getCaret(ref const(Font) font, int x, int y);
+
+    /**
+    * Assuming the given font, return the coordinates (x,y) of the current caret location.
+    */
+    int[2] getCaretPosition(ref const(Font) font);
+
+    /**
+    * Move the caret left one character.
+    */
+    bool moveLeft();
+
+    /**
+    * Move the caret right one character.
+    */
+    bool moveRight();
+
+    /**
+    * Move the caret up one line. Try to seek the same column as the current line.
+    */
+    bool moveUp();
+
+    /**
+    * Move the caret down one line. Try to seek the same column as the current line.
+    */
+    bool moveDown();
+
+    /**
+    * Jump the caret left to the next word/symbol.
+    */
+    void jumpLeft();
+
+    /**
+    * Jump the caret right to the next word/symbol.
+    */
+    void jumpRight();
+
+    /**
+    * Place the caret at the start of the current line.
+    */
+    void home();
+
+    /**
+    * Place the caret at the end of the current line.
+    */
+    void end();
+
+    /**
+    * Place the caret at the start of the entire text sequence.
+    */
+    void gotoStartOfText();
+
+    /**
+    * Place the caret at the end of the entire text sequence.
+    */
+    void gotoEndOfText();
+
+    /**
+    * Move the caret to the given row and column.
+    */
+    void moveCaret(size_t newRow, size_t newCol);
+
+    /**
+    * Return a range for iterating over the lines in the text,
+    * beginning with startLine.
+    */
+    T byLine(T)(size_t startLine = 0);
+
+}
 
 
 // Handles text storage and manipulation for WidgetText
-class SimpleTextArea
+class SimpleTextArea : TextArea
 {
     public:
 
-        struct Location { uint offset, row, col; }
-
-        @property Location loc() const { return m_loc; } // current caret m_location
-        @property size_t col() const { return m_loc.col; } // current caret column
-        @property size_t row() const { return m_loc.row; } // current caret row
-        @property size_t offset() const { return m_loc.offset; } // current caret 1-D offset
+        @property Caret loc() const { return m_loc; }
+        @property size_t col() const { return m_loc.col; }
+        @property size_t row() const { return m_loc.row; }
+        @property size_t offset() const { return m_loc.offset; }
         @property size_t nLines() const { return m_text.count('\n') + 1; }
 
-        // Get the character to the left of the current cursor/offset
-        @property char leftText()
-        {
-            if (m_loc.offset <= 0)
-                return cast(char)0;
-
-            return m_text[m_loc.offset-1];
-        }
-
-        @property char rightText()
-        {
-            if (cast(int)(m_loc.offset) > cast(int)(m_text.length - 1))
-                return cast(char)0;
-
-            return m_text[m_loc.offset];
-        }
+        /**
+        * Set and clear all text
+        */
 
         void set(string s)
         {
@@ -1161,6 +1276,19 @@ class SimpleTextArea
             m_loc.offset = 0;
             insert(s);
         }
+
+        void clear()
+        {
+            m_text.clear;
+            m_loc.offset = 0;
+            m_loc.row = 0;
+            m_loc.col = 0;
+            m_seekColumn = 0;
+        }
+
+        /**
+        * Text insertion...
+        */
 
         void insert(char c)
         {
@@ -1173,16 +1301,13 @@ class SimpleTextArea
 
             foreach(i; 0..s.length)
                 moveRight();
+
+            m_seekColumn = m_loc.col;
         }
 
-        void backspace()
-        {
-            if (m_loc.offset > 0)
-            {
-                deleteSelection(m_loc.offset-1, m_loc.offset-1);
-                moveLeft();
-            }
-        }
+        /**
+        * Text deletion...
+        */
 
         string del()
         {
@@ -1191,9 +1316,16 @@ class SimpleTextArea
             else return "";
         }
 
-        string del(size_t from, size_t to)
+        string backspace()
         {
-            return deleteSelection(from, to);
+            if (m_loc.offset > 0)
+            {
+                auto removed = deleteSelection(m_loc.offset-1, m_loc.offset-1);
+                moveLeft();
+                m_seekColumn = m_loc.col;
+                return removed;
+            }
+            return "";
         }
 
         string remove(size_t from, size_t to)
@@ -1201,236 +1333,24 @@ class SimpleTextArea
             return deleteSelection(from, to);
         }
 
-        string deleteSelection(size_t from, size_t to)
-        in
-        {
-            assert(from < m_text.length);
-            assert(to < m_text.length);
-            assert(to >= from);
-        }
-        body
-        {
-            auto removed = m_text[from..to];
-            string newtext;
-            if (from > 0)
-                newtext = m_text[0..from] ~ m_text[to+1..$];
-            else
-                newtext = m_text[to+1..$];
-
-            if (m_loc.offset != from && to-from > 0 )
-                foreach(i; 0..(to-from) + 1)
-                    moveLeft();
-
-            m_text = newtext;
-            return removed;
-        }
-
         /**
-        * Move left to next character
+        * Text and caret retrieval...
         */
-        void moveLeft(bool seeking = false)
-        {
-            if (m_loc.offset > 0)
-            {
-                m_loc.offset --;
-                if (m_loc.col == 0)
-                {
-                    // Go up a line
-                    m_loc.col = countToStartOfLine();
-                    m_loc.row --;
-                }
-                else
-                {
-                    m_loc.col --;
-                }
-            }
 
-            if (!seeking)
-                m_seekColumn = m_loc.col;
+        char leftText()
+        {
+            if (m_loc.offset <= 0)
+                return cast(char)0;
+
+            return m_text[m_loc.offset-1];
         }
 
-
-        /**
-        * Jump left to next word
-        */
-        void jumpLeft()
+        char rightText()
         {
-            if (col == 0)
-                return;
+            if (cast(int)(m_loc.offset) > cast(int)(m_text.length - 1))
+                return cast(char)0;
 
-            if (isDelim(leftText) && !isBlank(leftText))
-            {
-                moveLeft();
-                return;
-            }
-
-            while(col > 0 && m_loc.offset > 0 && isBlank(leftText))
-                moveLeft();
-
-            while(col > 0 && m_loc.offset > 0 && !isDelim(leftText))
-                moveLeft();
-        }
-
-        /**
-        * Move right to next character
-        */
-        void moveRight(bool seeking = false)
-        {
-            if (m_loc.offset < m_text.length)
-            {
-                if (m_text[m_loc.offset] == '\n')
-                {
-                    // Go down a line
-                    m_loc.col = 0;
-                    m_loc.row ++;
-                }
-                else
-                {
-                    m_loc.col ++;
-                }
-                m_loc.offset ++;
-            }
-
-            if (!seeking)
-                m_seekColumn = m_loc.col;
-        }
-
-        /**
-        * Jump right to next word
-        */
-        void jumpRight()
-        {
-            auto endCol = col + countToEndOfLine();
-
-            if (isDelim(rightText))
-            {
-                while(col < endCol && m_loc.offset < m_text.length && isDelim(rightText))
-                    moveRight();
-            }
-            else
-            {
-                while(col < endCol && m_loc.offset < m_text.length && !isDelim(rightText))
-                    moveRight();
-
-                while(col < endCol && m_loc.offset < m_text.length && isBlank(rightText))
-                    moveRight();
-            }
-        }
-
-        void moveUp()
-        {
-            uint preMoveRow = m_loc.row,
-                 preMoveColumn = m_loc.col,
-                 preMoveOffset = m_loc.offset;
-
-            bool found = false;
-            while(m_loc.offset > 0)
-            {
-                moveLeft(true);
-                if (m_loc.col == m_seekColumn ||
-                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow - 1 ||
-                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if  (!found)
-            {
-                m_loc.offset = preMoveOffset;
-                m_loc.col = preMoveColumn;
-                m_loc.row = preMoveRow;
-            }
-        }
-
-        void moveDown()
-        {
-            uint preMoveRow = m_loc.row,
-                 preMoveColumn = m_loc.col,
-                 preMoveOffset = m_loc.offset;
-
-            bool found = false;
-            while(m_loc.offset < m_text.length)
-            {
-                moveRight(true);
-                if (m_loc.col == m_seekColumn ||
-                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow + 1 ||
-                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if  (!found)
-            {
-                m_loc.offset = preMoveOffset;
-                m_loc.col = preMoveColumn;
-                m_loc.row = preMoveRow;
-            }
-        }
-
-        void home() // home key
-        {
-            while (m_loc.col != 0)
-                moveLeft();
-        }
-
-        void end() // end key
-        {
-            if (m_loc.offset == m_text.length)
-                return;
-
-            while(m_loc.offset < m_text.length && m_text[m_loc.offset] != '\n')
-                moveRight();
-        }
-
-        /**
-        * Move caret to the start of the text
-        */
-        void gotoStartOfText()
-        {
-            while(m_loc.offset > 0)
-                moveLeft();
-        }
-
-        /**
-        * Move caret to the end of the text
-        */
-        void gotoEndOfText()
-        {
-            while(m_loc.offset < m_text.length)
-                moveRight();
-        }
-
-        uint countToStartOfLine()
-        {
-            if (m_loc.offset == 0)
-                return 0;
-
-            int i = m_loc.offset - 1, count = 0;
-
-            if (m_text[i] == '\n')
-                return 0;
-
-            while (i >= 0 && m_text[i] != '\n')
-            {
-                i--;
-                count ++;
-            }
-            return count;
-        }
-
-        uint countToEndOfLine()
-        {
-            uint i = m_loc.offset, count = 0;
-            while (i < m_text.length && m_text[i] != '\n')
-            {
-                i++;
-                count ++;
-            }
-            return count;
+            return m_text[m_loc.offset];
         }
 
         string getLine(uint _row)
@@ -1447,42 +1367,49 @@ class SimpleTextArea
             return getLine(row);
         }
 
-        /**
-        * Return x,y caret position in screen coords, relative to first character
-        */
-        int[2] getCaretPosition(ref const(Font) font)
+        string getText(size_t from = 0, int n_lines = -1)
         {
-            int[2] cpos = [0,0];
-            foreach(i, char c; m_text)
-            {
-                if (i == m_loc.offset)
-                    break;
+            auto lines = splitLines(m_text);
+            if (from >= lines.length)
+                return "";
 
-                if (c == '\n')
-                {
-                    cpos[0] = 0;
-                    cpos[1] += font.m_lineHeight;
-                }
-                else if (c == '\t')
-                {
-                    cpos[0] += tabSpaces*font.width(' ');
-                }
-                else
-                {
-                    cpos[0] += font.width(c);
-                }
+            lines = lines[from..$];
+
+            Appender!string text;
+            size_t gotLines = 0;
+            while(!lines.empty && gotLines != n_lines)
+            {
+                text.put(lines.front);
+                text.put("\n");
+                gotLines ++;
+                lines.popFront();
             }
-            return cpos;
+            return text.data;
         }
 
-        /**
-        * Return the row, col at screen position x, y relative to lower
-        * left corner of first character. Returned row and col are always
-        * inside the available text.
-        */
-        Location getLocation(ref const(Font) font, int x, int y)
+        Caret getCaret(size_t index)
         {
-            Location _loc;
+            auto temp = m_loc;
+            Caret c;
+            if (index > m_loc.offset)
+            {
+                while(m_loc.offset > 0 && index != m_loc.offset)
+                    moveRight();
+            }
+            else if (index < m_loc.offset)
+            {
+                while(m_loc.offset > 0 && index != m_loc.offset)
+                    moveLeft();
+            }
+
+            c = m_loc;
+            m_loc = temp;
+            return c;
+        }
+
+        Caret getCaret(ref const(Font) font, int x, int y)
+        {
+            Caret _loc;
 
             //int[2] cpos = [0,0];
 
@@ -1517,6 +1444,204 @@ class SimpleTextArea
             return _loc;
         }
 
+        int[2] getCaretPosition(ref const(Font) font)
+        {
+            int[2] cpos = [0,0];
+            foreach(i, char c; m_text)
+            {
+                if (i == m_loc.offset)
+                    break;
+
+                if (c == '\n')
+                {
+                    cpos[0] = 0;
+                    cpos[1] += font.m_lineHeight;
+                }
+                else if (c == '\t')
+                {
+                    cpos[0] += tabSpaces*font.width(' ');
+                }
+                else
+                {
+                    cpos[0] += font.width(c);
+                }
+            }
+            return cpos;
+        }
+
+        /**
+        * Caret manipulation...
+        */
+
+        bool moveLeft()
+        {
+            if (m_loc.offset > 0)
+            {
+                m_loc.offset --;
+                if (m_loc.col == 0)
+                {
+                    // Go up a line
+                    m_loc.col = countToStartOfLine();
+                    m_loc.row --;
+                }
+                else
+                {
+                    m_loc.col --;
+                }
+            }
+            return true;
+        }
+
+        bool moveRight()
+        {
+            if (m_loc.offset < m_text.length)
+            {
+                if (m_text[m_loc.offset] == '\n')
+                {
+                    // Go down a line
+                    m_loc.col = 0;
+                    m_loc.row ++;
+                }
+                else
+                {
+                    m_loc.col ++;
+                }
+                m_loc.offset ++;
+            }
+
+            return true;
+        }
+
+        bool moveUp()
+        {
+            uint preMoveRow = m_loc.row,
+                 preMoveColumn = m_loc.col,
+                 preMoveOffset = m_loc.offset;
+
+            bool found = false;
+            while(m_loc.offset > 0)
+            {
+                moveLeft();
+                if (m_loc.col == m_seekColumn ||
+                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow - 1 ||
+                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if  (!found)
+            {
+                m_loc.offset = preMoveOffset;
+                m_loc.col = preMoveColumn;
+                m_loc.row = preMoveRow;
+            }
+            return true;
+        }
+
+        bool moveDown()
+        {
+            uint preMoveRow = m_loc.row,
+                 preMoveColumn = m_loc.col,
+                 preMoveOffset = m_loc.offset;
+
+            bool found = false;
+            while(m_loc.offset < m_text.length)
+            {
+                moveRight();
+                if (m_loc.col == m_seekColumn ||
+                    m_loc.col < m_seekColumn && countToEndOfLine() == 0 && m_loc.row == preMoveRow + 1 ||
+                    (m_loc.col == 0 && m_text[m_loc.offset] == '\n'))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if  (!found)
+            {
+                m_loc.offset = preMoveOffset;
+                m_loc.col = preMoveColumn;
+                m_loc.row = preMoveRow;
+            }
+            return true;
+        }
+
+        void jumpLeft()
+        {
+            if (col == 0)
+                return;
+
+            if (isDelim(leftText) && !isBlank(leftText))
+            {
+                moveLeft();
+                m_seekColumn = m_loc.col;
+                return;
+            }
+
+            while(col > 0 && m_loc.offset > 0 && isBlank(leftText))
+                moveLeft();
+
+            while(col > 0 && m_loc.offset > 0 && !isDelim(leftText))
+                moveLeft();
+
+            m_seekColumn = m_loc.col;
+        }
+
+        void jumpRight()
+        {
+            auto endCol = col + countToEndOfLine();
+
+            if (isDelim(rightText))
+            {
+                while(col < endCol && m_loc.offset < m_text.length && isDelim(rightText))
+                    moveRight();
+            }
+            else
+            {
+                while(col < endCol && m_loc.offset < m_text.length && !isDelim(rightText))
+                    moveRight();
+
+                while(col < endCol && m_loc.offset < m_text.length && isBlank(rightText))
+                    moveRight();
+            }
+
+            m_seekColumn = m_loc.col;
+        }
+
+        void home() // home key
+        {
+            while (m_loc.col != 0)
+                moveLeft();
+            m_seekColumn = m_loc.col;
+        }
+
+        void end() // end key
+        {
+            if (m_loc.offset == m_text.length)
+                return;
+
+            while(m_loc.offset < m_text.length && m_text[m_loc.offset] != '\n')
+                moveRight();
+
+            m_seekColumn = m_loc.col;
+        }
+
+        void gotoStartOfText()
+        {
+            while(m_loc.offset > 0)
+                moveLeft();
+            m_seekColumn = m_loc.col;
+        }
+
+        void gotoEndOfText()
+        {
+            while(m_loc.offset < m_text.length)
+                moveRight();
+            m_seekColumn = m_loc.col;
+        }
+
         void moveCaret(uint newRow, uint newCol)
         {
             if (newRow == row && newCol == col)
@@ -1532,12 +1657,15 @@ class SimpleTextArea
                 while(m_loc.offset > 0 && (row != newRow || col != newCol))
                     moveLeft();
             }
+
+            m_seekColumn = m_loc.col;
         }
+
 
         /**
         * Move left from caret until given char is found, return row, column and offset
         */
-        Location searchLeft(char c)
+        Caret searchLeft(char c)
         {
             auto store = m_loc;
             while (m_loc.offset > 0 && m_text[m_loc.offset] != c)
@@ -1551,7 +1679,7 @@ class SimpleTextArea
         /**
         * Move right from caret until given char is found, return row, column and offset
         */
-        Location searchRight(char c)
+        Caret searchRight(char c)
         {
             auto store = m_loc;
             while (m_loc.offset < m_text.length && m_text[m_loc.offset] != c)
@@ -1560,36 +1688,6 @@ class SimpleTextArea
             auto rVal = m_loc;
             m_loc = store;
             return rVal;
-        }
-
-        // Clear all text
-        void clear()
-        {
-            m_text.clear;
-            m_loc.offset = 0;
-            m_loc.row = 0;
-            m_loc.col = 0;
-            m_seekColumn = 0;
-        }
-
-        string getText(size_t from = 0, int n_lines = -1)
-        {
-            auto lines = splitLines(m_text);
-            if (from >= lines.length)
-                return "";
-
-            lines = lines[from..$];
-
-            Appender!string text;
-            size_t gotLines = 0;
-            while(!lines.empty && gotLines != n_lines)
-            {
-                text.put(lines.front);
-                text.put("\n");
-                gotLines ++;
-                lines.popFront();
-            }
-            return text.data;
         }
 
     private:
@@ -1606,13 +1704,67 @@ class SimpleTextArea
                    c == '\t' ;
         }
 
+        string deleteSelection(size_t from, size_t to)
+        in
+        {
+            assert(from < m_text.length);
+            assert(to < m_text.length);
+            assert(to >= from);
+        }
+        body
+        {
+            auto removed = m_text[from..to];
+            string newtext;
+            if (from > 0)
+                newtext = m_text[0..from] ~ m_text[to+1..$];
+            else
+                newtext = m_text[to+1..$];
+
+            if (m_loc.offset != from && to-from > 0 )
+                foreach(i; 0..(to-from) + 1)
+                    moveLeft();
+
+            m_seekColumn = m_loc.col;
+            m_text = newtext;
+            return removed;
+        }
+
+        uint countToStartOfLine()
+        {
+            if (m_loc.offset == 0)
+                return 0;
+
+            int i = m_loc.offset - 1, count = 0;
+
+            if (m_text[i] == '\n')
+                return 0;
+
+            while (i >= 0 && m_text[i] != '\n')
+            {
+                i--;
+                count ++;
+            }
+            return count;
+        }
+
+        uint countToEndOfLine()
+        {
+            uint i = m_loc.offset, count = 0;
+            while (i < m_text.length && m_text[i] != '\n')
+            {
+                i++;
+                count ++;
+            }
+            return count;
+        }
+
         string m_text = "";
 
         // Default number of spaces for a tab
         uint tabSpaces = 4;
 
         // Current column and row of the caret (insertion point)
-        Location m_loc;
+        Caret m_loc;
 
         // When moving up and down through carriage returns, try to get to this column
         uint m_seekColumn = 0;
@@ -1989,655 +2141,605 @@ class SpanList
 }
 
 
-class TextArea
+class PieceTableTextArea : TextArea
 {
-    struct Caret { size_t offset, row, col; }
-    struct Location { uint offset, row, col; }
+    public:
 
-    Appender!string m_original;
-    Appender!string m_edit;
-    SpanList m_spans;
-    Caret m_caret;
+        @property size_t row() const { return m_caret.row; }
+        @property size_t col() const { return m_caret.col; }
+        @property size_t offset() { return m_caret.offset; }
+        @property size_t nLines() const { return m_totalNewLines + 1; }
 
-    uint m_tabSpaces = 4;
-    uint m_totalNewLines;
-    string m_currentLine;
-
-    size_t m_seekColumn;
-
-    debug
-    {
-        alias std.datetime.Clock clock;
-    }
-
-    @property size_t row() const { return m_caret.row; }
-    @property size_t col() const { return m_caret.col; }
-    @property size_t offset() { return m_caret.offset; }
-    @property size_t nLines() const { return m_totalNewLines + 1; }
-
-    this()
-    {
-        m_spans = new SpanList();
-    }
-
-    this(string originalText)
-    {
-        this();
-        loadOriginal(originalText);
-    }
-
-    void loadOriginal(string text)
-    {
-        clear();
-        insertAt(m_original, 0, text);
-    }
-
-    /**
-    * Insert text at the caret position
-    */
-    void insert(string s)
-    {
-        insertAt(m_edit, m_caret.offset, s);
-    }
-
-    void insert(char s)
-    {
-        insertAt(m_edit, m_caret.offset, s.to!string);
-    }
-
-    private void insertAt(Appender!string buf, size_t index /** logical index **/, string s)
-    {
-        auto begin = buf.data.length;
-        buf.put(s);
-
-        // Split the span into managable chunks
-        size_t spanSize = 500;
-        size_t newLines = 0;
-        if (s.length > spanSize)
+        this()
         {
-            size_t grabbed = 0;
-
-            while(grabbed != s.length)
-            {
-                auto canGrab = min(s.length - grabbed, spanSize); // elements left to take
-                auto loIndex = begin + grabbed;
-                auto hiIndex = begin + grabbed + canGrab;
-
-                auto newSpan = Span(buf.data[loIndex..hiIndex]);
-                auto newNode = m_spans.insertAt(index + grabbed, newSpan);
-                newLines += newSpan.newLines;
-                grabbed += canGrab;
-            }
-        }
-        else
-        {
-            auto newSpan = Span(buf.data[begin..$]);
-            auto newNode = m_spans.insertAt(index, newSpan);
-            newLines += newSpan.newLines;
+            m_spans = new SpanList();
         }
 
-        m_totalNewLines += newLines;
-
-        if (index == m_caret.offset)
+        this(string originalText)
         {
-            if (newLines > 0)
+            this();
+            loadOriginal(originalText);
+        }
+
+        /**
+        * Set and clear all text
+        */
+
+        void set(string s)
+        {
+            clear();
+            loadOriginal(s);
+        }
+
+        void clear()
+        {
+            m_caret = Caret();
+            m_original.clear;
+            m_edit.clear;
+            m_currentLine = null;
+            m_totalNewLines = 0;
+            m_spans.clear;
+        }
+
+        /**
+        * Text insertion...
+        */
+
+        void insert(char s)
+        {
+            insertAt(m_edit, m_caret.offset, s.to!string);
+        }
+
+        void insert(string s)
+        {
+            insertAt(m_edit, m_caret.offset, s);
+        }
+
+        /**
+        * Text deletion...
+        */
+
+        string del()
+        {
+            return remove(m_caret.offset, m_caret.offset);
+        }
+
+        string backspace()
+        {
+            if (m_caret.offset > 0)
+                return remove(m_caret.offset-1, m_caret.offset-1);
+            else return "";
+        }
+
+        string remove(size_t from, size_t to)
+        in
+        {
+            //assert(from < to);
+            //writeln("REMOVE: ", from, ", ", to);
+            //assert(from == m_caret.offset || to == m_caret.offset);
+        }
+        body
+        {
+            auto mods = m_spans.remove(from, to);
+
+            if (mods.del.length == 0)
+                return "";
+
+            // Calculate new caret location
+            auto totalDel = reduce!("a + b.newLines")(0, mods.del);
+            auto removed = reduce!("a ~ b.buffer")("", mods.del);
+
+            if (mods.lAdd !is null)
+                totalDel -= mods.lAdd.payload.newLines;
+            if (mods.rAdd !is null)
+                totalDel -= mods.rAdd.payload.newLines;
+
+            m_totalNewLines -= totalDel;
+            auto length = to - from + 1; // this includes newlines
+
+            if (from == m_caret.offset)
             {
-                m_caret.row += newLines;
-                if (s[$-1] == '\n')
-                    m_caret.col = 0;
-                else
-                    m_caret.col = (splitLines(s))[$-1].length;
+                m_currentLine = byLine(m_caret.row).front; // optimize
+                return removed;
             }
+
+            m_caret.offset = from;
+
+            if (totalDel > 0) // optimize for single newline deletion
+                setCaret(from);
             else
-            {
-                m_caret.col += s.length;
-            }
+                m_caret.col -= (length - totalDel);
 
-            m_caret.offset += s.length;
-            m_seekColumn = m_caret.col;
-        }
-        else
-        {
-            setCaret(index + s.length);
-        }
-
-        m_currentLine = byLine(m_caret.row).front;  // optimize
-    }
-
-    /**
-    * Remove text between [from,to] (inclusive). Either from or to must
-    * be the current caret location.
-    */
-    string remove(size_t from, size_t to)
-    in
-    {
-        //assert(from < to);
-        //writeln("REMOVE: ", from, ", ", to);
-        //assert(from == m_caret.offset || to == m_caret.offset);
-    }
-    body
-    {
-        auto mods = m_spans.remove(from, to);
-
-        if (mods.del.length == 0)
-            return "";
-
-        // Calculate new caret location
-        auto totalDel = reduce!("a + b.newLines")(0, mods.del);
-        auto removed = reduce!("a ~ b.buffer")("", mods.del);
-
-        if (mods.lAdd !is null)
-            totalDel -= mods.lAdd.payload.newLines;
-        if (mods.rAdd !is null)
-            totalDel -= mods.rAdd.payload.newLines;
-
-        m_totalNewLines -= totalDel;
-        auto length = to - from + 1; // this includes newlines
-
-        if (from == m_caret.offset)
-        {
             m_currentLine = byLine(m_caret.row).front; // optimize
             return removed;
         }
 
-        m_caret.offset = from;
+        /**
+        * Text and caret retrieval...
+        */
 
-        if (totalDel > 0) // optimize for single newline deletion
-            setCaret(from);
-        else
-            m_caret.col -= (length - totalDel);
+        char leftText()
+        {
+            if (m_caret.offset == 0)
+                return cast(char)0;
+            else if (m_caret.col == 0)
+                return '\n';
+            else return m_currentLine[m_caret.col-1];
+        }
 
-        m_currentLine = byLine(m_caret.row).front; // optimize
-        return removed;
-    }
+        char rightText()
+        {
+            if (m_caret.row == m_totalNewLines && m_caret.col == m_currentLine.length)
+                return cast(char)0;
+            else if (m_caret.col == m_currentLine.length)
+                return '\n';
+            else return m_currentLine[m_caret.col];
+        }
 
-    string del()
-    {
-        return remove(m_caret.offset, m_caret.offset);
-    }
+        string getLine(size_t line)
+        {
+            if (line == m_caret.row)
+                return m_currentLine;
+            else
+                return byLine(line).front;
+        }
 
-    string backspace()
-    {
-        if (m_caret.offset > 0)
-            return remove(m_caret.offset-1, m_caret.offset-1);
-        else return "";
-    }
-
-    /**
-    * Slow way of setting the caret
-    */
-    void setCaret(size_t index)
-    {
-        auto rc = getRowCol(index);
-        m_caret.row = rc.row;
-        m_caret.col = rc.col;
-        m_caret.offset = index;
-        m_seekColumn = m_caret.col;
-    }
-
-    char leftText()
-    {
-        if (m_caret.offset == 0)
-            return cast(char)0;
-        else if (m_caret.col == 0)
-            return '\n';
-        else return m_currentLine[m_caret.col-1];
-    }
-
-    char rightText()
-    {
-        if (m_caret.row == m_totalNewLines && m_caret.col == m_currentLine.length)
-            return cast(char)0;
-        else if (m_caret.col == m_currentLine.length)
-            return '\n';
-        else return m_currentLine[m_caret.col];
-    }
-
-    string getLine(size_t line)
-    {
-        if (line == m_caret.row)
+        string getCurrentLine()
+        {
             return m_currentLine;
-        else
-            return byLine(line).front;
-    }
-
-    string getCurrentLine()
-    {
-        return m_currentLine;
-    }
-
-
-    /**
-    * Return the row and column corresponding to the given logical index
-    */
-    Caret getRowCol(size_t index)
-    {
-        Caret result;
-
-        size_t offset;
-        auto r = byLine();
-        while(!r.empty && result.offset + r.front.length + 1 < index)
-        {
-            result.offset += r.front.length + 1; // count the newline
-            result.col = r.front.length;
-            result.row ++;
-            r.popFront();
         }
 
-        if (r.empty)
-            return result;
-
-        if (index == result.offset + r.front.length + 1)
+        string getText(size_t from = 0, int n_lines = -1)
         {
-            result.row ++;
-            result.col = 0;
-        }
-        else
-        {
-            result.col = index - result.offset;
-            result.offset += result.col;
-        }
+            Appender!string text;
 
-        return result;
-    }
-
-
-    /**
-    * Return the row, col at screen position x, y relative to lower
-    * left corner of first character. Returned row and col are always
-    * inside the available text.
-    */
-    Caret getLocation(ref const(Font) font, int x, int y)
-    {
-        Caret loc;
-
-        if (m_spans.empty)
-            return loc;
-
-        // row is determined solely by font.m_lineHeight
-        loc.row = cast(int) (y / font.m_lineHeight);
-        loc.row = min(loc.row, m_totalNewLines);
-
-        if (loc.row > 0)
-        {
-            int r = 0;
-            auto range = byLine(0);
-            while(r != loc.row)
+            auto range = byLine(from);
+            size_t gotLines = 0;
+            while(!range.empty && gotLines != n_lines)
             {
-                loc.offset += range.front.length + 1; // +1 counts the newline '\n'
+                text.put(range.front);
+                text.put("\n");
+                gotLines ++;
                 range.popFront();
-                r ++;
             }
+            return text.data;
         }
 
-        float _x = 0;
-        foreach(char c; getLine(loc.row))
+        Caret getCaret(size_t index)
         {
-            if (_x > x)
-                break;
+            Caret result;
 
-            if (c == '\t')
-                _x += m_tabSpaces*font.width(' ');
-            else
-                _x += font.width(c);
-
-            loc.col ++;
-            //loc.offset ++;
-        }
-        return loc;
-    }
-
-    /**
-    * For the given font, resturn the x,y coordinates of the caret
-    * relative to the first character of the entire text sequence.
-    */
-    int[2] getCaretPosition(ref const(Font) font)
-    {
-        int[2] loc;
-        loc[1] = m_caret.row * font.m_lineHeight;
-
-        size_t _x;
-        while(_x < m_currentLine.length && _x != m_caret.col)
-        {
-            if (m_currentLine[_x] == '\t')
-                loc[0] += m_tabSpaces*font.width(' ');
-            else
-                loc[0] += font.width(m_currentLine[_x]);
-            _x ++;
-        }
-
-        return [loc.x, loc.y];
-    }
-
-
-    /**
-    * Move the caret left by one character.
-    * Returns: true if move succeeded, else false.
-    */
-    bool moveLeft()
-    {
-        if (m_caret.col > 0)
-        {
-            m_caret.col --;
-            m_caret.offset --;
-            m_seekColumn = m_caret.col;
-            return true;
-        }
-        else
-        {
-            if (m_caret.row > 0)
+            size_t offset;
+            auto r = byLine();
+            while(!r.empty && result.offset + r.front.length + 1 < index)
             {
-                m_caret.row --;
-                m_caret.offset --;
-                m_currentLine = byLine(m_caret.row).front;
-                m_caret.col = m_currentLine.length;
-                m_seekColumn = m_caret.col;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-    * Move the caret right by one character.
-    * Returns: true if move succeeded, else false.
-    */
-    bool moveRight()
-    {
-        if (m_caret.col < m_currentLine.length) // move right along the current line
-        {
-            m_caret.col ++;
-            m_caret.offset ++;
-            m_seekColumn = m_caret.col;
-            return true;
-        }
-        else
-        {
-            if (m_caret.row < m_totalNewLines) // move down to the next line
-            {
-                m_caret.col = 0;
-                m_caret.row ++;
-                m_caret.offset ++;
-                m_currentLine = byLine(m_caret.row).front;
-                m_seekColumn = m_caret.col;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-    * Move caret up one line.
-    * Returns: true if move succeeded, else false.
-    */
-    bool moveUp()
-    {
-        if (m_caret.row > 0)
-        {
-            auto temp = m_caret.col + 1;
-            m_caret.row --;
-            m_currentLine = byLine(m_caret.row).front;
-            m_caret.col = min(m_currentLine.length, m_seekColumn);
-            m_caret.offset -= temp + (m_currentLine.length - m_caret.col);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-    * Move caret down one line.
-    * Returns: true if move succeeded, else false.
-    */
-    bool moveDown()
-    {
-        if (m_caret.row < m_totalNewLines)
-        {
-            auto temp = (m_currentLine.length - m_caret.col) + 1;
-            m_caret.row ++;
-            m_currentLine = byLine(m_caret.row).front;
-            m_caret.col = min(m_currentLine.length, m_seekColumn);
-            m_caret.offset += temp + m_caret.col;
-            return true;
-        }
-        return false;
-    }
-
-    void jumpLeft()
-    {
-    }
-
-    void jumpRight()
-    {
-    }
-
-    /**
-    * Move caret to start of line
-    */
-    void home()
-    {
-        m_caret.offset -= m_caret.col;
-        m_caret.col = 0;
-        m_seekColumn = m_caret.col;
-    }
-
-    /**
-    * Move caret to end of line
-    */
-    void end()
-    {
-        m_caret.offset += m_currentLine.length - m_caret.col;
-        m_caret.col = m_currentLine.length;
-        m_seekColumn = m_caret.col;
-    }
-
-    void gotoEndOfText()
-    {
-        while(moveDown()) {}
-        while(moveRight()) {}
-    }
-
-    void gotoStartOfText()
-    {
-        setCaret(0);
-    }
-
-    /**
-    * Move the caret as close to the given row and column as possible.
-    */
-    void moveCaret(size_t newRow, size_t newCol)
-    {
-        if (newRow == m_caret.row && newCol == m_caret.col)
-            return;
-
-        auto r = byLine();
-        string copy;
-        size_t offset = 0, row = 0;
-        while(!r.empty && row != newRow)
-        {
-            offset += r.front.length + 1;
-            row ++;
-            copy = r.front;
-            r.popFront();
-        }
-
-        if (r.empty)
-        {
-            row --;
-            m_currentLine = copy;
-            m_caret.row = row;
-            m_caret.col = 0;
-            m_caret.offset = offset;
-            m_seekColumn = m_caret.col;
-        }
-        else
-        {
-            m_caret.row = row;
-            m_currentLine = r.front;
-            m_caret.col = min(newCol, m_currentLine.length);
-            m_caret.offset = offset + m_caret.col;
-            m_seekColumn = m_caret.col;
-        }
-    }
-
-    /**
-    * Return a Range for iterating through the text by line, starting
-    * at the given line number.
-    */
-    struct LineRange
-    {
-        SpanList.Range r;
-        string buffer;
-        string lineSlice;
-        bool finished;
-
-        this(SpanList.Range list, size_t startLine)
-        {
-            auto tick_in = clock.currSystemTick().msecs();
-
-            r = list;
-            size_t bufferStartRow = 0;
-            while(!r.empty && bufferStartRow + r.front.newLines < startLine)
-            {
-                bufferStartRow += r.front.newLines;
+                result.offset += r.front.length + 1; // count the newline
+                result.col = r.front.length;
+                result.row ++;
                 r.popFront();
             }
 
             if (r.empty)
-                return;
+                return result;
 
-            int chomp = 0;
-            buffer = r.front.buffer;
-            r.popFront();
-            if (bufferStartRow != startLine)
+            if (index == result.offset + r.front.length + 1)
             {
-                uint i = 0;
-                while(i < buffer.length && bufferStartRow != startLine)
-                {
-                    if (buffer[i] == '\n')
-                        bufferStartRow ++;
-                    chomp++;
-                    i++;
-                }
-                buffer = buffer[chomp..$];
+                result.row ++;
+                result.col = 0;
             }
-
-            if (count(buffer, '\n') == 0)
-            {
-                int gotNewlines = 0;
-                while(!r.empty && gotNewlines == 0)
-                {
-                    buffer ~= r.front.buffer;
-                    gotNewlines += r.front.newLines;
-                    r.popFront();
-                }
-            }
-            setSlice();
-
-            auto tick_out = clock.currSystemTick().msecs();
-            std.stdio.writeln("BYLINE CONSTRUCTOR: ", tick_out - tick_in);
-        }
-
-
-        @property bool empty()
-        {
-            return finished;
-        }
-
-        @property string front()
-        {
-            return lineSlice;
-        }
-
-        void setSlice()
-        {
-            auto newAt = countUntil(buffer, '\n');
-            if (newAt == -1)
-                lineSlice = buffer;
-            else
-                lineSlice = buffer[0..newAt];
-        }
-
-        void popFront()
-        {
-            auto newAt = countUntil(buffer, '\n');
-            if (newAt != -1)
-                buffer = buffer[newAt+1..$];
             else
             {
-                finished = true;
-                lineSlice.clear;
-                return;
+                result.col = index - result.offset;
+                result.offset += result.col;
             }
 
-            newAt = countUntil(buffer, '\n');
-            if (newAt == -1)
+            return result;
+        }
+
+        Caret getCaret(ref const(Font) font, int x, int y)
+        {
+            Caret loc;
+
+            if (m_spans.empty)
+                return loc;
+
+            // row is determined solely by font.m_lineHeight
+            loc.row = cast(int) (y / font.m_lineHeight);
+            loc.row = min(loc.row, m_totalNewLines);
+
+            if (loc.row > 0)
             {
-                int gotLines = 0;
-                while(!r.empty && gotLines == 0)
+                int r = 0;
+                auto range = byLine(0);
+                while(r != loc.row)
                 {
-                    buffer ~= r.front.buffer;
-                    gotLines += r.front.newLines;
+                    loc.offset += range.front.length + 1; // +1 counts the newline '\n'
+                    range.popFront();
+                    r ++;
+                }
+            }
+
+            float _x = 0;
+            foreach(char c; getLine(loc.row))
+            {
+                if (_x > x)
+                    break;
+
+                if (c == '\t')
+                    _x += m_tabSpaces*font.width(' ');
+                else
+                    _x += font.width(c);
+
+                loc.col ++;
+                //loc.offset ++;
+            }
+            return loc;
+        }
+
+        int[2] getCaretPosition(ref const(Font) font)
+        {
+            int[2] loc;
+            loc[1] = m_caret.row * font.m_lineHeight;
+
+            size_t _x;
+            while(_x < m_currentLine.length && _x != m_caret.col)
+            {
+                if (m_currentLine[_x] == '\t')
+                    loc[0] += m_tabSpaces*font.width(' ');
+                else
+                    loc[0] += font.width(m_currentLine[_x]);
+                _x ++;
+            }
+
+            return [loc.x, loc.y];
+        }
+
+        /**
+        * Caret manipulation...
+        */
+
+        bool moveLeft()
+        {
+            if (m_caret.col > 0)
+            {
+                m_caret.col --;
+                m_caret.offset --;
+                m_seekColumn = m_caret.col;
+                return true;
+            }
+            else
+            {
+                if (m_caret.row > 0)
+                {
+                    m_caret.row --;
+                    m_caret.offset --;
+                    m_currentLine = byLine(m_caret.row).front;
+                    m_caret.col = m_currentLine.length;
+                    m_seekColumn = m_caret.col;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool moveRight()
+        {
+            if (m_caret.col < m_currentLine.length) // move right along the current line
+            {
+                m_caret.col ++;
+                m_caret.offset ++;
+                m_seekColumn = m_caret.col;
+                return true;
+            }
+            else
+            {
+                if (m_caret.row < m_totalNewLines) // move down to the next line
+                {
+                    m_caret.col = 0;
+                    m_caret.row ++;
+                    m_caret.offset ++;
+                    m_currentLine = byLine(m_caret.row).front;
+                    m_seekColumn = m_caret.col;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool moveUp()
+        {
+            if (m_caret.row > 0)
+            {
+                auto temp = m_caret.col + 1;
+                m_caret.row --;
+                m_currentLine = byLine(m_caret.row).front;
+                m_caret.col = min(m_currentLine.length, m_seekColumn);
+                m_caret.offset -= temp + (m_currentLine.length - m_caret.col);
+                return true;
+            }
+            return false;
+        }
+
+        bool moveDown()
+        {
+            if (m_caret.row < m_totalNewLines)
+            {
+                auto temp = (m_currentLine.length - m_caret.col) + 1;
+                m_caret.row ++;
+                m_currentLine = byLine(m_caret.row).front;
+                m_caret.col = min(m_currentLine.length, m_seekColumn);
+                m_caret.offset += temp + m_caret.col;
+                return true;
+            }
+            return false;
+        }
+
+        void jumpLeft()
+        {
+        }
+
+        void jumpRight()
+        {
+        }
+
+        void home()
+        {
+            m_caret.offset -= m_caret.col;
+            m_caret.col = 0;
+            m_seekColumn = m_caret.col;
+        }
+
+        void end()
+        {
+            m_caret.offset += m_currentLine.length - m_caret.col;
+            m_caret.col = m_currentLine.length;
+            m_seekColumn = m_caret.col;
+        }
+
+        void gotoStartOfText()
+        {
+            setCaret(0);
+        }
+
+        void gotoEndOfText()
+        {
+            while(moveDown()) {}
+            while(moveRight()) {}
+        }
+
+        void moveCaret(size_t newRow, size_t newCol)
+        {
+            if (newRow == m_caret.row && newCol == m_caret.col)
+                return;
+
+            auto r = byLine();
+            string copy;
+            size_t offset = 0, row = 0;
+            while(!r.empty && row != newRow)
+            {
+                offset += r.front.length + 1;
+                row ++;
+                copy = r.front;
+                r.popFront();
+            }
+
+            if (r.empty)
+            {
+                row --;
+                m_currentLine = copy;
+                m_caret.row = row;
+                m_caret.col = 0;
+                m_caret.offset = offset;
+                m_seekColumn = m_caret.col;
+            }
+            else
+            {
+                m_caret.row = row;
+                m_currentLine = r.front;
+                m_caret.col = min(newCol, m_currentLine.length);
+                m_caret.offset = offset + m_caret.col;
+                m_seekColumn = m_caret.col;
+            }
+        }
+
+        /**
+        * Return a Range for iterating through the text by line, starting
+        * at the given line number.
+        */
+        struct LineRange
+        {
+            SpanList.Range r;
+            string buffer;
+            string lineSlice;
+            bool finished;
+
+            this(SpanList.Range list, size_t startLine)
+            {
+                r = list;
+                size_t bufferStartRow = 0;
+                while(!r.empty && bufferStartRow + r.front.newLines < startLine)
+                {
+                    bufferStartRow += r.front.newLines;
                     r.popFront();
+                }
+
+                if (r.empty)
+                    return;
+
+                int chomp = 0;
+                buffer = r.front.buffer;
+                r.popFront();
+                if (bufferStartRow != startLine)
+                {
+                    uint i = 0;
+                    while(i < buffer.length && bufferStartRow != startLine)
+                    {
+                        if (buffer[i] == '\n')
+                            bufferStartRow ++;
+                        chomp++;
+                        i++;
+                    }
+                    buffer = buffer[chomp..$];
+                }
+
+                if (count(buffer, '\n') == 0)
+                {
+                    int gotNewlines = 0;
+                    while(!r.empty && gotNewlines == 0)
+                    {
+                        buffer ~= r.front.buffer;
+                        gotNewlines += r.front.newLines;
+                        r.popFront();
+                    }
                 }
                 setSlice();
             }
-            else
+
+
+            @property bool empty()
             {
-                lineSlice = buffer[0..newAt];
+                return finished;
+            }
+
+            @property string front()
+            {
+                return lineSlice;
+            }
+
+            void setSlice()
+            {
+                auto newAt = countUntil(buffer, '\n');
+                if (newAt == -1)
+                    lineSlice = buffer;
+                else
+                    lineSlice = buffer[0..newAt];
+            }
+
+            void popFront()
+            {
+                auto newAt = countUntil(buffer, '\n');
+                if (newAt != -1)
+                    buffer = buffer[newAt+1..$];
+                else
+                {
+                    finished = true;
+                    lineSlice.clear;
+                    return;
+                }
+
+                newAt = countUntil(buffer, '\n');
+                if (newAt == -1)
+                {
+                    int gotLines = 0;
+                    while(!r.empty && gotLines == 0)
+                    {
+                        buffer ~= r.front.buffer;
+                        gotLines += r.front.newLines;
+                        r.popFront();
+                    }
+                    setSlice();
+                }
+                else
+                {
+                    lineSlice = buffer[0..newAt];
+                }
             }
         }
-    }
 
-    LineRange byLine(size_t startLine = 0)
-    {
-        return LineRange(m_spans[], startLine);
-    }
-
-    void set(string s)
-    {
-        clear();
-        loadOriginal(s);
-    }
-
-    void clear()
-    {
-        m_caret = Caret();
-        m_original.clear;
-        m_edit.clear;
-        m_currentLine = null;
-        m_totalNewLines = 0;
-        m_spans.clear;
-    }
-
-    string getText(size_t from = 0, int n_lines = -1)
-    {
-        Appender!string text;
-
-        auto range = byLine(from);
-        size_t gotLines = 0;
-        while(!range.empty && gotLines != n_lines)
+        T byLine(T = LineRange)(size_t startLine = 0)
         {
-            text.put(range.front);
-            text.put("\n");
-            gotLines ++;
-            range.popFront();
+            return LineRange(m_spans[], startLine);
         }
-        return text.data;
-    }
 
-    /**
-    * Return the contained text as a single string (char sequence)
-    */
-    override string toString()
-    {
-        Appender!string text;
-        foreach(span; m_spans)
-            text.put(span.buffer);
-        return text.data();
-    }
+    private:
+
+        void loadOriginal(string text)
+        {
+            clear();
+            insertAt(m_original, 0, text);
+        }
+
+        void setCaret(size_t index)
+        {
+            auto rc = getCaret(index);
+            m_caret.row = rc.row;
+            m_caret.col = rc.col;
+            m_caret.offset = index;
+            m_seekColumn = m_caret.col;
+        }
+
+        void insertAt(Appender!string buf, size_t index /** logical index **/, string s)
+        {
+            auto begin = buf.data.length;
+            buf.put(s);
+
+            // Split the span into managable chunks
+            size_t spanSize = 500;
+            size_t newLines = 0;
+            if (s.length > spanSize)
+            {
+                size_t grabbed = 0;
+
+                while(grabbed != s.length)
+                {
+                    auto canGrab = min(s.length - grabbed, spanSize); // elements left to take
+                    auto loIndex = begin + grabbed;
+                    auto hiIndex = begin + grabbed + canGrab;
+
+                    auto newSpan = Span(buf.data[loIndex..hiIndex]);
+                    auto newNode = m_spans.insertAt(index + grabbed, newSpan);
+                    newLines += newSpan.newLines;
+                    grabbed += canGrab;
+                }
+            }
+            else
+            {
+                auto newSpan = Span(buf.data[begin..$]);
+                auto newNode = m_spans.insertAt(index, newSpan);
+                newLines += newSpan.newLines;
+            }
+
+            m_totalNewLines += newLines;
+
+            if (index == m_caret.offset)
+            {
+                if (newLines > 0)
+                {
+                    m_caret.row += newLines;
+                    if (s[$-1] == '\n')
+                        m_caret.col = 0;
+                    else
+                        m_caret.col = (splitLines(s))[$-1].length;
+                }
+                else
+                {
+                    m_caret.col += s.length;
+                }
+
+                m_caret.offset += s.length;
+                m_seekColumn = m_caret.col;
+            }
+            else
+            {
+                setCaret(index + s.length);
+            }
+
+            m_currentLine = byLine(m_caret.row).front;  // optimize
+        }
+
+        Appender!string m_original;
+        Appender!string m_edit;
+        SpanList m_spans;
+        Caret m_caret;
+
+        uint m_tabSpaces = 4;
+        uint m_totalNewLines;
+        string m_currentLine;
+
+        size_t m_seekColumn;
 }
 
-unittest /** List **/
+unittest
 {
     /++
     auto text = new TextArea2();
