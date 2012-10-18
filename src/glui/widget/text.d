@@ -287,6 +287,8 @@ class WidgetText : WidgetWindow
         {
             super.render(Flag!"RenderChildren".no);
 
+            std.stdio.writeln("RENDERING, ", m_refreshCache);
+
             if (m_font is null)
                 return;
 
@@ -319,8 +321,6 @@ class WidgetText : WidgetWindow
                 auto startRow = 0;
                 if (m_allowVScroll)
                     startRow = m_vscroll.current;
-
-                std.stdio.writeln("RENDERING");
 
                 auto _text = m_text.getText(startRow, m_dim.y / m_font.m_lineHeight);
 
@@ -1949,10 +1949,12 @@ class TextArea2
     struct Caret { size_t offset, row, col; }
     struct Location { uint offset, row, col; }
 
-    string m_original;
+    Appender!string m_original;
     Appender!string m_edit;
     SpanList m_spans;
     Caret m_caret;
+
+    int[2] m_caretXY = [0,0];
 
     uint m_tabSpaces = 4;
     uint m_totalNewLines;
@@ -1984,11 +1986,7 @@ class TextArea2
     void loadOriginal(string text)
     {
         clear();
-        m_original = text;
-        auto newSpan = Span(m_original[0..$]);
-        auto newNode = m_spans.insertAt(0, newSpan);
-        m_totalNewLines = newSpan.newLines;
-        setCaret(newSpan.length);
+        insertAt(m_original, 0, text);
     }
 
     /**
@@ -1996,27 +1994,52 @@ class TextArea2
     */
     void insert(string s)
     {
-        insertAt(m_caret.offset, s);
+        insertAt(m_edit, m_caret.offset, s);
     }
 
     void insert(char s)
     {
-        insertAt(m_caret.offset, s.to!string);
+        insertAt(m_edit, m_caret.offset, s.to!string);
     }
 
-    private void insertAt(size_t index /** logical index **/, string s)
+    private void insertAt(Appender!string buf, size_t index /** logical index **/, string s)
     {
-        auto begin = m_edit.data.length;
-        m_edit.put(s);
-        auto newSpan = Span(m_edit.data[begin..$]);
-        auto newNode = m_spans.insertAt(index, newSpan);
-        m_totalNewLines += newSpan.newLines;
+        auto begin = buf.data.length;
+        buf.put(s);
+
+        // Split the span into managable chunks
+        size_t spanSize = 500;
+        size_t newLines = 0;
+        if (s.length > spanSize)
+        {
+            size_t grabbed = 0;
+
+            while(grabbed != s.length)
+            {
+                auto canGrab = min(s.length - grabbed, spanSize); // elements left to take
+                auto loIndex = begin + grabbed;
+                auto hiIndex = begin + grabbed + canGrab;
+
+                auto newSpan = Span(buf.data[loIndex..hiIndex]);
+                auto newNode = m_spans.insertAt(index + grabbed, newSpan);
+                newLines += newSpan.newLines;
+                grabbed += canGrab;
+            }
+        }
+        else
+        {
+            auto newSpan = Span(buf.data[begin..$]);
+            auto newNode = m_spans.insertAt(index, newSpan);
+            newLines += newSpan.newLines;
+        }
+
+        m_totalNewLines += newLines;
 
         if (index == m_caret.offset)
         {
-            if (newSpan.newLines > 0)
+            if (newLines > 0)
             {
-                m_caret.row += newSpan.newLines;
+                m_caret.row += newLines;
                 if (s[$-1] == '\n')
                     m_caret.col = 0;
                 else

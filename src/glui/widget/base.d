@@ -400,7 +400,6 @@ abstract class Widget
                 newParent = m_root;
 
             m_parent = newParent; // set new parent
-            //setContainer(newParent.container);
             newParent.addChild(this); // add me to new parent's child list
             m_lastFocused = m_parent.lastFocused + 1;
         }
