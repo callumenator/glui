@@ -709,6 +709,46 @@ class WidgetText : WidgetWindow
                     adjustVisiblePortion();
                     break;
                 }
+                case KC_PAGE_UP: // page up key
+                {
+                    auto nLines = cast(int) (m_dim.y / m_font.m_lineHeight);
+                    while(nLines - 1 > 0)
+                    {
+                        nLines --;
+                        if (!m_text.moveUp())
+                            break;
+                    }
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
+                    m_drawCaret = true;
+                    needRender();
+                    adjustVisiblePortion();
+                    break;
+                }
+                case KC_PAGE_DOWN: // page down key
+                {
+                    auto nLines = cast(int) (m_dim.y / m_font.m_lineHeight);
+                    while(nLines - 1 > 0)
+                    {
+                        nLines --;
+                        if (!m_text.moveDown())
+                            break;
+                    }
+
+                    if (root.shiftIsDown)
+                        updateSelectionRange();
+                    else
+                        clearSelection();
+
+                    m_drawCaret = true;
+                    needRender();
+                    adjustVisiblePortion();
+                    break;
+                }
                 case KC_LEFT: // left arrow
                 {
                     if (root.ctrlIsDown)
