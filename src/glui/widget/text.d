@@ -101,7 +101,6 @@ class WidgetText : WidgetWindow
                 m_vscroll.current = 0;
                 m_vscroll.range = [0, m_text.nLines];
             }
-            m_text.moveCaret(0,0);
             m_refreshCache = true;
             needRender();
         }
@@ -594,7 +593,8 @@ class WidgetText : WidgetWindow
                     auto pos = event.get!MouseClick.pos;
                     auto rc = getCaret(pos.x, pos.y);
 
-                    m_text.moveCaret(rc.row, rc.col);
+                    //m_text.moveCaret(rc.row, rc.col);
+                    std.stdio.writeln("MoveCaret: ", (benchmark!( { text.moveCaret(rc.row, rc.col); } )(1))[0].to!("msecs", int));
 
                     if (root.shiftIsDown)
                     {
@@ -2747,34 +2747,45 @@ class PieceTableTextArea : TextArea
             //if (newRow == m_caret.row && newCol == m_caret.col)
             //    return;
 
-            auto r = byLine();
-            string copy;
-            size_t offset = 0, row = 0;
-            while(!r.empty && row != newRow)
+            // Why is this so slow? It's O(n) currently...
+
+
+            auto r = m_spans[];
+            size_t cCol = 0, cRow = 0, cOff = 0;
+            while(!r.empty && cRow + r.front.newLines < newRow)
             {
-                offset += r.front.length + 1;
-                row ++;
-                copy = r.front;
+                cRow += r.front.newLines;
+                cOff += r.front.length;
                 r.popFront();
             }
 
             if (r.empty)
+                assert(false);
+
+            auto line = r.front.buffer;
+            auto newAt = line.countUntil('\n');
+
+            int i = 0;
+            while(i < line.length && cRow != newRow)
             {
-                row --;
-                m_currentLine = copy;
-                m_caret.row = row;
-                m_caret.col = 0;
-                m_caret.offset = offset;
-                m_seekColumn = m_caret.col;
+                if (line[i] == '\n')
+                    cRow++;
+                i++;
+                cOff++;
             }
-            else
+
+            while(i < line.length && cCol != newCol) // this could be optimized, but meh
             {
-                m_caret.row = row;
-                m_currentLine = r.front;
-                m_caret.col = min(newCol, m_currentLine.length);
-                m_caret.offset = offset + m_caret.col;
-                m_seekColumn = m_caret.col;
+                i++;
+                cCol++;
+                cOff++;
             }
+
+            m_caret.col = cCol;
+            m_caret.row = cRow;
+            m_caret.offset = cOff;
+            m_seekColumn = cCol;
+            m_currentLine = byLine(cRow).front;
         }
 
         int getLineWidth(ref const(Font) font, size_t line)
@@ -2990,16 +3001,19 @@ class PieceTableTextArea : TextArea
 
 unittest
 {
+
+    /++
     import std.file;
+    import glui.truetype, glui.window;
+
 
     string readIn = readText("c:/d/dmd2/src/phobos/std/datetime.d");
     auto text = new PieceTableTextArea(readIn);
+    auto a = benchmark!( { text.moveCaret(15000, 10); } )(100);
+    writeln("Msecs: ", a[0].to!("msecs", int));
 
-
-    //auto r = benchmark!( { text.moveCaret(15000, 10); } )(10);
-    //writeln("Msecs: ", r[0].to!("msecs", int));
-    //assert(false, "End of Test");
-
+    assert(false, "End of Test");
+    ++/
 
 /++
     text.insert("line 0\nline 1\n");
