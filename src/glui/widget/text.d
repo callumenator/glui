@@ -2030,6 +2030,7 @@ class SpanList
     }
 
     Node head, tail; // sentinels
+    size_t length;
 
     this()
     {
@@ -2049,6 +2050,7 @@ class SpanList
         newNode.prev = n;
         n.next.prev = newNode;
         n.next = newNode;
+        length ++;
         return newNode;
     }
 
@@ -2059,6 +2061,7 @@ class SpanList
         {
             newNodes ~= insertAfter(n, s);
             n = n.next;
+            length ++;
         }
         return newNodes;
     }
@@ -2114,6 +2117,7 @@ class SpanList
     {
         node.prev.next = node.next;
         node.next.prev = node.prev;
+        length --;
     }
 
     /**
@@ -2138,6 +2142,7 @@ class SpanList
             lNode = lNode.next;
         }
         removed.put(rNode.payload);
+        length -= removed.data.length;
 
         return removed.data;
     }
@@ -2973,7 +2978,7 @@ class PieceTableTextArea : TextArea
 
         Appender!string m_original;
         Appender!string m_edit;
-        SpanList m_spans;
+        public SpanList m_spans;
         Caret m_caret;
 
         uint m_tabSpaces = 4;
@@ -2987,12 +2992,12 @@ unittest
 {
     import std.file;
 
-    string readIn = readText("c:/d/dmd2/src/phobos/std/conv.d");
+    string readIn = readText("c:/d/dmd2/src/phobos/std/datetime.d");
     auto text = new PieceTableTextArea(readIn);
 
 
-    auto r = benchmark!( { text.moveCaret(15000, 10); } )(10);
-    writeln("Msecs: ", r[0].to!("msecs", int));
+    //auto r = benchmark!( { text.moveCaret(15000, 10); } )(10);
+    //writeln("Msecs: ", r[0].to!("msecs", int));
     //assert(false, "End of Test");
 
 
