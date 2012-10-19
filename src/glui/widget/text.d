@@ -169,6 +169,7 @@ class WidgetText : WidgetWindow
             m_type = "WIDGETTEXT";
             m_cacheId = glGenLists(1);
             m_text = new PieceTableTextArea;
+            //m_text = new SimpleTextArea;
 
             m_font = font;
             m_repeatDelayTime = -1;
@@ -2738,8 +2739,8 @@ class PieceTableTextArea : TextArea
 
         void moveCaret(size_t newRow, size_t newCol)
         {
-            if (newRow == m_caret.row && newCol == m_caret.col)
-                return;
+            //if (newRow == m_caret.row && newCol == m_caret.col)
+            //    return;
 
             auto r = byLine();
             string copy;
@@ -2917,7 +2918,7 @@ class PieceTableTextArea : TextArea
             buf.put(s);
 
             // Split the span into managable chunks
-            size_t spanSize = 500;
+            size_t spanSize = 2000;
             size_t newLines = 0;
             if (s.length > spanSize)
             {
@@ -2984,9 +2985,18 @@ class PieceTableTextArea : TextArea
 
 unittest
 {
-    /++
-    auto text = new TextArea2();
+    import std.file;
 
+    string readIn = readText("c:/d/dmd2/src/phobos/std/conv.d");
+    auto text = new PieceTableTextArea(readIn);
+
+
+    auto r = benchmark!( { text.moveCaret(15000, 10); } )(10);
+    writeln("Msecs: ", r[0].to!("msecs", int));
+    //assert(false, "End of Test");
+
+
+/++
     text.insert("line 0\nline 1\n");
     assert(text.m_caret.col == 0);
     assert(text.m_caret.row == 2);

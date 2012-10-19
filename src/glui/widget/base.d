@@ -1915,6 +1915,7 @@ class WidgetScroll : WidgetWindow
                        arg("max", smax),
                        arg("orientation", m_orient),
                        arg("fade", m_hideWhenNotHovered),
+                       arg("scrolldelta", m_scrollDelta),
                        arg("slidercolor", m_slideColor),
                        arg("sliderborder", m_slideBorder),
                        arg("sliderlength", m_slideLength));
@@ -2099,37 +2100,42 @@ class WidgetScroll : WidgetWindow
                 m_lastScrollTime = timerMsecs;
                 m_waitingForScrollDelay = true;
 
-                int[2] pos = event.get!MouseWheel.pos;
-                int[2] delta = [0,-event.get!MouseWheel.delta/120];
-                drag(pos, delta);
+                m_current += -1 * m_scrollDelta * (event.get!MouseWheel.delta/120);
+
+                // Check bounds
+                if (m_current < m_range[0])
+                    m_current = m_range[0];
+                if (m_current > m_range[1])
+                    m_current = m_range[1];
+
+                if (m_orient == Orientation.VERTICAL)
+                {
+                    m_slidePos[1] = cast(int) (m_range[0] + ((m_current / cast(float)(m_range[1] - m_range[0])) *
+                                              (m_slideLimit[1] - m_slideLimit[0])));
+                }
+                eventSignal.emit(this, WidgetEvent(Scroll(m_current)));
+                needRender();
             }
         }
 
         // Drag along the widget's orientation, within the limits
         override void drag(int[2] pos, int[2] delta)
         {
+            int index;
+
             if (m_orient == Orientation.VERTICAL)
-            {
-                m_slidePos[1] += delta[1];
-                if (m_slidePos[1] < m_slideLimit[0])
-                    m_slidePos[1] = m_slideLimit[0];
-                if (m_slidePos[1] > m_slideLimit[1])
-                    m_slidePos[1] = m_slideLimit[1];
-
-                m_current = cast(int) ((m_range[1]-m_range[0]) * ((m_slidePos[1] - m_slideLimit[0]) /
-                                        cast(float)(m_slideLimit[1] - m_slideLimit[0])));
-            }
+                index = 1;
             else if (m_orient == Orientation.HORIZONTAL)
-            {
-                m_slidePos[0] += delta[0];
-                if (m_slidePos[0] < m_slideLimit[0])
-                    m_slidePos[0] = m_slideLimit[0];
-                if (m_slidePos[0] > m_slideLimit[1])
-                    m_slidePos[0] = m_slideLimit[1];
+                index = 0;
 
-                m_current = cast(int) ((m_range[1]-m_range[0]) * ((m_slidePos[0] - m_slideLimit[0]) /
-                                        cast(float)(m_slideLimit[1] - m_slideLimit[0])));
-            }
+            m_slidePos[index] += delta[index];
+            if (m_slidePos[index] < m_slideLimit[0])
+                m_slidePos[index] = m_slideLimit[0];
+            if (m_slidePos[index] > m_slideLimit[1])
+                m_slidePos[index] = m_slideLimit[1];
+
+            m_current = cast(int) ((m_range[1]-m_range[0]) * ((m_slidePos[index] - m_slideLimit[0]) /
+                                    cast(float)(m_slideLimit[1] - m_slideLimit[0])));
 
             eventSignal.emit(this, WidgetEvent(Scroll(m_current)));
         }
@@ -2247,6 +2253,7 @@ class WidgetScroll : WidgetWindow
 
         Orientation m_orient;
 
+        int m_scrollDelta = 1;
         long m_lastScrollTime = 0; // last time a scroll event was handled
         long m_postScrollFadeDelay = 2000; // msecs after a scroll event to start fading out
         bool m_waitingForScrollDelay = false;
