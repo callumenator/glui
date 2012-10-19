@@ -936,10 +936,11 @@ class WidgetText : WidgetWindow
             // If text insert moves caret off screen horizontally, adjust hscroll
             if (m_allowHScroll)
             {
+                auto nCols = ((m_dim.x - 5) / m_font.m_maxWidth);
                 auto minCol = m_hscroll.current;
-                auto maxCol = minCol + ((m_dim.x - 5) / m_font.m_maxWidth);
+                auto maxCol = minCol + nCols;
                 if (m_text.col > maxCol)
-                    m_hscroll.current = m_hscroll.current + (m_text.col - maxCol)*5;
+                    m_hscroll.current = m_text.col - (nCols - 1);
                 else if (m_text.col < minCol)
                     m_hscroll.current = m_text.col;
             }
@@ -1244,7 +1245,7 @@ class WidgetLabel : WidgetText
 * This interface defines a TextArea, a class which manages text sequences,
 * insertion, deletion, and caret operations.
 */
-interface TextArea
+abstract class TextArea
 {
     /**
     *The caret defines the input/operation point in the text sequence.
@@ -1418,6 +1419,18 @@ interface TextArea
     * Calculate the screen width of a line, given a font.
     */
     int getLineWidth(ref const(Font) font, size_t line);
+
+    bool isDelim(char c)
+    {
+        return isBlank(c) ||
+               !isAlphaNum(c);
+    }
+
+    bool isBlank(char c)
+    {
+        return c == ' ' ||
+               c == '\t' ;
+    }
 }
 
 
@@ -1890,18 +1903,6 @@ class SimpleTextArea : TextArea
 
     private:
 
-        bool isDelim(char c)
-        {
-            return isBlank(c) ||
-                   !isAlphaNum(c);
-        }
-
-        bool isBlank(char c)
-        {
-            return c == ' ' ||
-                   c == '\t' ;
-        }
-
         string deleteSelection(size_t from, size_t to)
         in
         {
@@ -2370,13 +2371,12 @@ class PieceTableTextArea : TextArea
 
         void set(string s)
         {
-            clear();
             loadOriginal(s);
+            m_caret = Caret(0,0,0);
         }
 
         void clear()
         {
-            m_caret = Caret();
             m_original.clear;
             m_edit.clear;
             m_currentLine = null;
@@ -2711,10 +2711,26 @@ class PieceTableTextArea : TextArea
 
         void jumpLeft()
         {
+            if (isDelim(leftText) && !isBlank(leftText))
+            {
+                moveLeft();
+                return;
+            }
+
+            while(isBlank(leftText) && moveLeft()){}
+            while(!isDelim(leftText) && moveLeft()){}
         }
 
         void jumpRight()
         {
+            if (isDelim(rightText) && !isBlank(rightText))
+            {
+                moveRight();
+                return;
+            }
+
+            while(!isDelim(rightText) && moveRight()){}
+            while(isBlank(rightText) && moveRight()){}
         }
 
         void home()
@@ -2917,6 +2933,7 @@ class PieceTableTextArea : TextArea
         {
             clear();
             insertAt(m_original, 0, text);
+            m_currentLine = byLine(0).front;
         }
 
         void setCaret(size_t index)
@@ -2989,12 +3006,12 @@ class PieceTableTextArea : TextArea
 
         Appender!string m_original;
         Appender!string m_edit;
-        public SpanList m_spans;
+        SpanList m_spans;
         Caret m_caret;
 
         uint m_tabSpaces = 4;
         uint m_totalNewLines;
-        string m_currentLine;
+        public string m_currentLine;
 
         size_t m_seekColumn;
 }
