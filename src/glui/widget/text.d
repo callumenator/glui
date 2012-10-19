@@ -101,7 +101,7 @@ class WidgetText : WidgetWindow
                 m_vscroll.current = 0;
                 m_vscroll.range = [0, m_text.nLines];
             }
-
+            m_text.moveCaret(0,0);
             m_refreshCache = true;
             needRender();
         }
@@ -110,7 +110,7 @@ class WidgetText : WidgetWindow
         {
             string s;
             foreach(arg; args)
-            s ~= to!string(arg);
+                s ~= to!string(arg);
 
             m_text.insert(s);
             m_refreshCache = true;
@@ -277,7 +277,6 @@ class WidgetText : WidgetWindow
 
         int scrollEvent(Widget widget, WidgetEvent event)
         {
-            std.stdio.writeln("SCROLL");
             m_refreshCache = true;
             needRender();
             return 0;
@@ -287,15 +286,8 @@ class WidgetText : WidgetWindow
         {
             super.render(Flag!"RenderChildren".no);
 
-            std.stdio.writeln("RENDERING, ", m_refreshCache);
-
             if (m_font is null)
                 return;
-
-            debug
-            {
-                long perf_tick_in = Clock.currSystemTick().msecs();
-            }
 
             glPushMatrix();
             setCoords();
@@ -318,67 +310,18 @@ class WidgetText : WidgetWindow
                 clipboxToScreen(clip);
                 glScissor(clip[0], clip[1], clip[2], clip[3]);
 
+                renderHighlights(); // line highlights
+                renderSelection();  // text selection
+
                 auto startRow = 0;
                 if (m_allowVScroll)
                     startRow = m_vscroll.current;
+                auto _text = m_text.getTextLines(startRow, m_dim.y / m_font.m_lineHeight);
 
-                auto _text = m_text.getText(startRow, m_dim.y / m_font.m_lineHeight);
-
-                // Handle line highlights
-                uint width;
-                if (m_allowHScroll)
-                {
-                    auto rnge = m_hscroll.range;
-                    width = m_dim.x + rnge[1]*m_font.m_maxWidth;
-                }
+                if (m_highlighter)
+                    renderCharacters(m_font, _text, m_highlighter);
                 else
-                    width = m_dim.x;
-
-                foreach(line, color; m_lineHighlights)
-                {
-                    glColor4fv(color.ptr);
-                    glBegin(GL_QUADS);
-                    glVertex2f(-5, -line*m_font.m_lineHeight - m_font.m_maxHoss);
-                    glVertex2f(width, -line*m_font.m_lineHeight - m_font.m_maxHoss);
-                    glVertex2f(width, -line*m_font.m_lineHeight + m_font.m_maxHeight);
-                    glVertex2f(-5, -line*m_font.m_lineHeight + m_font.m_maxHeight);
-                    glEnd();
-                }
-
-
-                if (haveSelection)
-                {
-                    auto r = reduce!(min, max)(m_selectionRange);
-                    auto lower = r[0];
-                    auto upper = r[1];
-
-                    auto pre = _text[0..lower];
-                    auto mid = _text[lower..upper];
-                    auto post = _text[upper..$];
-
-                    if (m_highlighter)
-                    {
-                        int[2] offset;
-                        offset = renderCharacters(m_font, pre, m_highlighter);
-                        offset = renderCharacters(m_font, mid, m_highlighter, [0.,0.,1.,1.], offset);
-                        offset = renderCharacters(m_font, post, m_highlighter, [0.,0.,0.,0.], offset);
-                    }
-                    else
-                    {
-                        int[2] offset;
-                        offset = renderCharacters(m_font, pre, m_textColor);
-                        offset = renderCharacters(m_font, mid, m_textColor, [0.,0.,1.,1.], offset);
-                        offset = renderCharacters(m_font, post, m_textColor, [0.,0.,0.,0.], offset);
-                    }
-
-                }
-                else
-                {
-                    if (m_highlighter)
-                        renderCharacters(m_font, _text, m_highlighter);
-                    else
-                        renderCharacters(m_font, _text, m_textColor);
-                }
+                    renderCharacters(m_font, _text, m_textColor);
 
                 glEndList();
                 m_refreshCache = false;
@@ -389,17 +332,14 @@ class WidgetText : WidgetWindow
             if (m_editable && m_drawCaret && (amIFocused || isAChildFocused) )
                 renderCaret();
 
-            debug
-            {
-                long perf_tick_diff = Clock.currSystemTick().msecs() - perf_tick_in;
-                //std.stdio.writeln("TEXT Render time: ", perf_tick_diff);
-            }
-
             if (recurse)
                 renderChildren();
         }
 
-        // Draw the caret
+
+        /**
+        * Draw the caret
+        */
         void renderCaret()
         {
             glPushMatrix();
@@ -422,13 +362,143 @@ class WidgetText : WidgetWindow
             glPopMatrix();
         }
 
-        // Setup draw coords
+
+        /**
+        * Helper for drawing a box, used for line highlights and selections.
+        * Assume we are in render coordinates:
+        * ----------------------
+        * setCoords();
+        * glScalef(1,-1,1);
+        * ----------------------
+        */
+        void drawBox(float x0, float y0, float x1, float y1, float[4] color)
+        {
+            if (m_allowVScroll)
+                glTranslatef(0, m_vscroll.current*m_font.m_lineHeight, 0);
+
+            glColor4fv(color.ptr);
+            glBegin(GL_QUADS);
+            glVertex2f(x0, y0);
+            glVertex2f(x1, y0);
+            glVertex2f(x1, y1);
+            glVertex2f(x0, y1);
+            glEnd();
+
+            if (m_allowVScroll)
+                glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
+        }
+
+
+        /**
+        * Draw line highlights
+        */
+        void renderHighlights()
+        {
+            if (m_lineHighlights.length == 0)
+                return;
+
+            uint width = m_dim.x;
+            if (m_allowHScroll)
+            {
+                auto rnge = m_hscroll.range;
+                width += rnge[1]*m_font.m_maxWidth;
+            }
+
+            foreach(line, color; m_lineHighlights)
+            {
+                drawBox(-5, -line*m_font.m_lineHeight - m_font.m_maxHoss,
+                        width, -line*m_font.m_lineHeight + m_font.m_maxHeight,
+                        color);
+            }
+        }
+
+
+        /**
+        * Render the text selection background
+        */
+        void renderSelection()
+        {
+            if (!haveSelection)
+                return;
+
+            if (m_allowVScroll)
+                glTranslatef(0, m_vscroll.current*m_font.m_lineHeight, 0);
+
+            scope(exit)
+            {
+                if (m_allowVScroll)
+                    glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
+            }
+
+            auto startRow = 0;
+            if (m_allowVScroll)
+                startRow = m_vscroll.current;
+
+            auto r = reduce!(min, max)(m_selectionRange);
+            auto lower = r[0];
+            auto upper = r[1];
+
+            auto lowerCaret = m_text.getCaret(lower);
+            auto upperCaret = m_text.getCaret(upper);
+
+            int[2] offset0 = m_text.getCaretPosition(m_font, lowerCaret);
+            int[2] offset1 = m_text.getCaretPosition(m_font, upperCaret);
+
+            float[4] selectionColor = [0.,0.,1.,1.];
+            if (lowerCaret.row == upperCaret.row)
+            {
+                drawBox(offset0[0], -offset0[1], offset1[0], -offset0[1] + m_font.m_lineHeight, selectionColor);
+            }
+            else
+            {
+                // Only draw the visible part of the selection
+                auto lineRange = [startRow, startRow + m_dim.y/m_font.m_lineHeight];
+                std.stdio.writeln(lineRange);
+
+                // Quick rejection tests
+                if (lowerCaret.row > lineRange[1] || upperCaret.row < lineRange[0])
+                    return;
+
+                // Draw first selection row
+                drawBox(offset0[0], -offset0[1],
+                        offset0[0] + m_text.getLineWidth(m_font, lowerCaret.row),
+                        -offset0[1] + m_font.m_lineHeight, selectionColor);
+
+                // Draw last selection row
+                drawBox(0, -offset1[1], offset1[0], -offset1[1] + m_font.m_lineHeight, selectionColor);
+
+                // Draw rows in-between
+                if (upperCaret.row > lowerCaret.row + 1)
+                {
+                    foreach(int row; lowerCaret.row+1..upperCaret.row)
+                    {
+                        if (row < lineRange[0])
+                            continue;
+                        if (row > lineRange[1])
+                            return;
+
+                        float y0 = -offset0[1] - (row - cast(int)(lowerCaret.row))*m_font.m_lineHeight;
+                        drawBox(0, y0, m_text.getLineWidth(m_font, row),
+                                y0 + m_font.m_lineHeight, selectionColor);
+                    }
+                }
+            }
+        }
+
+
+        /**
+        * Setup coordinates for rendering.
+        */
         void setCoords()
         {
             resetXCoord();
             resetYCoord();
         }
 
+
+        /**
+        * Set X coord for rendering.
+        */
         void resetXCoord()
         {
             glTranslatef(0*m_pos.x + 5, 0, 0);
@@ -438,15 +508,23 @@ class WidgetText : WidgetWindow
                 glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
         }
 
+
+        /**
+        * Set Y coord for rendering.
+        */
         void resetYCoord()
         {
             glTranslatef(0, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
 
             // Translate by the scroll amounts as well...
-            //if (m_allowVScroll)
+            // if (m_allowVScroll)
             //    glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
 
+
+        /**
+        * Calculate the vertical offset for the selected alignment type.
+        */
         int textOffsetY()
         {
             // Calculate vertical offset, depends on alignment
@@ -479,7 +557,10 @@ class WidgetText : WidgetWindow
             return cast(int)yoffset;
         }
 
-        // Dispatch events
+
+        /**
+        * Dispatch events.
+        */
         override void event(ref Event event)
         {
             if (!amIFocused && !isAChildFocused) return;
@@ -538,7 +619,10 @@ class WidgetText : WidgetWindow
             }
         } // event
 
-        // Key repeat delay logic
+
+        /**
+        * Decide whether key events need to be processed (key repeats).
+        */
         bool needToProcessKey(ref Event event, out KEY key)
         {
             if (event.type == EventType.KEYHOLD)
@@ -586,7 +670,10 @@ class WidgetText : WidgetWindow
             return true;
         }
 
-        // Handle key events
+
+        /**
+        * Handle key events
+        */
         void handleKey(in KEY key)
         {
             m_lastKey = key;
@@ -604,6 +691,7 @@ class WidgetText : WidgetWindow
 
                     m_drawCaret = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_END: // end key
@@ -617,6 +705,7 @@ class WidgetText : WidgetWindow
 
                     m_drawCaret = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_LEFT: // left arrow
@@ -633,6 +722,7 @@ class WidgetText : WidgetWindow
 
                     m_drawCaret = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_RIGHT: // right arrow
@@ -649,6 +739,7 @@ class WidgetText : WidgetWindow
 
                     m_drawCaret = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_UP: // up arrow
@@ -662,6 +753,7 @@ class WidgetText : WidgetWindow
 
                     m_drawCaret = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_DOWN: // down arrow
@@ -675,6 +767,7 @@ class WidgetText : WidgetWindow
 
                     m_drawCaret = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_TAB: // down arrow
@@ -685,6 +778,7 @@ class WidgetText : WidgetWindow
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_DELETE: // del
@@ -703,6 +797,7 @@ class WidgetText : WidgetWindow
                     m_drawCaret = true;
                     m_refreshCache = true;
                     needRender();
+                    adjustVisiblePortion();
                     break;
                 }
                 case KC_SHIFT_LEFT:
@@ -736,6 +831,7 @@ class WidgetText : WidgetWindow
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
+                        adjustVisiblePortion();
 
                         eventSignal.emit(this, WidgetEvent(TextInsert("\n")));
                     }
@@ -756,6 +852,7 @@ class WidgetText : WidgetWindow
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
+                        adjustVisiblePortion();
                     }
                     break;
                 }
@@ -770,6 +867,7 @@ class WidgetText : WidgetWindow
                                 m_selectionRange[0] = 0;
                                 m_text.gotoEndOfText();
                                 updateSelectionRange();
+                                adjustVisiblePortion();
                                 break;
                             }
                             case KC_C: // copy selection to clipboard
@@ -780,12 +878,14 @@ class WidgetText : WidgetWindow
                             case KC_V: // copy selection to clipboard
                             {
                                 pasteFromClipboard();
+                                adjustVisiblePortion();
                                 break;
                             }
                             case KC_X: // copy selection to clipboard and delete selection
                             {
                                 copyToClipboard();
                                 deleteSelectedText();
+                                adjustVisiblePortion();
                                 break;
                             }
 
@@ -814,6 +914,7 @@ class WidgetText : WidgetWindow
                         m_drawCaret = true;
                         m_refreshCache = true;
                         needRender();
+                        adjustVisiblePortion();
                     }
                     break;
                 }
@@ -821,7 +922,6 @@ class WidgetText : WidgetWindow
                 default:
             }
 
-            adjustVisiblePortion();
         } // handleKey
 
 
@@ -848,18 +948,34 @@ class WidgetText : WidgetWindow
                 auto minRow = m_vscroll.current;
                 auto maxRow = minRow + (m_dim.y / m_font.m_lineHeight) - 1;
                 if (m_text.row > maxRow)
+                {
                     m_vscroll.current = m_vscroll.current + (m_text.row - maxRow);
+                    m_refreshCache = true;
+                    needRender();
+                }
                 else if (m_text.row < minRow)
+                {
                     m_vscroll.current = m_text.row;
+                    m_refreshCache = true;
+                    needRender();
+                }
             }
         }
 
+
+        /**
+        * Use drag events for updating text selection.
+        */
         override bool requestDrag(int[2] pos)
         {
             m_pendingDrag = true;
             return true;
         }
 
+
+        /**
+        * Use drag events for updating text selection.
+        */
         override void drag(int[2] pos, int[2] delta)
         {
             auto loc = getCaret(pos.x, pos.y);
@@ -875,14 +991,25 @@ class WidgetText : WidgetWindow
                 m_refreshCache = true;
                 needRender();
             }
+
+            m_text.moveCaret(loc.row, loc.col);
+            m_caretPos = m_text.getCaretPosition(m_font);
         }
 
+
+        /**
+        * Update the text selection range with current caret.
+        */
         void updateSelectionRange()
         {
             m_selectionRange[1] = m_text.offset;
             m_refreshCache = true;
         }
 
+
+        /**
+        * Clear the current text selection info.
+        */
         void clearSelection()
         {
             if (!haveSelection())
@@ -893,11 +1020,19 @@ class WidgetText : WidgetWindow
             needRender();
         }
 
+
+        /**
+        * Returns: true if text is selected.
+        */
         bool haveSelection()
         {
             return m_selectionRange[0] != m_selectionRange[1];
         }
 
+
+        /**
+        * Deletes the currently selected text.
+        */
         void deleteSelectedText()
         {
             if (!haveSelection())
@@ -909,6 +1044,10 @@ class WidgetText : WidgetWindow
             clearSelection();
         }
 
+
+        /**
+        * Returns: the currently selected text as a string.
+        */
         string getSelectedText()
         in
         {
@@ -917,7 +1056,8 @@ class WidgetText : WidgetWindow
         body
         {
             auto r = reduce!(min, max)(m_selectionRange);
-            return m_text.text[r[0]..r[1]];
+            std.stdio.writeln(typeof(m_text.text).stringof);
+            return m_text.getTextBetween(r[0],r[1]);
         }
 
         void copyToClipboard()
@@ -930,10 +1070,15 @@ class WidgetText : WidgetWindow
                 if (OpenClipboard(null) && EmptyClipboard())
                 {
                     string selection;
-                    foreach(line; splitLines(getSelectedText()))
-                        selection ~= line ~ '\r';
+                    auto selected = getSelectedText();
+                    auto lines = splitLines(selected);
+                    foreach(i; 0..lines.length-1)
+                        selection ~= lines[i] ~ '\r';
 
-                    selection ~= '\0';
+                    if (selected[$-1] == '\n')
+                        selection ~= lines[$-1] ~ ['\r', '\0'];
+                    else
+                        selection ~= lines[$-1] ~ '\0';
 
                     auto hnd = GlobalAlloc(0, selection.length);
                     char* pchData = cast(char*)GlobalLock(hnd);
@@ -970,8 +1115,19 @@ class WidgetText : WidgetWindow
                     memcpy(readin.ptr, buffer, bytes);
 
                     string paste;
-                    foreach(line; splitLines(readin))
-                        paste ~= line ~ '\n';
+                    auto lines = splitLines(readin);
+                    foreach(i, line; lines)
+                    {
+                        if (i == lines.length-1)
+                        {
+                            if (readin[$-1] == '\n' || readin[$-2..$] == ['\n','\r'])
+                                paste ~= line ~ '\n';
+                            else
+                                paste ~= line;
+                        }
+                        else
+                            paste ~= line ~ '\n';
+                    }
 
                     m_text.insert(paste);
                     m_refreshCache = true;
@@ -982,10 +1138,11 @@ class WidgetText : WidgetWindow
 
     private:
 
+        TextArea m_text;
+        Font m_font = null;
+
         KEY m_lastKey = KEY.KC_NULL;
 
-        Font m_font = null;
-        TextArea m_text;
         RGBA m_textColor = {1,1,1,1};
         RGBA m_textBgColor = {0,0,0,0};
 
@@ -1173,7 +1330,12 @@ interface TextArea
     * n_lines is not set, all lines beginning at from are returned. Text
     * is returned as a single string.
     */
-    string getText(size_t from = 0, int n_lines = -1);
+    string getTextLines(size_t from = 0, int n_lines = -1);
+
+    /**
+    * Get all text between offsets [from, to] (inclusive).
+    */
+    string getTextBetween(size_t from, size_t to);
 
     /**
     * Get the caret corresponding to the given 1-D offset.
@@ -1190,6 +1352,11 @@ interface TextArea
     * Assuming the given font, return the coordinates (x,y) of the current caret location.
     */
     int[2] getCaretPosition(ref const(Font) font);
+
+    /**
+    * Assuming the given font, return the coordinates (x,y) of the given caret.
+    */
+    int[2] getCaretPosition(ref const(Font) font, Caret caret);
 
     /**
     * Move the caret left one character.
@@ -1247,11 +1414,9 @@ interface TextArea
     void moveCaret(size_t newRow, size_t newCol);
 
     /**
-    * Return a range for iterating over the lines in the text,
-    * beginning with startLine.
+    * Calculate the screen width of a line, given a font.
     */
-    T byLine(T)(size_t startLine = 0);
-
+    int getLineWidth(ref const(Font) font, size_t line);
 }
 
 
@@ -1260,7 +1425,6 @@ class SimpleTextArea : TextArea
 {
     public:
 
-        @property Caret loc() const { return m_loc; }
         @property size_t col() const { return m_loc.col; }
         @property size_t row() const { return m_loc.row; }
         @property size_t offset() const { return m_loc.offset; }
@@ -1367,7 +1531,7 @@ class SimpleTextArea : TextArea
             return getLine(row);
         }
 
-        string getText(size_t from = 0, int n_lines = -1)
+        string getTextLines(size_t from = 0, int n_lines = -1)
         {
             auto lines = splitLines(m_text);
             if (from >= lines.length)
@@ -1385,6 +1549,17 @@ class SimpleTextArea : TextArea
                 lines.popFront();
             }
             return text.data;
+        }
+
+        string getTextBetween(size_t from, size_t to)
+        in
+        {
+            assert(from < to);
+            assert(from > 0 && to < m_text.length);
+        }
+        body
+        {
+            return m_text[from..to+1];
         }
 
         Caret getCaret(size_t index)
@@ -1434,7 +1609,7 @@ class SimpleTextArea : TextArea
                     break;
 
                 if (c == '\t')
-                    _x += tabSpaces*font.width(' ');
+                    _x += m_tabSpaces*font.width(' ');
                 else
                     _x += font.width(c);
 
@@ -1459,7 +1634,7 @@ class SimpleTextArea : TextArea
                 }
                 else if (c == '\t')
                 {
-                    cpos[0] += tabSpaces*font.width(' ');
+                    cpos[0] += m_tabSpaces*font.width(' ');
                 }
                 else
                 {
@@ -1467,6 +1642,15 @@ class SimpleTextArea : TextArea
                 }
             }
             return cpos;
+        }
+
+        int[2] getCaretPosition(ref const(Font) font, Caret caret)
+        {
+            auto temp = m_loc;
+            m_loc = caret;
+            auto result = getCaretPosition(font);
+            m_loc = temp;
+            return result;
         }
 
         /**
@@ -1661,6 +1845,19 @@ class SimpleTextArea : TextArea
             m_seekColumn = m_loc.col;
         }
 
+        int getLineWidth(ref const(Font) font, size_t line)
+        {
+            int width = font.width(' ');
+            auto _line = getLine(line);
+            foreach(char c; _line)
+            {
+                if (c == '\t')
+                    width += m_tabSpaces * font.width(' ');
+                else
+                    width += font.width(c);
+            }
+            return width;
+        }
 
         /**
         * Move left from caret until given char is found, return row, column and offset
@@ -1761,7 +1958,7 @@ class SimpleTextArea : TextArea
         string m_text = "";
 
         // Default number of spaces for a tab
-        uint tabSpaces = 4;
+        uint m_tabSpaces = 4;
 
         // Current column and row of the caret (insertion point)
         Caret m_loc;
@@ -2289,7 +2486,7 @@ class PieceTableTextArea : TextArea
             return m_currentLine;
         }
 
-        string getText(size_t from = 0, int n_lines = -1)
+        string getTextLines(size_t from = 0, int n_lines = -1)
         {
             Appender!string text;
 
@@ -2303,6 +2500,19 @@ class PieceTableTextArea : TextArea
                 range.popFront();
             }
             return text.data;
+        }
+
+        string getTextBetween(size_t from, size_t to)
+        in
+        {
+            assert(from < to);
+        }
+        body
+        {
+            auto a = getCaret(from);
+            auto b = getCaret(to);
+            auto block = getTextLines(a.row, (b.row - a.row) + 1);
+            return block[(a.col)..(a.col + (to-from))];
         }
 
         Caret getCaret(size_t index)
@@ -2371,7 +2581,7 @@ class PieceTableTextArea : TextArea
                     _x += font.width(c);
 
                 loc.col ++;
-                //loc.offset ++;
+                loc.offset ++;
             }
             return loc;
         }
@@ -2388,6 +2598,25 @@ class PieceTableTextArea : TextArea
                     loc[0] += m_tabSpaces*font.width(' ');
                 else
                     loc[0] += font.width(m_currentLine[_x]);
+                _x ++;
+            }
+
+            return [loc.x, loc.y];
+        }
+
+        int[2] getCaretPosition(ref const(Font) font, Caret caret)
+        {
+            int[2] loc;
+            loc[1] = caret.row * font.m_lineHeight;
+
+            size_t _x;
+            string line = byLine(caret.row).front;
+            while(_x < line.length && _x != caret.col)
+            {
+                if (line[_x] == '\t')
+                    loc[0] += m_tabSpaces*font.width(' ');
+                else
+                    loc[0] += font.width(line[_x]);
                 _x ++;
             }
 
@@ -2542,6 +2771,20 @@ class PieceTableTextArea : TextArea
             }
         }
 
+        int getLineWidth(ref const(Font) font, size_t line)
+        {
+            int width = font.width(' ');
+            auto _line = byLine(line).front;
+            foreach(char c; _line)
+            {
+                if (c == '\t')
+                    width += m_tabSpaces * font.width(' ');
+                else
+                    width += font.width(c);
+            }
+            return width;
+        }
+
         /**
         * Return a Range for iterating through the text by line, starting
         * at the given line number.
@@ -2646,7 +2889,7 @@ class PieceTableTextArea : TextArea
             }
         }
 
-        T byLine(T = LineRange)(size_t startLine = 0)
+        LineRange byLine(size_t startLine = 0)
         {
             return LineRange(m_spans[], startLine);
         }
