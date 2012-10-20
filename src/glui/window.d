@@ -370,8 +370,8 @@ version(Windows)
             if (m_keyState.keysDown != 0)
                 event.emit(Event(KeyHold(KEY.KC_NULL)));
 
-            //if (m_mouseState.buttonsDown != 0)
-                //mouseEvent.emit(EVENT_TYPE.BTN_HELD, &m_mouseState);
+            if (m_mouseState.buttonsDown != 0)
+                event.emit(Event(MouseHold(MouseHold.Button.LEFT)));
 
         }
 

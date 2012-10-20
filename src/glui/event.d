@@ -71,6 +71,7 @@ enum EventType
     MOUSEMOVE,
     MOUSECLICK,
     MOUSERELEASE,
+    MOUSEHOLD,
     MOUSEWHEEL,
     WINDOWPAINT,
     WINDOWMOVE,
@@ -219,6 +220,23 @@ struct MouseRelease
     private:
         Button m_button;
         int[2] m_pos;
+}
+
+struct MouseHold
+{
+    public:
+        enum Button {LEFT, RIGHT, MIDDLE}
+
+        this(Button button)
+        {
+            m_button = button;
+        }
+
+        @property Button button() { return m_button; }
+        @property EventType type() { return EventType.MOUSEHOLD; }
+
+    private:
+        Button m_button;
 }
 
 struct MouseWheel

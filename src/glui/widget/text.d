@@ -286,6 +286,8 @@ class WidgetText : WidgetWindow
         {
             super.render(Flag!"RenderChildren".no);
 
+            //m_vscroll.range = [0, m_text.nLines];
+
             if (m_font is null)
                 return;
 
@@ -311,13 +313,9 @@ class WidgetText : WidgetWindow
                 glScissor(clip[0], clip[1], clip[2], clip[3]);
 
                 renderHighlights(); // line highlights
-                //renderSelection();
-                auto b = benchmark!( {renderSelection(); })(1);  // text selection
-                std.stdio.writeln("Selection: ", b[0].to!("msecs",int));
+                renderSelection(); // text selection
 
-                auto startRow = 0;
-                if (m_allowVScroll)
-                    startRow = m_vscroll.current;
+                auto startRow = m_allowVScroll ? m_vscroll.current : 0;
                 auto _text = m_text.getTextLines(startRow, m_dim.y / m_font.m_lineHeight);
 
                 if (m_highlighter)
@@ -337,7 +335,6 @@ class WidgetText : WidgetWindow
             if (recurse)
                 renderChildren();
         }
-
 
         /**
         * Draw the caret
@@ -364,7 +361,6 @@ class WidgetText : WidgetWindow
             glPopMatrix();
         }
 
-
         /**
         * Helper for drawing a box, used for line highlights and selections.
         * Assume we are in render coordinates:
@@ -390,7 +386,6 @@ class WidgetText : WidgetWindow
                 glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
 
-
         /**
         * Draw line highlights
         */
@@ -413,7 +408,6 @@ class WidgetText : WidgetWindow
                         color);
             }
         }
-
 
         /**
         * Render the text selection background
@@ -478,7 +472,6 @@ class WidgetText : WidgetWindow
             }
         }
 
-
         /**
         * Setup coordinates for rendering.
         */
@@ -487,7 +480,6 @@ class WidgetText : WidgetWindow
             resetXCoord();
             resetYCoord();
         }
-
 
         /**
         * Set X coord for rendering.
@@ -501,7 +493,6 @@ class WidgetText : WidgetWindow
                 glTranslatef(-m_hscroll.current*m_font.m_maxWidth, 0, 0);
         }
 
-
         /**
         * Set Y coord for rendering.
         */
@@ -513,7 +504,6 @@ class WidgetText : WidgetWindow
             // if (m_allowVScroll)
             //    glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
-
 
         /**
         * Calculate the vertical offset for the selected alignment type.
@@ -550,7 +540,6 @@ class WidgetText : WidgetWindow
             return cast(int)yoffset;
         }
 
-
         /**
         * Dispatch events.
         */
@@ -578,6 +567,17 @@ class WidgetText : WidgetWindow
                 case KEYPRESS:
                 {
                     handleKey(event.get!KeyPress.key);
+                    break;
+                }
+                case MOUSEHOLD:
+                {
+                    if (amIDragging &&
+                        (m_allowVScroll && root.mouse.ypos > m_screenPos.y + m_dim.y ||
+                         m_allowHScroll && root.mouse.xpos > m_screenPos.x + m_dim.x ))
+                    {
+                        drag(root.mouse.pos, [0,0]);
+                        adjustVisiblePortion();
+                    }
                     break;
                 }
                 case MOUSECLICK:
@@ -611,7 +611,6 @@ class WidgetText : WidgetWindow
                 default: break;
             }
         } // event
-
 
         /**
         * Decide whether key events need to be processed (key repeats).
@@ -662,7 +661,6 @@ class WidgetText : WidgetWindow
             key = m_lastKey;
             return true;
         }
-
 
         /**
         * Handle key events
@@ -957,7 +955,6 @@ class WidgetText : WidgetWindow
 
         } // handleKey
 
-
         /**
         * Update the visible portion of the text, to make the caret visible
         */
@@ -996,7 +993,6 @@ class WidgetText : WidgetWindow
             }
         }
 
-
         /**
         * Use drag events for updating text selection.
         */
@@ -1005,7 +1001,6 @@ class WidgetText : WidgetWindow
             m_pendingDrag = true;
             return true;
         }
-
 
         /**
         * Use drag events for updating text selection.
@@ -1030,7 +1025,6 @@ class WidgetText : WidgetWindow
             m_caretPos = m_text.getCaretPosition(m_font);
         }
 
-
         /**
         * Update the text selection range with current caret.
         */
@@ -1039,7 +1033,6 @@ class WidgetText : WidgetWindow
             m_selectionRange[1] = m_text.offset;
             m_refreshCache = true;
         }
-
 
         /**
         * Clear the current text selection info.
@@ -1054,7 +1047,6 @@ class WidgetText : WidgetWindow
             needRender();
         }
 
-
         /**
         * Returns: true if text is selected.
         */
@@ -1062,7 +1054,6 @@ class WidgetText : WidgetWindow
         {
             return m_selectionRange[0] != m_selectionRange[1];
         }
-
 
         /**
         * Deletes the currently selected text.
@@ -1077,7 +1068,6 @@ class WidgetText : WidgetWindow
             eventSignal.emit(this, WidgetEvent(TextRemove(deleted)));
             clearSelection();
         }
-
 
         /**
         * Returns: the currently selected text as a string.
@@ -1180,10 +1170,10 @@ class WidgetText : WidgetWindow
         RGBA m_textColor = {1,1,1,1};
         RGBA m_textBgColor = {0,0,0,0};
 
-        bool m_allowVScroll = false;
-        bool m_allowHScroll = false;
         WidgetScroll m_vscroll;
         WidgetScroll m_hscroll;
+        bool m_allowVScroll = false;
+        bool m_allowHScroll = false;
 
         long m_caretBlinkDelay;
         bool m_drawCaret;

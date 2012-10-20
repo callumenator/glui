@@ -1181,7 +1181,6 @@ class WidgetRoot : Widget
             changeFocus(null);
         }
 
-
         // Cycle the focus amongst top level children !! TODO this doesn't respect visibility
         void cycleFocus()
         {
@@ -1413,10 +1412,10 @@ class WidgetRoot : Widget
         const bool isAChildFocused(const Widget w) const { return w.isAChildFocused; }
 
         // Widgets can check if they are being dragged
-        const bool isDragging(const Widget w) const { return ( (m_focused is w) && m_dragging); }
+        const bool isDragging(const Widget w) const { return m_recieveDrag is w; }
 
         // Widgets can check if they are being resized
-        const bool isResizing(const Widget w) const { return ( (m_focused is w) && m_resizing); }
+        const bool isResizing(const Widget w) const { return m_recieveResize is w; }
 
         // Widgets can check if they hovered
         const bool isHovered(const Widget w) const { return m_hovered is w; }
@@ -1441,6 +1440,9 @@ class WidgetRoot : Widget
 
         // Get the platform window we are running in
         @property Window window() { return m_window; }
+
+        // Get the mouse state
+        @property const(MouseState)* mouse() { return m_window.mouseState; }
 
         // Return true if CTRL key is down
         override @property bool ctrlIsDown() const
@@ -1762,7 +1764,6 @@ class WidgetWindow : Widget
 }
 
 
-
 class WidgetPanWindow : WidgetWindow
 {
     package this(WidgetRoot root, Widget parent)
@@ -1893,7 +1894,6 @@ class WidgetPanWindow : WidgetWindow
         int[2][Widget] m_opositions;
         bool m_setPositions = true;
 }
-
 
 
 class WidgetScroll : WidgetWindow
