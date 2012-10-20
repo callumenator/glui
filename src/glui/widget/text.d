@@ -311,8 +311,9 @@ class WidgetText : WidgetWindow
                 glScissor(clip[0], clip[1], clip[2], clip[3]);
 
                 renderHighlights(); // line highlights
-                //auto b = benchmark!( {renderSelection(); })(1);  // text selection
-                //std.stdio.writeln("Selection: ", b[0].to!("msecs",int));
+                //renderSelection();
+                auto b = benchmark!( {renderSelection(); })(1);  // text selection
+                std.stdio.writeln("Selection: ", b[0].to!("msecs",int));
 
                 auto startRow = 0;
                 if (m_allowVScroll)
@@ -1011,11 +1012,7 @@ class WidgetText : WidgetWindow
         */
         override void drag(int[2] pos, int[2] delta)
         {
-            auto tickIn = Clock.currSystemTick().msecs();
-
             auto loc = getCaret(pos.x, pos.y);
-            std.stdio.writeln("getCaret: ", Clock.currSystemTick().msecs() - tickIn);
-            tickIn = Clock.currSystemTick().msecs();
 
             if (m_pendingDrag)
             {
@@ -1030,13 +1027,7 @@ class WidgetText : WidgetWindow
             }
 
             m_text.moveCaret(loc.row, loc.col);
-            std.stdio.writeln("moveCaret: ", Clock.currSystemTick().msecs() - tickIn);
-            tickIn = Clock.currSystemTick().msecs();
-
             m_caretPos = m_text.getCaretPosition(m_font);
-            std.stdio.writeln("getCaretPos: ", Clock.currSystemTick().msecs() - tickIn);
-
-
         }
 
 
@@ -1480,23 +1471,23 @@ class SimpleTextArea : TextArea
 {
     public:
 
-        @property size_t col() const { return m_loc.col; }
-        @property size_t row() const { return m_loc.row; }
-        @property size_t offset() const { return m_loc.offset; }
-        @property size_t nLines() const { return m_text.count('\n') + 1; }
+        override @property size_t col() const { return m_loc.col; }
+        override @property size_t row() const { return m_loc.row; }
+        override @property size_t offset() const { return m_loc.offset; }
+        override @property size_t nLines() const { return m_text.count('\n') + 1; }
 
         /**
         * Set and clear all text
         */
 
-        void set(string s)
+        override void set(string s)
         {
             m_text.clear;
             m_loc.offset = 0;
             insert(s);
         }
 
-        void clear()
+        override void clear()
         {
             m_text.clear;
             m_loc.offset = 0;
@@ -1509,12 +1500,12 @@ class SimpleTextArea : TextArea
         * Text insertion...
         */
 
-        void insert(char c)
+        override void insert(char c)
         {
             insert(c.to!string);
         }
 
-        void insert(string s)
+        override void insert(string s)
         {
             insertInPlace(m_text, m_loc.offset, s);
 
@@ -1528,14 +1519,14 @@ class SimpleTextArea : TextArea
         * Text deletion...
         */
 
-        string del()
+        override string del()
         {
             if (m_loc.offset < m_text.length)
                 return deleteSelection(m_loc.offset, m_loc.offset);
             else return "";
         }
 
-        string backspace()
+        override string backspace()
         {
             if (m_loc.offset > 0)
             {
@@ -1547,7 +1538,7 @@ class SimpleTextArea : TextArea
             return "";
         }
 
-        string remove(size_t from, size_t to)
+        override string remove(size_t from, size_t to)
         {
             return deleteSelection(from, to);
         }
@@ -1556,7 +1547,7 @@ class SimpleTextArea : TextArea
         * Text and caret retrieval...
         */
 
-        char leftText()
+        override char leftText()
         {
             if (m_loc.offset <= 0)
                 return cast(char)0;
@@ -1564,7 +1555,7 @@ class SimpleTextArea : TextArea
             return m_text[m_loc.offset-1];
         }
 
-        char rightText()
+        override char rightText()
         {
             if (cast(int)(m_loc.offset) > cast(int)(m_text.length - 1))
                 return cast(char)0;
@@ -1572,7 +1563,7 @@ class SimpleTextArea : TextArea
             return m_text[m_loc.offset];
         }
 
-        string getLine(uint _row)
+        override string getLine(uint _row)
         {
             auto lines = splitLines(m_text);
             if (_row < lines.length)
@@ -1581,12 +1572,12 @@ class SimpleTextArea : TextArea
                 return "";
         }
 
-        string getCurrentLine()
+        override string getCurrentLine()
         {
             return getLine(row);
         }
 
-        string getTextLines(size_t from = 0, int n_lines = -1)
+        override string getTextLines(size_t from = 0, int n_lines = -1)
         {
             auto lines = splitLines(m_text);
             if (from >= lines.length)
@@ -1606,7 +1597,7 @@ class SimpleTextArea : TextArea
             return text.data;
         }
 
-        string getTextBetween(size_t from, size_t to)
+        override string getTextBetween(size_t from, size_t to)
         in
         {
             assert(from < to);
@@ -1617,7 +1608,7 @@ class SimpleTextArea : TextArea
             return m_text[from..to+1];
         }
 
-        Caret getCaret(size_t index)
+        override Caret getCaret(size_t index)
         {
             auto temp = m_loc;
             Caret c;
@@ -1637,7 +1628,7 @@ class SimpleTextArea : TextArea
             return c;
         }
 
-        Caret getCaret(ref const(Font) font, int x, int y)
+        override Caret getCaret(ref const(Font) font, int x, int y)
         {
             Caret _loc;
 
@@ -1674,7 +1665,7 @@ class SimpleTextArea : TextArea
             return _loc;
         }
 
-        int[2] getCaretPosition(ref const(Font) font)
+        override int[2] getCaretPosition(ref const(Font) font)
         {
             int[2] cpos = [0,0];
             foreach(i, char c; m_text)
@@ -1699,7 +1690,7 @@ class SimpleTextArea : TextArea
             return cpos;
         }
 
-        int[2] getCaretPosition(ref const(Font) font, Caret caret)
+        override int[2] getCaretPosition(ref const(Font) font, Caret caret)
         {
             auto temp = m_loc;
             m_loc = caret;
@@ -1712,7 +1703,7 @@ class SimpleTextArea : TextArea
         * Caret manipulation...
         */
 
-        bool moveLeft()
+        override bool moveLeft()
         {
             if (m_loc.offset > 0)
             {
@@ -1731,7 +1722,7 @@ class SimpleTextArea : TextArea
             return true;
         }
 
-        bool moveRight()
+        override bool moveRight()
         {
             if (m_loc.offset < m_text.length)
             {
@@ -1751,7 +1742,7 @@ class SimpleTextArea : TextArea
             return true;
         }
 
-        bool moveUp()
+        override bool moveUp()
         {
             uint preMoveRow = m_loc.row,
                  preMoveColumn = m_loc.col,
@@ -1779,7 +1770,7 @@ class SimpleTextArea : TextArea
             return true;
         }
 
-        bool moveDown()
+        override bool moveDown()
         {
             uint preMoveRow = m_loc.row,
                  preMoveColumn = m_loc.col,
@@ -1807,7 +1798,7 @@ class SimpleTextArea : TextArea
             return true;
         }
 
-        void jumpLeft()
+        override void jumpLeft()
         {
             if (col == 0)
                 return;
@@ -1828,7 +1819,7 @@ class SimpleTextArea : TextArea
             m_seekColumn = m_loc.col;
         }
 
-        void jumpRight()
+        override void jumpRight()
         {
             auto endCol = col + countToEndOfLine();
 
@@ -1849,14 +1840,14 @@ class SimpleTextArea : TextArea
             m_seekColumn = m_loc.col;
         }
 
-        void home() // home key
+        override void home() // home key
         {
             while (m_loc.col != 0)
                 moveLeft();
             m_seekColumn = m_loc.col;
         }
 
-        void end() // end key
+        override void end() // end key
         {
             if (m_loc.offset == m_text.length)
                 return;
@@ -1867,21 +1858,21 @@ class SimpleTextArea : TextArea
             m_seekColumn = m_loc.col;
         }
 
-        void gotoStartOfText()
+        override void gotoStartOfText()
         {
             while(m_loc.offset > 0)
                 moveLeft();
             m_seekColumn = m_loc.col;
         }
 
-        void gotoEndOfText()
+        override void gotoEndOfText()
         {
             while(m_loc.offset < m_text.length)
                 moveRight();
             m_seekColumn = m_loc.col;
         }
 
-        void moveCaret(uint newRow, uint newCol)
+        override void moveCaret(uint newRow, uint newCol)
         {
             if (newRow == row && newCol == col)
                 return;
@@ -1900,7 +1891,7 @@ class SimpleTextArea : TextArea
             m_seekColumn = m_loc.col;
         }
 
-        int getLineWidth(ref const(Font) font, size_t line)
+        override int getLineWidth(ref const(Font) font, size_t line)
         {
             int width = font.width(' ');
             auto _line = getLine(line);
@@ -2390,10 +2381,10 @@ class PieceTableTextArea : TextArea
 {
     public:
 
-        @property size_t row() const { return m_caret.row; }
-        @property size_t col() const { return m_caret.col; }
-        @property size_t offset() { return m_caret.offset; }
-        @property size_t nLines() const { return m_totalNewLines + 1; }
+        override @property size_t row() const { return m_caret.row; }
+        override @property size_t col() const { return m_caret.col; }
+        override @property size_t offset() { return m_caret.offset; }
+        override @property size_t nLines() const { return m_totalNewLines + 1; }
 
         this()
         {
@@ -2410,13 +2401,13 @@ class PieceTableTextArea : TextArea
         * Set and clear all text
         */
 
-        void set(string s)
+        override void set(string s)
         {
             loadOriginal(s);
             m_caret = Caret(0,0,0);
         }
 
-        void clear()
+        override void clear()
         {
             m_original.clear;
             m_edit.clear;
@@ -2429,12 +2420,12 @@ class PieceTableTextArea : TextArea
         * Text insertion...
         */
 
-        void insert(char s)
+        override void insert(char s)
         {
             insertAt(m_edit, m_caret.offset, s.to!string);
         }
 
-        void insert(string s)
+        override void insert(string s)
         {
             insertAt(m_edit, m_caret.offset, s);
         }
@@ -2443,19 +2434,19 @@ class PieceTableTextArea : TextArea
         * Text deletion...
         */
 
-        string del()
+        override string del()
         {
             return remove(m_caret.offset, m_caret.offset);
         }
 
-        string backspace()
+        override string backspace()
         {
             if (m_caret.offset > 0)
                 return remove(m_caret.offset-1, m_caret.offset-1);
             else return "";
         }
 
-        string remove(size_t from, size_t to)
+        override string remove(size_t from, size_t to)
         in
         {
             //assert(from < to);
@@ -2502,7 +2493,7 @@ class PieceTableTextArea : TextArea
         * Text and caret retrieval...
         */
 
-        char leftText()
+        override char leftText()
         {
             if (m_caret.offset == 0)
                 return cast(char)0;
@@ -2511,7 +2502,7 @@ class PieceTableTextArea : TextArea
             else return m_currentLine[m_caret.col-1];
         }
 
-        char rightText()
+        override char rightText()
         {
             if (m_caret.row == m_totalNewLines && m_caret.col == m_currentLine.length)
                 return cast(char)0;
@@ -2520,7 +2511,7 @@ class PieceTableTextArea : TextArea
             else return m_currentLine[m_caret.col];
         }
 
-        string getLine(size_t line)
+        override string getLine(size_t line)
         {
             if (line == m_caret.row)
                 return m_currentLine;
@@ -2528,12 +2519,12 @@ class PieceTableTextArea : TextArea
                 return byLine(line).front;
         }
 
-        string getCurrentLine()
+        override string getCurrentLine()
         {
             return m_currentLine;
         }
 
-        string getTextLines(size_t from = 0, int n_lines = -1)
+        override string getTextLines(size_t from = 0, int n_lines = -1)
         {
             Appender!string text;
 
@@ -2549,7 +2540,7 @@ class PieceTableTextArea : TextArea
             return text.data;
         }
 
-        string getTextBetween(size_t from, size_t to)
+        override string getTextBetween(size_t from, size_t to)
         in
         {
             assert(from < to);
@@ -2562,9 +2553,39 @@ class PieceTableTextArea : TextArea
             return block[(a.col)..(a.col + (to-from))];
         }
 
-        Caret getCaret(size_t index)
+        override Caret getCaret(size_t index)
         {
-            Caret result;
+            Caret loc;
+
+            auto r = m_spans[];
+            while(!r.empty && loc.offset + r.front.length < index)
+            {
+                loc.offset += r.front.length;
+                loc.row += r.front.newLines;
+                r.popFront();
+            }
+
+            if (r.empty)
+                assert(false, "getCaret: Index out of bounds");
+
+            int i = 0;
+            while(i < r.front.length && loc.offset != index)
+            {
+                if (r.front.buffer[i] == '\n')
+                {
+                    loc.row ++;
+                    loc.col = 0;
+                }
+                else
+                    loc.col ++;
+
+                loc.offset ++;
+                i++;
+            }
+            return loc;
+
+
+            /++
 
             size_t offset;
             auto r = byLine();
@@ -2589,15 +2610,12 @@ class PieceTableTextArea : TextArea
                 result.col = index - result.offset;
                 result.offset += result.col;
             }
+            ++/
 
-            return result;
         }
 
-        Caret getCaret(ref const(Font) font, int x, int y)
+        override Caret getCaret(ref const(Font) font, int x, int y)
         {
-            // Tooo sloooowwwww....
-
-
             Caret loc;
 
             if (m_spans.empty)
@@ -2607,20 +2625,11 @@ class PieceTableTextArea : TextArea
             loc.row = cast(int) (y / font.m_lineHeight);
             loc.row = min(loc.row, m_totalNewLines);
 
-            if (loc.row > 0)
-            {
-                int r = 0;
-                auto range = byLine(0);
-                while(r != loc.row)
-                {
-                    loc.offset += range.front.length + 1; // +1 counts the newline '\n'
-                    range.popFront();
-                    r ++;
-                }
-            }
+            auto r = byLine(loc.row);
+            loc.offset = r.offset;
 
             float _x = 0;
-            foreach(char c; getLine(loc.row))
+            foreach(char c; r.front)
             {
                 if (_x > x)
                     break;
@@ -2636,7 +2645,7 @@ class PieceTableTextArea : TextArea
             return loc;
         }
 
-        int[2] getCaretPosition(ref const(Font) font)
+        override int[2] getCaretPosition(ref const(Font) font)
         {
             int[2] loc;
             loc[1] = m_caret.row * font.m_lineHeight;
@@ -2654,7 +2663,7 @@ class PieceTableTextArea : TextArea
             return [loc.x, loc.y];
         }
 
-        int[2] getCaretPosition(ref const(Font) font, Caret caret)
+        override int[2] getCaretPosition(ref const(Font) font, Caret caret)
         {
             int[2] loc;
             loc[1] = caret.row * font.m_lineHeight;
@@ -2677,7 +2686,7 @@ class PieceTableTextArea : TextArea
         * Caret manipulation...
         */
 
-        bool moveLeft()
+        override bool moveLeft()
         {
             if (m_caret.col > 0)
             {
@@ -2701,7 +2710,7 @@ class PieceTableTextArea : TextArea
             return false;
         }
 
-        bool moveRight()
+        override bool moveRight()
         {
             if (m_caret.col < m_currentLine.length) // move right along the current line
             {
@@ -2725,7 +2734,7 @@ class PieceTableTextArea : TextArea
             return false;
         }
 
-        bool moveUp()
+        override bool moveUp()
         {
             if (m_caret.row > 0)
             {
@@ -2739,7 +2748,7 @@ class PieceTableTextArea : TextArea
             return false;
         }
 
-        bool moveDown()
+        override bool moveDown()
         {
             if (m_caret.row < m_totalNewLines)
             {
@@ -2753,7 +2762,7 @@ class PieceTableTextArea : TextArea
             return false;
         }
 
-        void jumpLeft()
+        override void jumpLeft()
         {
             if (isDelim(leftText) && !isBlank(leftText))
             {
@@ -2765,7 +2774,7 @@ class PieceTableTextArea : TextArea
             while(!isDelim(leftText) && moveLeft()){}
         }
 
-        void jumpRight()
+        override void jumpRight()
         {
             if (isDelim(rightText) && !isBlank(rightText))
             {
@@ -2777,32 +2786,32 @@ class PieceTableTextArea : TextArea
             while(isBlank(rightText) && moveRight()){}
         }
 
-        void home()
+        override void home()
         {
             m_caret.offset -= m_caret.col;
             m_caret.col = 0;
             m_seekColumn = m_caret.col;
         }
 
-        void end()
+        override void end()
         {
             m_caret.offset += m_currentLine.length - m_caret.col;
             m_caret.col = m_currentLine.length;
             m_seekColumn = m_caret.col;
         }
 
-        void gotoStartOfText()
+        override void gotoStartOfText()
         {
             setCaret(0);
         }
 
-        void gotoEndOfText()
+        override void gotoEndOfText()
         {
             while(moveDown()) {}
             while(moveRight()) {}
         }
 
-        void moveCaret(size_t newRow, size_t newCol)
+        override void moveCaret(size_t newRow, size_t newCol)
         {
             if (newRow == m_caret.row && newCol == m_caret.col)
                 return;
@@ -2845,7 +2854,7 @@ class PieceTableTextArea : TextArea
             m_currentLine = byLine(cRow).front;
         }
 
-        int getLineWidth(ref const(Font) font, size_t line)
+        override int getLineWidth(ref const(Font) font, size_t line)
         {
             int width = font.width(' ');
             string _line = m_currentLine;
@@ -2870,6 +2879,7 @@ class PieceTableTextArea : TextArea
             SpanList.Range r;
             string buffer;
             string lineSlice;
+            size_t offset;
             bool finished;
 
             this(SpanList.Range list, size_t startLine)
@@ -2879,6 +2889,7 @@ class PieceTableTextArea : TextArea
                 while(!r.empty && bufferStartRow + r.front.newLines < startLine)
                 {
                     bufferStartRow += r.front.newLines;
+                    offset += r.front.length;
                     r.popFront();
                 }
 
@@ -2895,12 +2906,14 @@ class PieceTableTextArea : TextArea
                     {
                         if (buffer[i] == '\n')
                             bufferStartRow ++;
-                        chomp++;
+                        chomp ++;
                         i++;
                     }
                     buffer = buffer[chomp..$];
+                    offset += chomp;
                 }
 
+                // Fill up the buffer with at least one line
                 if (count(buffer, '\n') == 0)
                 {
                     int gotNewlines = 0;
@@ -2938,7 +2951,10 @@ class PieceTableTextArea : TextArea
             {
                 auto newAt = countUntil(buffer, '\n');
                 if (newAt != -1)
+                {
                     buffer = buffer[newAt+1..$];
+                    offset += newAt + 1;
+                }
                 else
                 {
                     finished = true;
