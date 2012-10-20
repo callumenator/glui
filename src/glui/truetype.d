@@ -94,7 +94,6 @@ public
         }
 
         font.m_face = glyph.m_face;
-        writeln(font, ", ", glyph);
         int ret = createFont(glyph, font);
 
         // Store the loaded font

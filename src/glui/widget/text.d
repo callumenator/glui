@@ -311,7 +311,8 @@ class WidgetText : WidgetWindow
                 glScissor(clip[0], clip[1], clip[2], clip[3]);
 
                 renderHighlights(); // line highlights
-                renderSelection();  // text selection
+                //auto b = benchmark!( {renderSelection(); })(1);  // text selection
+                //std.stdio.writeln("Selection: ", b[0].to!("msecs",int));
 
                 auto startRow = 0;
                 if (m_allowVScroll)
@@ -421,15 +422,6 @@ class WidgetText : WidgetWindow
             if (!haveSelection)
                 return;
 
-            if (m_allowVScroll)
-                glTranslatef(0, m_vscroll.current*m_font.m_lineHeight, 0);
-
-            scope(exit)
-            {
-                if (m_allowVScroll)
-                    glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
-            }
-
             auto startRow = 0;
             if (m_allowVScroll)
                 startRow = m_vscroll.current;
@@ -452,11 +444,11 @@ class WidgetText : WidgetWindow
             else
             {
                 // Only draw the visible part of the selection
-                auto lineRange = [startRow, startRow + m_dim.y/m_font.m_lineHeight];
-                std.stdio.writeln(lineRange);
+                auto lineRange0 = startRow;
+                auto lineRange1 = startRow + cast(int)(m_dim.y/m_font.m_lineHeight) - 1;
 
                 // Quick rejection tests
-                if (lowerCaret.row > lineRange[1] || upperCaret.row < lineRange[0])
+                if (lowerCaret.row > lineRange1 || upperCaret.row < lineRange0)
                     return;
 
                 // Draw first selection row
@@ -472,9 +464,9 @@ class WidgetText : WidgetWindow
                 {
                     foreach(int row; lowerCaret.row+1..upperCaret.row)
                     {
-                        if (row < lineRange[0])
+                        if (row < lineRange0)
                             continue;
-                        if (row > lineRange[1])
+                        if (row > lineRange1)
                             return;
 
                         float y0 = -offset0[1] - (row - cast(int)(lowerCaret.row))*m_font.m_lineHeight;
@@ -593,8 +585,7 @@ class WidgetText : WidgetWindow
                     auto pos = event.get!MouseClick.pos;
                     auto rc = getCaret(pos.x, pos.y);
 
-                    //m_text.moveCaret(rc.row, rc.col);
-                    std.stdio.writeln("MoveCaret: ", (benchmark!( { text.moveCaret(rc.row, rc.col); } )(1))[0].to!("msecs", int));
+                    m_text.moveCaret(rc.row, rc.col);
 
                     if (root.shiftIsDown)
                     {
@@ -1020,7 +1011,11 @@ class WidgetText : WidgetWindow
         */
         override void drag(int[2] pos, int[2] delta)
         {
+            auto tickIn = Clock.currSystemTick().msecs();
+
             auto loc = getCaret(pos.x, pos.y);
+            std.stdio.writeln("getCaret: ", Clock.currSystemTick().msecs() - tickIn);
+            tickIn = Clock.currSystemTick().msecs();
 
             if (m_pendingDrag)
             {
@@ -1035,7 +1030,13 @@ class WidgetText : WidgetWindow
             }
 
             m_text.moveCaret(loc.row, loc.col);
+            std.stdio.writeln("moveCaret: ", Clock.currSystemTick().msecs() - tickIn);
+            tickIn = Clock.currSystemTick().msecs();
+
             m_caretPos = m_text.getCaretPosition(m_font);
+            std.stdio.writeln("getCaretPos: ", Clock.currSystemTick().msecs() - tickIn);
+
+
         }
 
 
@@ -2594,6 +2595,9 @@ class PieceTableTextArea : TextArea
 
         Caret getCaret(ref const(Font) font, int x, int y)
         {
+            // Tooo sloooowwwww....
+
+
             Caret loc;
 
             if (m_spans.empty)
@@ -2800,11 +2804,8 @@ class PieceTableTextArea : TextArea
 
         void moveCaret(size_t newRow, size_t newCol)
         {
-            //if (newRow == m_caret.row && newCol == m_caret.col)
-            //    return;
-
-            // Why is this so slow? It's O(n) currently...
-
+            if (newRow == m_caret.row && newCol == m_caret.col)
+                return;
 
             auto r = m_spans[];
             size_t cCol = 0, cRow = 0, cOff = 0;
@@ -2847,7 +2848,9 @@ class PieceTableTextArea : TextArea
         int getLineWidth(ref const(Font) font, size_t line)
         {
             int width = font.width(' ');
-            auto _line = byLine(line).front;
+            string _line = m_currentLine;
+            if (line != m_caret.row)
+                _line = byLine(line).front;
             foreach(char c; _line)
             {
                 if (c == '\t')
