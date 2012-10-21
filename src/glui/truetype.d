@@ -701,6 +701,14 @@ mixin(grammar(`
 `));
 
 
+unittest /** Benchmark the parser **/
+{
+    //import std.file, std.datetime, std.conv;
+    //string s = readText("c:/d/dmd2/src/phobos/std/datetime.d");
+    //writeln( (benchmark!( {ParseD(s);} )(10))[0].to!("msecs", int));
+    //assert(false, "End of Bench");
+}
+
 class DSyntaxHighlighter : SyntaxHighlighter
 {
     this()

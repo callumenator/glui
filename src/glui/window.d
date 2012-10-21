@@ -357,8 +357,6 @@ version(Windows)
         // Poll for events.
         override void poll()
         {
-            //writeln(m_keyState.keys[KEY.KC_BRACELEFT]);
-
             MSG msg;
             while (PeekMessageA(&msg, null, 0, 0, PM_REMOVE))
             {

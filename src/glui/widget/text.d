@@ -434,7 +434,9 @@ class WidgetText : WidgetWindow
             float[4] selectionColor = [0.,0.,1.,1.];
             if (lowerCaret.row == upperCaret.row)
             {
-                drawBox(offset0[0], -offset0[1], offset1[0], -offset0[1] + m_font.m_lineHeight, selectionColor);
+                drawBox(offset0[0], -offset0[1],
+                        offset1[0], -offset0[1] + m_font.m_lineHeight,
+                        selectionColor);
             }
             else
             {
@@ -1080,7 +1082,6 @@ class WidgetText : WidgetWindow
         body
         {
             auto r = reduce!(min, max)(m_selectionRange);
-            std.stdio.writeln(typeof(m_text.text).stringof);
             return m_text.getTextBetween(r[0],r[1]);
         }
 
@@ -2054,6 +2055,8 @@ class SpanList
 
     Node head, tail; // sentinels
     size_t length;
+    Tuple!(Node,"node",size_t,"index") lastInsert;
+    Tuple!(Node,"node",size_t,"index") lastRemove;
 
     this()
     {
@@ -2108,29 +2111,45 @@ class SpanList
     * Inserts the span at the given logical index.
     * Returns: the Node corresponding to the new Span
     */
-    Node insertAt(size_t index, Span s)
+    Node insertAt(size_t index, Span s, bool allowMerge = true)
     {
+        // Grow the last-used node if possible
+        if (allowMerge && lastInsert.node !is null && index == lastInsert.index)
+        {
+            lastInsert.node.payload.buffer ~= s.buffer;
+            lastInsert.node.payload.newLines += s.newLines;
+            lastInsert.index = index + s.length;
+            return lastInsert.node;
+        }
+
+        // Could not grow last node, so create a new one
+        Node newNode = null;
+
         if (index == 0)
-            return insertAfter(head, s);
+            newNode = insertAfter(head, s);
         else
         {
             auto found = findNode(index);
 
             if (found.node is head || found.node is tail)
-                return insertBack(s);
+                newNode = insertBack(s);
 
             if (found.offset == 0)
-                return insertBefore(found.node, s);
+                newNode = insertBefore(found.node, s);
             else if (found.offset == found.span.length)
-                return insertAfter(found.node, s);
+                newNode = insertAfter(found.node, s);
             else
             {
                 auto splitNode = found.span.split(found.offset);
                 auto newNodes = insertAfter(found.node, [splitNode[0], s, splitNode[1]]);
                 remove(found.node);
-                return newNodes[1];
+                newNode = newNodes[1];
             }
         }
+
+        lastInsert.index = index + s.length;
+        lastInsert.node = newNode;
+        return newNode;
     }
 
     /**
@@ -2176,6 +2195,7 @@ class SpanList
     * Returns: A Tuple containing an array of Spans removed, and
     * spans inserted at the left and right 'edges' of the removed Spans.
     */
+    /++
     Tuple!(Span[],"del",Node,"lAdd",Node,"rAdd") remove(size_t from, size_t to)
     {
         Tuple!(Span[],"del",Node,"lAdd",Node,"rAdd") result;
@@ -2184,6 +2204,18 @@ class SpanList
         if (left.node is tail) return result;
 
         auto right = findNode(to);
+
+        // If the left and right node are the same, we may be able to shrink
+        if (left is right)
+        {
+            if (left.offset == 0)
+                left.node.payload = Span(left.span.buffer[0..(to-from)]);
+            else if (right.offset == right.span.length)
+                left.node.payload = Span(left.span.buffer[right.offset..$]);
+
+            writeln("SHRUNK NODE");
+            return result;
+        }
 
         if (left.offset > 0)
         {
@@ -2201,6 +2233,63 @@ class SpanList
 
         result.del = remove(left.node, right.node);
         return result;
+    }
+    ++/
+    string remove(size_t from, size_t to)
+    {
+        string removed;
+
+        auto left = findNode(from);
+        if (left.node is tail) return removed;
+
+        auto right = findNode(to);
+
+        // If the left and right node are the same, we may be able to shrink
+        if (left.node is right.node)
+        {
+            if (left.offset == 0)
+            {
+                removed = left.span.buffer[0..(to-from+1)];
+                auto newSpan = Span(left.span.buffer[(to-from+1)..$]);
+
+                if (newSpan.length == 0)
+                    remove(left.node);
+                else
+                    left.node.payload = newSpan;
+
+                return removed;
+            }
+            else if (right.offset == right.span.length - 1)
+            {
+                removed = left.span.buffer[right.offset..$];
+                auto newSpan = Span(left.span.buffer[0..right.offset]);
+
+                if (newSpan.length == 0)
+                    remove(left.node);
+                else
+                    left.node.payload = newSpan;
+
+                return removed;
+            }
+        }
+
+        if (left.offset > 0)
+        {
+            removed = left.span.buffer[left.offset..$];
+            auto newSpan = Span(left.span.buffer[0..left.offset]);
+            insertBefore(left.node, newSpan);
+        }
+
+        if (right.node is tail)
+            right.node = tail.prev;
+        else if (right.offset + 1 < right.span.length)
+        {
+            removed ~= right.span.buffer[0..right.offset+1];
+            auto newSpan = Span(right.span.buffer[right.offset+1..$]);
+            insertAfter(right.node, newSpan);
+        }
+        remove(left.node, right.node);
+        return removed;
     }
 
     /**
@@ -2412,12 +2501,12 @@ class PieceTableTextArea : TextArea
 
         override void insert(char s)
         {
-            insertAt(m_edit, m_caret.offset, s.to!string);
+            insertAt(m_edit, m_caret.offset, s.to!string, true);
         }
 
         override void insert(string s)
         {
-            insertAt(m_edit, m_caret.offset, s);
+            insertAt(m_edit, m_caret.offset, s, true);
         }
 
         /**
@@ -2445,20 +2534,13 @@ class PieceTableTextArea : TextArea
         }
         body
         {
-            auto mods = m_spans.remove(from, to);
+            auto removed = m_spans.remove(from, to);
 
-            if (mods.del.length == 0)
+            if (removed.length == 0)
                 return "";
 
             // Calculate new caret location
-            auto totalDel = reduce!("a + b.newLines")(0, mods.del);
-            auto removed = reduce!("a ~ b.buffer")("", mods.del);
-
-            if (mods.lAdd !is null)
-                totalDel -= mods.lAdd.payload.newLines;
-            if (mods.rAdd !is null)
-                totalDel -= mods.rAdd.payload.newLines;
-
+            auto totalDel = removed.count('\n');
             m_totalNewLines -= totalDel;
             auto length = to - from + 1; // this includes newlines
 
@@ -2542,7 +2624,6 @@ class PieceTableTextArea : TextArea
             auto block = getTextLines(a.row, (b.row - a.row) + 1);
             return block[(a.col)..(a.col + (to-from))];
         }
-
         override Caret getCaret(size_t index)
         {
             Caret loc;
@@ -2562,46 +2643,14 @@ class PieceTableTextArea : TextArea
             while(i < r.front.length && loc.offset != index)
             {
                 if (r.front.buffer[i] == '\n')
-                {
                     loc.row ++;
-                    loc.col = 0;
-                }
-                else
-                    loc.col ++;
 
                 loc.offset ++;
                 i++;
             }
+
+            loc.col = loc.offset - byLine(loc.row).offset;
             return loc;
-
-
-            /++
-
-            size_t offset;
-            auto r = byLine();
-            while(!r.empty && result.offset + r.front.length + 1 < index)
-            {
-                result.offset += r.front.length + 1; // count the newline
-                result.col = r.front.length;
-                result.row ++;
-                r.popFront();
-            }
-
-            if (r.empty)
-                return result;
-
-            if (index == result.offset + r.front.length + 1)
-            {
-                result.row ++;
-                result.col = 0;
-            }
-            else
-            {
-                result.col = index - result.offset;
-                result.offset += result.col;
-            }
-            ++/
-
         }
 
         override Caret getCaret(ref const(Font) font, int x, int y)
@@ -2621,7 +2670,7 @@ class PieceTableTextArea : TextArea
             float _x = 0;
             foreach(char c; r.front)
             {
-                if (_x > x)
+                if (_x >= x)
                     break;
 
                 if (c == '\t')
@@ -2806,42 +2855,21 @@ class PieceTableTextArea : TextArea
             if (newRow == m_caret.row && newCol == m_caret.col)
                 return;
 
-            auto r = m_spans[];
-            size_t cCol = 0, cRow = 0, cOff = 0;
-            while(!r.empty && cRow + r.front.newLines < newRow)
+            size_t cCol = 0, cOff = 0, cRow = newRow;
+            auto r = byLine(newRow);
+            cOff = r.offset;
+            int i;
+            while(i < r.front.length && cCol != newCol)
             {
-                cRow += r.front.newLines;
-                cOff += r.front.length;
-                r.popFront();
-            }
-
-            if (r.empty)
-                assert(false);
-
-            auto line = r.front.buffer;
-            auto newAt = line.countUntil('\n');
-
-            int i = 0;
-            while(i < line.length && cRow != newRow)
-            {
-                if (line[i] == '\n')
-                    cRow++;
-                i++;
-                cOff++;
-            }
-
-            while(i < line.length && cCol != newCol) // this could be optimized, but meh
-            {
-                i++;
-                cCol++;
-                cOff++;
+                cOff ++;
+                cCol ++;
             }
 
             m_caret.col = cCol;
             m_caret.row = cRow;
             m_caret.offset = cOff;
             m_seekColumn = cCol;
-            m_currentLine = byLine(cRow).front;
+            m_currentLine = r.front;
         }
 
         override int getLineWidth(ref const(Font) font, size_t line)
@@ -2981,7 +3009,7 @@ class PieceTableTextArea : TextArea
         void loadOriginal(string text)
         {
             clear();
-            insertAt(m_original, 0, text);
+            insertAt(m_original, 0, text, false);
             m_currentLine = byLine(0).front;
         }
 
@@ -2994,26 +3022,28 @@ class PieceTableTextArea : TextArea
             m_seekColumn = m_caret.col;
         }
 
-        void insertAt(Appender!string buf, size_t index /** logical index **/, string s)
+        void insertAt(Appender!string buf,
+                      size_t index /** logical index **/,
+                      string s,
+                      bool allowMerge)
         {
             auto begin = buf.data.length;
             buf.put(s);
 
             // Split the span into managable chunks
-            size_t spanSize = 2000;
             size_t newLines = 0;
-            if (s.length > spanSize)
+            if (s.length > m_maxSpanSize)
             {
                 size_t grabbed = 0;
 
                 while(grabbed != s.length)
                 {
-                    auto canGrab = min(s.length - grabbed, spanSize); // elements left to take
+                    auto canGrab = min(s.length - grabbed, m_maxSpanSize); // elements left to take
                     auto loIndex = begin + grabbed;
                     auto hiIndex = begin + grabbed + canGrab;
 
                     auto newSpan = Span(buf.data[loIndex..hiIndex]);
-                    auto newNode = m_spans.insertAt(index + grabbed, newSpan);
+                    auto newNode = m_spans.insertAt(index + grabbed, newSpan, allowMerge);
                     newLines += newSpan.newLines;
                     grabbed += canGrab;
                 }
@@ -3021,7 +3051,7 @@ class PieceTableTextArea : TextArea
             else
             {
                 auto newSpan = Span(buf.data[begin..$]);
-                auto newNode = m_spans.insertAt(index, newSpan);
+                auto newNode = m_spans.insertAt(index, newSpan, allowMerge);
                 newLines += newSpan.newLines;
             }
 
@@ -3061,6 +3091,7 @@ class PieceTableTextArea : TextArea
         uint m_tabSpaces = 4;
         uint m_totalNewLines;
         public string m_currentLine;
+        size_t m_maxSpanSize = 2000;
 
         size_t m_seekColumn;
 }

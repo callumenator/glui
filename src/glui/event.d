@@ -323,7 +323,7 @@ struct Event
 
 
 /** Enum for event listener (slot) priorities. **/
-enum PRIORITY
+enum Priority
 {
     LOWEST = 1,
     LOW = 2,
@@ -331,7 +331,6 @@ enum PRIORITY
     HIGH = 4,
     HIGHEST = 5
 }
-
 
 /**
 * I wrap the PSignal in a struct so that classes which have signals and inheriting
@@ -358,7 +357,7 @@ template PSignal(T1...)
     struct Slot
     {
         slot_t dgt = null; /// The delegate.
-        PRIORITY priority = PRIORITY.LOWEST;  /// Slot event queue priority.
+        Priority priority = Priority.LOWEST;  /// Slot event queue priority.
 
         /// Comparison function for sorting by priority (HIGHEST to LOWEST).
         int opCmp(ref const Slot rhs) const
@@ -382,7 +381,7 @@ template PSignal(T1...)
     }
 
     /** Connect a given delegate, with the given priority. **/
-    void connect(slot_t slot, PRIORITY p = PRIORITY.NORMAL)
+    void connect(slot_t slot, Priority p = Priority.NORMAL)
     {
         Slot newSlot = {slot, p};
         slots ~= newSlot;

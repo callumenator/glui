@@ -991,7 +991,7 @@ class WidgetRoot : Widget
             m_parent = null;
             m_type = "WIDGETROOT";
             m_window = wnd;
-            wnd.event.connect(&this.injectEvent, PRIORITY.NORMAL);
+            wnd.event.connect(&this.injectEvent);
             m_eventTimer.start();
             setViewport();
         }
