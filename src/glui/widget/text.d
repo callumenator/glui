@@ -921,6 +921,19 @@ class WidgetText : WidgetWindow
                                 adjustVisiblePortion();
                                 break;
                             }
+                            case KC_Z: // undo or redo, depending on shift
+                            {
+                                if (root.shiftIsDown)
+                                    m_text.redo();
+                                else
+                                    m_text.undo();
+
+                                adjustVisiblePortion();
+                                m_drawCaret = true;
+                                m_refreshCache = true;
+                                needRender();
+                                break;
+                            }
 
                             default: break;
                         }
@@ -1443,6 +1456,10 @@ abstract class TextArea
     */
     int getLineWidth(ref const(Font) font, size_t line);
 
+    void undo();
+
+    void redo();
+
     bool isDelim(char c)
     {
         return isBlank(c) ||
@@ -1896,6 +1913,14 @@ class SimpleTextArea : TextArea
             return width;
         }
 
+        override void undo()
+        {
+        }
+
+        override void redo()
+        {
+        }
+
         /**
         * Move left from caret until given char is found, return row, column and offset
         */
@@ -1993,6 +2018,34 @@ class SimpleTextArea : TextArea
 }
 
 
+struct Stack(T)
+{
+    SList!T stack;
+    alias stack this;
+
+    T pop()
+    {
+        return stack.removeAny();
+    }
+
+    T top()
+    {
+        return stack.front();
+    }
+
+    ref Stack!T push(T v)
+    {
+        stack.insertFront(v);
+        return this;
+    }
+
+    bool empty() const
+    {
+        return stack.empty();
+    }
+}
+
+
 struct Span
 {
     string buffer;
@@ -2051,12 +2104,34 @@ class SpanList
 
         this() {}
         this(Span data) { payload = data; }
+        this(Node n) { prev = n.prev; next = n.next; payload = n.payload; }
     }
 
     Node head, tail; // sentinels
     size_t length;
     Tuple!(Node,"node",size_t,"index") lastInsert;
     Tuple!(Node,"node",size_t,"index") lastRemove;
+
+    struct Change
+    {
+        enum Action {INSERT, REMOVE, GROW, SHRINK}
+
+        int v;
+        Node node;
+        Action action;
+
+        this(Node _node, Action _action, int _v = 0)
+        {
+            v = _v;
+            node = _node;
+            action = _action;
+        }
+    }
+
+    Stack!Change undoStack;
+    Stack!Change redoStack;
+    Stack!int undoSize; // number of Changes to pop off stack to undo last change
+    Stack!int redoSize; // ditto for redo
 
     this()
     {
@@ -2069,15 +2144,20 @@ class SpanList
     @property Node frontNode() { return head.next; }
     @property Node backNode() { return tail.prev; }
 
-    Node insertAfter()(Node n, Span payload)
+    Node insertAfter()(Node n, Node newNode)
     {
-        auto newNode = new Node(payload);
         newNode.next = n.next;
         newNode.prev = n;
         n.next.prev = newNode;
         n.next = newNode;
         length ++;
         return newNode;
+    }
+
+    Node insertAfter()(Node n, Span payload)
+    {
+        auto newNode = new Node(payload);
+        return insertAfter(n, newNode);
     }
 
     Node[] insertAfter(Range)(Node n, Range r) if (is(ElementType!Range == Span))
@@ -2116,33 +2196,54 @@ class SpanList
         // Grow the last-used node if possible
         if (allowMerge && lastInsert.node !is null && index == lastInsert.index)
         {
-            lastInsert.node.payload.buffer ~= s.buffer;
-            lastInsert.node.payload.newLines += s.newLines;
-            lastInsert.index = index + s.length;
-            return lastInsert.node;
+            //lastInsert.node.payload.buffer ~= s.buffer;
+            //lastInsert.node.payload.newLines += s.newLines;
+            //lastInsert.index = index + s.length;
+            //return lastInsert.node;
         }
 
         // Could not grow last node, so create a new one
         Node newNode = null;
 
         if (index == 0)
+        {
             newNode = insertAfter(head, s);
+            undoStack.push( Change(newNode, Change.Action.INSERT) );
+            undoSize.push(1);
+        }
         else
         {
             auto found = findNode(index);
 
             if (found.node is head || found.node is tail)
+            {
                 newNode = insertBack(s);
-
-            if (found.offset == 0)
+                undoStack.push( Change(newNode, Change.Action.INSERT) );
+                undoSize.push(1);
+            }
+            else if (found.offset == 0)
+            {
                 newNode = insertBefore(found.node, s);
+                undoStack.push( Change(newNode, Change.Action.INSERT) );
+                undoSize.push(1);
+            }
             else if (found.offset == found.span.length)
+            {
                 newNode = insertAfter(found.node, s);
+                undoStack.push( Change(newNode, Change.Action.INSERT) );
+                undoSize.push(1);
+            }
             else
             {
                 auto splitNode = found.span.split(found.offset);
                 auto newNodes = insertAfter(found.node, [splitNode[0], s, splitNode[1]]);
+                foreach(node; newNodes)
+                    undoStack.push( Change(node, Change.Action.INSERT) );
+
                 remove(found.node);
+                undoStack.push( Change(found.node, Change.Action.REMOVE) );
+                undoSize.push(newNodes.length + 1);
+
                 newNode = newNodes[1];
             }
         }
@@ -2155,18 +2256,19 @@ class SpanList
     /**
     * Remove a single Node
     */
-    void remove(Node node)
+    string remove(Node node)
     {
         node.prev.next = node.next;
         node.next.prev = node.prev;
         length --;
+        return node.payload.buffer;
     }
 
     /**
     * Remove all Nodes between left and right, inclusive.
     * Returns: An array of Spans which were removed.
     */
-    Span[] remove(Node lNode, Node rNode)
+    string remove(Node lNode, Node rNode, ref size_t undoCount)
     in
     {
         assert(lNode !is head && lNode !is tail);
@@ -2177,13 +2279,15 @@ class SpanList
         lNode.prev.next = rNode.next;
         rNode.next.prev = lNode.prev;
 
-        Appender!(Span[]) removed;
+        Appender!string removed;
         while(lNode !is rNode)
         {
-            removed.put(lNode.payload);
+            removed.put(lNode.payload.buffer);
+            undoStack.push( Change(lNode, Change.Action.REMOVE) );
+            undoCount ++;
             lNode = lNode.next;
         }
-        removed.put(rNode.payload);
+        removed.put(rNode.payload.buffer);
         length -= removed.data.length;
 
         return removed.data;
@@ -2195,46 +2299,6 @@ class SpanList
     * Returns: A Tuple containing an array of Spans removed, and
     * spans inserted at the left and right 'edges' of the removed Spans.
     */
-    /++
-    Tuple!(Span[],"del",Node,"lAdd",Node,"rAdd") remove(size_t from, size_t to)
-    {
-        Tuple!(Span[],"del",Node,"lAdd",Node,"rAdd") result;
-
-        auto left = findNode(from);
-        if (left.node is tail) return result;
-
-        auto right = findNode(to);
-
-        // If the left and right node are the same, we may be able to shrink
-        if (left is right)
-        {
-            if (left.offset == 0)
-                left.node.payload = Span(left.span.buffer[0..(to-from)]);
-            else if (right.offset == right.span.length)
-                left.node.payload = Span(left.span.buffer[right.offset..$]);
-
-            writeln("SHRUNK NODE");
-            return result;
-        }
-
-        if (left.offset > 0)
-        {
-            auto newSpan = Span(left.span.buffer[0..left.offset]);
-            result.lAdd = insertBefore(left.node, newSpan);
-        }
-
-        if (right.node is tail)
-            right.node = tail.prev;
-        else if (right.offset + 1 < right.span.length)
-        {
-            auto newSpan = Span(right.span.buffer[right.offset+1..$]);
-            result.rAdd = insertAfter(right.node, newSpan);
-        }
-
-        result.del = remove(left.node, right.node);
-        return result;
-    }
-    ++/
     string remove(size_t from, size_t to)
     {
         string removed;
@@ -2273,11 +2337,16 @@ class SpanList
             }
         }
 
+        // Couldn't shrink, allocate
+        size_t undoCount = 0;
         if (left.offset > 0)
         {
             removed = left.span.buffer[left.offset..$];
             auto newSpan = Span(left.span.buffer[0..left.offset]);
-            insertBefore(left.node, newSpan);
+            auto newNode = insertBefore(left.node, newSpan);
+
+            undoStack.push( Change(newNode, Change.Action.INSERT) );
+            undoCount ++;
         }
 
         if (right.node is tail)
@@ -2286,10 +2355,106 @@ class SpanList
         {
             removed ~= right.span.buffer[0..right.offset+1];
             auto newSpan = Span(right.span.buffer[right.offset+1..$]);
-            insertAfter(right.node, newSpan);
+            auto newNode = insertAfter(right.node, newSpan);
+
+            undoStack.push( Change(newNode, Change.Action.INSERT) );
+            undoCount ++;
         }
-        remove(left.node, right.node);
+        remove(left.node, right.node, undoCount);
+        undoSize.push(undoCount);
+
         return removed;
+    }
+
+    /**
+    * Pop one element off the undo stack, and undo it.
+    */
+    Change[] undo()
+    {
+        Change[] changes;
+        if (undoStack.empty)
+            return changes;
+
+        auto nels = undoSize.pop();
+        changes.length = nels;
+
+        foreach(i; 0..nels)
+        {
+            auto change = undoStack.pop();
+            redoStack.push(change);
+
+            final switch (change.action) with(Change.Action)
+            {
+                case INSERT: // undoing an insert
+                    remove(change.node);
+                    break;
+                case REMOVE: // undoing a remove
+                    insertAfter(change.node.prev, change.node);
+                    break;
+                case GROW:
+                    break;
+                case SHRINK:
+                    break;
+            }
+
+            changes[i] = change;
+        }
+        redoSize.push(nels);
+        return changes;
+    }
+
+    /**
+    * Merge the last n operations into one
+    */
+    void mergeUndoStack(size_t n)
+    {
+        int size = 0;
+        foreach(i; 0..n)
+            size += undoSize.pop();
+
+        undoSize.push(size);
+    }
+
+    void clearUndoStack()
+    {
+        undoStack.clear;
+        redoStack.clear;
+        undoSize.clear;
+        redoSize.clear;
+    }
+
+    Change[] redo()
+    {
+        Change[] changes;
+        if (redoStack.empty)
+            return changes;
+
+        auto nels = redoSize.pop();
+        changes.length = nels;
+
+        foreach(i; 0..nels)
+        {
+            auto change = redoStack.pop();
+            undoStack.push(change);
+
+            final switch (change.action) with(Change.Action)
+            {
+                case INSERT: // redoing an insert
+                    insertAfter(change.node.prev, change.node);
+                    break;
+                case REMOVE: // redoing a remove
+                    remove(change.node);
+                    break;
+                case GROW:
+                    break;
+                case SHRINK:
+                    break;
+            }
+
+            changes[i] = change;
+        }
+        undoSize.push(nels);
+        return changes;
     }
 
     /**
@@ -2488,6 +2653,7 @@ class PieceTableTextArea : TextArea
 
         override void clear()
         {
+            m_caretUndoStack.clear;
             m_original.clear;
             m_edit.clear;
             m_currentLine = null;
@@ -2534,8 +2700,10 @@ class PieceTableTextArea : TextArea
         }
         body
         {
-            auto removed = m_spans.remove(from, to);
+            m_caretUndoStack.push(m_caret);
 
+            auto removed = m_spans.remove(from, to);
+writeln("REMOVED: ", removed);
             if (removed.length == 0)
                 return "";
 
@@ -2558,6 +2726,7 @@ class PieceTableTextArea : TextArea
                 m_caret.col -= (length - totalDel);
 
             m_currentLine = byLine(m_caret.row).front; // optimize
+
             return removed;
         }
 
@@ -3004,6 +3173,63 @@ class PieceTableTextArea : TextArea
             return LineRange(m_spans[], startLine);
         }
 
+        override void undo()
+        {
+            auto changes = m_spans.undo();
+            if (changes.length == 0)
+                return;
+
+            foreach(change; changes)
+            {
+                final switch (change.action) with(SpanList.Change.Action)
+                {
+                    case INSERT: // undoing a previous insert
+                        m_totalNewLines -= change.node.payload.newLines;
+                        break;
+                    case REMOVE: // undoing a previous remove
+                        m_totalNewLines += change.node.payload.newLines;
+                        break;
+                    case GROW:
+                        break;
+                    case SHRINK:
+                        break;
+                }
+            }
+
+            m_caretRedoStack.push(m_caret);
+            m_caret = m_caretUndoStack.pop();
+            m_currentLine = byLine(m_caret.row).front;
+        }
+
+        override void redo()
+        {
+            writeln("REDO");
+            auto changes = m_spans.redo();
+            if (changes.length == 0)
+                return;
+
+            foreach(change; changes)
+            {
+                final switch (change.action) with(SpanList.Change.Action)
+                {
+                    case INSERT: // redoing a previous insert
+                        m_totalNewLines += change.node.payload.newLines;
+                        break;
+                    case REMOVE: // redoing a previous remove
+                        m_totalNewLines -= change.node.payload.newLines;
+                        break;
+                    case GROW:
+                        break;
+                    case SHRINK:
+                        break;
+                }
+            }
+
+            m_caretUndoStack.push(m_caret);
+            m_caret = m_caretRedoStack.pop();
+            m_currentLine = byLine(m_caret.row).front;
+        }
+
     private:
 
         void loadOriginal(string text)
@@ -3011,6 +3237,7 @@ class PieceTableTextArea : TextArea
             clear();
             insertAt(m_original, 0, text, false);
             m_currentLine = byLine(0).front;
+            m_spans.clearUndoStack();
         }
 
         void setCaret(size_t index)
@@ -3022,11 +3249,14 @@ class PieceTableTextArea : TextArea
             m_seekColumn = m_caret.col;
         }
 
+
+
         void insertAt(Appender!string buf,
                       size_t index /** logical index **/,
                       string s,
                       bool allowMerge)
         {
+            m_caretUndoStack.push(m_caret);
             auto begin = buf.data.length;
             buf.put(s);
 
@@ -3034,8 +3264,8 @@ class PieceTableTextArea : TextArea
             size_t newLines = 0;
             if (s.length > m_maxSpanSize)
             {
+                size_t undoCount = 0;
                 size_t grabbed = 0;
-
                 while(grabbed != s.length)
                 {
                     auto canGrab = min(s.length - grabbed, m_maxSpanSize); // elements left to take
@@ -3046,7 +3276,10 @@ class PieceTableTextArea : TextArea
                     auto newNode = m_spans.insertAt(index + grabbed, newSpan, allowMerge);
                     newLines += newSpan.newLines;
                     grabbed += canGrab;
+                    undoCount ++;
                 }
+
+                m_spans.mergeUndoStack(undoCount);
             }
             else
             {
@@ -3087,6 +3320,9 @@ class PieceTableTextArea : TextArea
         Appender!string m_edit;
         SpanList m_spans;
         Caret m_caret;
+
+        Stack!Caret m_caretUndoStack;
+        Stack!Caret m_caretRedoStack;
 
         uint m_tabSpaces = 4;
         uint m_totalNewLines;
