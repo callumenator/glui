@@ -2048,18 +2048,17 @@ struct Stack(T)
 
 struct Span
 {
-    string buffer;
+    string* buffer;
+    size_t offset;
+    size_t length;
     size_t newLines;
 
-    this(string _buffer)
+    this(string* _buffer, size_t _offset, size_t _length)
     {
         buffer = _buffer;
+        offset = _offset;
+        length = _length;
         countNewLines();
-    }
-
-    @property size_t length()
-    {
-        return buffer.length;
     }
 
     /**
@@ -2068,11 +2067,21 @@ struct Span
     size_t countNewLines()
     {
         newLines = 0;
-        foreach(char c; buffer)
+        foreach(char c; spannedText())
             if (c == '\n')
                 newLines ++;
 
         return newLines;
+    }
+
+    string spannedText()
+    in
+    {
+        assert(buffer !is null);
+    }
+    body
+    {
+        return (*buffer)[offset..offset+this.length];
     }
 
     /**
@@ -2084,12 +2093,12 @@ struct Span
     Tuple!(Span, Span) split(size_t splitAt)
     in
     {
-        assert(splitAt > 0 && splitAt < buffer.length);
+        assert(splitAt > 0 && splitAt < length);
     }
     body
     {
-        auto left = Span(buffer[0..splitAt]);
-        auto right = Span(buffer[splitAt..$]);
+        auto left = Span(buffer, offset, splitAt);
+        auto right = Span(buffer, offset + splitAt, length - splitAt);
         return tuple(left, right);
     }
 }
@@ -2111,6 +2120,7 @@ class SpanList
     size_t length;
     Tuple!(Node,"node",size_t,"index") lastInsert;
     Tuple!(Node,"node",size_t,"index") lastRemove;
+    string dummy = "DUMMY";
 
     struct Change
     {
@@ -2261,7 +2271,7 @@ class SpanList
         node.prev.next = node.next;
         node.next.prev = node.prev;
         length --;
-        return node.payload.buffer;
+        return node.payload.spannedText();
     }
 
     /**
@@ -2282,12 +2292,12 @@ class SpanList
         Appender!string removed;
         while(lNode !is rNode)
         {
-            removed.put(lNode.payload.buffer);
+            removed.put( lNode.payload.spannedText() );
             undoStack.push( Change(lNode, Change.Action.REMOVE) );
             undoCount ++;
             lNode = lNode.next;
         }
-        removed.put(rNode.payload.buffer);
+        removed.put( rNode.payload.spannedText() );
         length -= removed.data.length;
 
         return removed.data;
@@ -2311,10 +2321,10 @@ class SpanList
         // If the left and right node are the same, we may be able to shrink
         if (left.node is right.node)
         {
-            if (left.offset == 0)
+            if (left.offset == 0) with(left.span)
             {
-                removed = left.span.buffer[0..(to-from+1)];
-                auto newSpan = Span(left.span.buffer[(to-from+1)..$]);
+                removed = (spannedText())[offset .. offset + (to-from+1)];
+                auto newSpan = Span(buffer, offset + (to-from+1), length - (to-from+1));
 
                 if (newSpan.length == 0)
                     remove(left.node);
@@ -2323,10 +2333,10 @@ class SpanList
 
                 return removed;
             }
-            else if (right.offset == right.span.length - 1)
+            else if (right.offset == right.span.length - 1) with(left.span)
             {
-                removed = left.span.buffer[right.offset..$];
-                auto newSpan = Span(left.span.buffer[0..right.offset]);
+                removed = (spannedText())[offset + right.offset .. offset + left.span.length];
+                auto newSpan = Span(buffer, offset, right.offset);
 
                 if (newSpan.length == 0)
                     remove(left.node);
@@ -2339,10 +2349,10 @@ class SpanList
 
         // Couldn't shrink, allocate
         size_t undoCount = 0;
-        if (left.offset > 0)
+        if (left.offset > 0) with(left.span)
         {
-            removed = left.span.buffer[left.offset..$];
-            auto newSpan = Span(left.span.buffer[0..left.offset]);
+            removed = (spannedText())[offset + left.offset .. offset + left.span.length];
+            auto newSpan = Span(buffer, offset, left.offset);
             auto newNode = insertBefore(left.node, newSpan);
 
             undoStack.push( Change(newNode, Change.Action.INSERT) );
@@ -2351,10 +2361,10 @@ class SpanList
 
         if (right.node is tail)
             right.node = tail.prev;
-        else if (right.offset + 1 < right.span.length)
+        else if (right.offset + 1 < right.span.length) with(right.span)
         {
-            removed ~= right.span.buffer[0..right.offset+1];
-            auto newSpan = Span(right.span.buffer[right.offset+1..$]);
+            removed ~= (spannedText())[offset .. offset + right.offset + 1];
+            auto newSpan = Span(buffer, offset + right.offset + 1, right.span.length - (right.offset + 1));
             auto newNode = insertAfter(right.node, newSpan);
 
             undoStack.push( Change(newNode, Change.Action.INSERT) );
@@ -2470,7 +2480,7 @@ class SpanList
         {
             spanOffset = idx - offset;
 
-            if (idx >= offset && idx < offset + c.payload.buffer.length)
+            if (idx >= offset && idx < offset + c.payload.length)
             {
                 result.span = c.payload;
                 result.node = c;
@@ -2478,7 +2488,7 @@ class SpanList
                 return result;
             }
 
-            offset += c.payload.buffer.length;
+            offset += c.payload.length;
         }
 
         result.node = tail;
@@ -2500,7 +2510,8 @@ class SpanList
 
         @property bool empty()
         {
-            return first is null;
+            return first.next is null ||
+                   first is last;
         }
 
         @property ref Span front()
@@ -2615,6 +2626,8 @@ class SpanList
     {
         head = new Node;
         tail = new Node;
+        head.payload = Span(&dummy, 0, dummy.length);
+        tail.payload = Span(&dummy, 0, dummy.length);
         head.next = tail;
         tail.prev = head;
     }
@@ -2667,12 +2680,12 @@ class PieceTableTextArea : TextArea
 
         override void insert(char s)
         {
-            insertAt(m_edit, m_caret.offset, s.to!string, true);
+            insertAt(&m_edit, m_caret.offset, s.to!string, true);
         }
 
         override void insert(string s)
         {
-            insertAt(m_edit, m_caret.offset, s, true);
+            insertAt(&m_edit, m_caret.offset, s, true);
         }
 
         /**
@@ -2809,9 +2822,10 @@ writeln("REMOVED: ", removed);
                 assert(false, "getCaret: Index out of bounds");
 
             int i = 0;
+            auto text = r.front.spannedText();
             while(i < r.front.length && loc.offset != index)
             {
-                if (r.front.buffer[i] == '\n')
+                if (text[i] == '\n')
                     loc.row ++;
 
                 loc.offset ++;
@@ -3071,6 +3085,7 @@ writeln("REMOVED: ", removed);
 
             this(SpanList.Range list, size_t startLine)
             {
+                writeln("A");
                 r = list;
                 size_t bufferStartRow = 0;
                 while(!r.empty && bufferStartRow + r.front.newLines < startLine)
@@ -3083,8 +3098,12 @@ writeln("REMOVED: ", removed);
                 if (r.empty)
                     return;
 
+
+                writeln("B");
+                writeln(r.front);
+                writeln(r.front.spannedText());
                 int chomp = 0;
-                buffer = r.front.buffer;
+                buffer = r.front.spannedText();
                 r.popFront();
                 if (bufferStartRow != startLine)
                 {
@@ -3099,6 +3118,7 @@ writeln("REMOVED: ", removed);
                     buffer = buffer[chomp..$];
                     offset += chomp;
                 }
+                writeln("C");
 
                 // Fill up the buffer with at least one line
                 if (count(buffer, '\n') == 0)
@@ -3106,11 +3126,12 @@ writeln("REMOVED: ", removed);
                     int gotNewlines = 0;
                     while(!r.empty && gotNewlines == 0)
                     {
-                        buffer ~= r.front.buffer;
+                        buffer ~= r.front.spannedText();
                         gotNewlines += r.front.newLines;
                         r.popFront();
                     }
                 }
+                writeln("D");
                 setSlice();
             }
 
@@ -3155,7 +3176,7 @@ writeln("REMOVED: ", removed);
                     int gotLines = 0;
                     while(!r.empty && gotLines == 0)
                     {
-                        buffer ~= r.front.buffer;
+                        buffer ~= r.front.spannedText();
                         gotLines += r.front.newLines;
                         r.popFront();
                     }
@@ -3235,7 +3256,7 @@ writeln("REMOVED: ", removed);
         void loadOriginal(string text)
         {
             clear();
-            insertAt(m_original, 0, text, false);
+            insertAt(&m_original, 0, text, false);
             m_currentLine = byLine(0).front;
             m_spans.clearUndoStack();
         }
@@ -3249,16 +3270,14 @@ writeln("REMOVED: ", removed);
             m_seekColumn = m_caret.col;
         }
 
-
-
-        void insertAt(Appender!string buf,
+        void insertAt(string* buf,
                       size_t index /** logical index **/,
                       string s,
                       bool allowMerge)
         {
             m_caretUndoStack.push(m_caret);
-            auto begin = buf.data.length;
-            buf.put(s);
+            auto begin = (*buf).length;
+            (*buf) ~= s;
 
             // Split the span into managable chunks
             size_t newLines = 0;
@@ -3272,7 +3291,7 @@ writeln("REMOVED: ", removed);
                     auto loIndex = begin + grabbed;
                     auto hiIndex = begin + grabbed + canGrab;
 
-                    auto newSpan = Span(buf.data[loIndex..hiIndex]);
+                    auto newSpan = Span(buf, index + loIndex, canGrab);
                     auto newNode = m_spans.insertAt(index + grabbed, newSpan, allowMerge);
                     newLines += newSpan.newLines;
                     grabbed += canGrab;
@@ -3283,7 +3302,7 @@ writeln("REMOVED: ", removed);
             }
             else
             {
-                auto newSpan = Span(buf.data[begin..$]);
+                auto newSpan = Span(buf, begin, s.length);
                 auto newNode = m_spans.insertAt(index, newSpan, allowMerge);
                 newLines += newSpan.newLines;
             }
@@ -3316,8 +3335,8 @@ writeln("REMOVED: ", removed);
             m_currentLine = byLine(m_caret.row).front;  // optimize
         }
 
-        Appender!string m_original;
-        Appender!string m_edit;
+        string m_original;
+        string m_edit;
         SpanList m_spans;
         Caret m_caret;
 
