@@ -73,7 +73,7 @@ class WidgetText : WidgetWindow
         }
 
         // Get
-        @property TextArea text() { return m_text; }
+        @property TextArea textArea() { return m_text; }
         @property RGBA textColor() const { return m_textColor; }
         @property RGBA textBgColor() const { return m_textBgColor; }
         @property uint row() const { return m_text.row; }
@@ -1344,6 +1344,11 @@ abstract class TextArea
     string remove(size_t from, size_t to);
 
     /**
+    * Return the entire text sequence.
+    */
+    string getText();
+
+    /**
     * Return the text to the left of the caret.
     */
     char leftText();
@@ -1554,6 +1559,11 @@ class SimpleTextArea : TextArea
         /**
         * Text and caret retrieval...
         */
+
+        override string getText()
+        {
+            return m_text;
+        }
 
         override char leftText()
         {
@@ -2213,6 +2223,7 @@ class SpanList
             lastInsert.index = index + s.length;
             undoStack.push( Change(lastInsert.node, Change.Action.GROW, s.length, s.newLines) );
             undoSize.push(1);
+            writeln("GROW");
             return lastInsert.node;
         }
 
@@ -2372,14 +2383,16 @@ class SpanList
 
 
         size_t undoCount = 0;
-        if (left.offset == left.span.length - 1)
-        {
-            removed = left.span.spannedText(); // added to undo stack in remove call below
-        }
-        else if (left.offset > 0) with(left.span)
+        //if (left.offset == left.span.length - 1)
+        //{
+        //    removed = left.span.spannedText(); // added to undo stack in remove call below
+        //}
+        //else
+
+        if (left.offset > 0) with(left.span)
         {
             writeln("left.offset>0");
-            removed = (spannedText())[left.offset .. left.span.length];
+            removed = (spannedText())[left.offset .. $];
             auto newSpan = Span(buffer, offset, left.offset);
             auto newNode = insertBefore(left.node, newSpan);
 
@@ -2389,13 +2402,13 @@ class SpanList
 
         if (right.node is tail)
             right.node = tail.prev;
-        else if (right.offset == right.span.length - 1)
-        {
-            removed ~= right.span.spannedText(); // added to undo stack in remove call below
-        }
+        //else if (right.offset == right.span.length - 1)
+        //{
+        //    removed ~= right.span.spannedText(); // added to undo stack in remove call below
+        //}
         else if (right.offset + 1 < right.span.length) with(right.span)
         {
-            writeln("right.offset+1>length");
+            writeln("right.offset+1<length");
             removed ~= (spannedText())[0 .. right.offset + 1];
             auto newSpan = Span(buffer, offset + right.offset + 1, right.span.length - (right.offset + 1));
             auto newNode = insertAfter(right.node, newSpan);
@@ -2768,6 +2781,8 @@ class PieceTableTextArea : TextArea
 
             auto removed = m_spans.remove(from, to);
 
+            writeln("removed: ", removed);
+
             if (removed.length == 0)
                 return "";
 
@@ -2798,6 +2813,11 @@ class PieceTableTextArea : TextArea
         /**
         * Text and caret retrieval...
         */
+
+        override string getText()
+        {
+            return getTextLines(0, nLines);
+        }
 
         override char leftText()
         {
