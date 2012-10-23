@@ -2124,15 +2124,16 @@ class SpanList
 
     struct Change
     {
-        enum Action {INSERT, REMOVE, GROW, SHRINK}
+        enum Action {INSERT, REMOVE, GROW, SHRINK_LEFT, SHRINK_RIGHT}
 
-        int v;
+        int v, n; // change in length, change in newlines
         Node node;
         Action action;
 
-        this(Node _node, Action _action, int _v = 0)
+        this(Node _node, Action _action, int _v = 0, int _n = 0)
         {
             v = _v;
+            n = _n;
             node = _node;
             action = _action;
         }
@@ -2206,10 +2207,13 @@ class SpanList
         // Grow the last-used node if possible
         if (allowMerge && lastInsert.node !is null && index == lastInsert.index)
         {
-            //lastInsert.node.payload.buffer ~= s.buffer;
-            //lastInsert.node.payload.newLines += s.newLines;
-            //lastInsert.index = index + s.length;
-            //return lastInsert.node;
+            lastInsert.node.payload.length += s.length;
+            lastInsert.node.payload.newLines += s.newLines;
+
+            lastInsert.index = index + s.length;
+            undoStack.push( Change(lastInsert.node, Change.Action.GROW, s.length, s.newLines) );
+            undoSize.push(1);
+            return lastInsert.node;
         }
 
         // Could not grow last node, so create a new one
@@ -2323,35 +2327,59 @@ class SpanList
         {
             if (left.offset == 0) with(left.span)
             {
-                removed = (spannedText())[offset .. offset + (to-from+1)];
-                auto newSpan = Span(buffer, offset + (to-from+1), length - (to-from+1));
+                removed = (spannedText())[0 .. (to-from+1)];
+                auto newLength = left.node.payload.length - (to-from+1);
 
-                if (newSpan.length == 0)
+                if (newLength == 0)
+                {
+                    undoStack.push( Change(left.node, Change.Action.REMOVE) );
+                    undoSize.push(1);
                     remove(left.node);
+                }
                 else
-                    left.node.payload = newSpan;
-
+                {
+                    auto delNewLines = removed.count('\n');
+                    auto shrink = left.node.payload.length - newLength;
+                    left.node.payload.offset += (to-from+1);
+                    left.node.payload.length = newLength;
+                    undoStack.push( Change(left.node, Change.Action.SHRINK_LEFT, shrink, delNewLines) );
+                    undoSize.push(1);
+                }
                 return removed;
             }
-            else if (right.offset == right.span.length - 1) with(left.span)
+            else if (right.offset == right.span.length - 1) with(right.span)
             {
-                removed = (spannedText())[offset + right.offset .. offset + left.span.length];
-                auto newSpan = Span(buffer, offset, right.offset);
+                removed = (spannedText())[right.offset .. right.span.length];
+                auto newLength = right.offset;
 
-                if (newSpan.length == 0)
+                if (newLength == 0)
+                {
+                    undoStack.push( Change(left.node, Change.Action.REMOVE) );
+                    undoSize.push(1);
                     remove(left.node);
+                }
                 else
-                    left.node.payload = newSpan;
-
+                {
+                    auto delNewLines = removed.count('\n');
+                    auto shrink = left.node.payload.length - newLength;
+                    left.node.payload.length = newLength;
+                    undoStack.push( Change(left.node, Change.Action.SHRINK_RIGHT, shrink, delNewLines) );
+                    undoSize.push(1);
+                }
                 return removed;
             }
         }
 
-        // Couldn't shrink, allocate
+
         size_t undoCount = 0;
-        if (left.offset > 0) with(left.span)
+        if (left.offset == left.span.length - 1)
         {
-            removed = (spannedText())[offset + left.offset .. offset + left.span.length];
+            removed = left.span.spannedText(); // added to undo stack in remove call below
+        }
+        else if (left.offset > 0) with(left.span)
+        {
+            writeln("left.offset>0");
+            removed = (spannedText())[left.offset .. left.span.length];
             auto newSpan = Span(buffer, offset, left.offset);
             auto newNode = insertBefore(left.node, newSpan);
 
@@ -2361,15 +2389,21 @@ class SpanList
 
         if (right.node is tail)
             right.node = tail.prev;
+        else if (right.offset == right.span.length - 1)
+        {
+            removed ~= right.span.spannedText(); // added to undo stack in remove call below
+        }
         else if (right.offset + 1 < right.span.length) with(right.span)
         {
-            removed ~= (spannedText())[offset .. offset + right.offset + 1];
+            writeln("right.offset+1>length");
+            removed ~= (spannedText())[0 .. right.offset + 1];
             auto newSpan = Span(buffer, offset + right.offset + 1, right.span.length - (right.offset + 1));
             auto newNode = insertAfter(right.node, newSpan);
 
             undoStack.push( Change(newNode, Change.Action.INSERT) );
             undoCount ++;
         }
+
         remove(left.node, right.node, undoCount);
         undoSize.push(undoCount);
 
@@ -2401,9 +2435,18 @@ class SpanList
                 case REMOVE: // undoing a remove
                     insertAfter(change.node.prev, change.node);
                     break;
-                case GROW:
+                case GROW: // undoing a grow
+                    change.node.payload.length -= change.v;
+                    change.node.payload.newLines -= change.n;
                     break;
-                case SHRINK:
+                case SHRINK_LEFT: // undoing a left shrink
+                    change.node.payload.offset -= change.v;
+                    change.node.payload.length += change.v;
+                    change.node.payload.newLines += change.n;
+                    break;
+                case SHRINK_RIGHT: // undoing a right shrink
+                    change.node.payload.length += change.v;
+                    change.node.payload.newLines += change.n;
                     break;
             }
 
@@ -2455,9 +2498,18 @@ class SpanList
                 case REMOVE: // redoing a remove
                     remove(change.node);
                     break;
-                case GROW:
+                case GROW: // redoing a grow
+                    change.node.payload.length += change.v;
+                    change.node.payload.newLines += change.n;
                     break;
-                case SHRINK:
+                case SHRINK_LEFT: // redoing a left shrink
+                    change.node.payload.offset += change.v;
+                    change.node.payload.length -= change.v;
+                    change.node.payload.newLines -= change.n;
+                    break;
+                case SHRINK_RIGHT: // redoing a right shrink
+                    change.node.payload.length -= change.v;
+                    change.node.payload.newLines -= change.n;
                     break;
             }
 
@@ -2510,8 +2562,7 @@ class SpanList
 
         @property bool empty()
         {
-            return first.next is null ||
-                   first is last;
+            return first is null || first.next is null;
         }
 
         @property ref Span front()
@@ -2716,7 +2767,7 @@ class PieceTableTextArea : TextArea
             m_caretUndoStack.push(m_caret);
 
             auto removed = m_spans.remove(from, to);
-writeln("REMOVED: ", removed);
+
             if (removed.length == 0)
                 return "";
 
@@ -2738,6 +2789,7 @@ writeln("REMOVED: ", removed);
             else
                 m_caret.col -= (length - totalDel);
 
+            m_seekColumn = m_caret.col;
             m_currentLine = byLine(m_caret.row).front; // optimize
 
             return removed;
@@ -3085,7 +3137,6 @@ writeln("REMOVED: ", removed);
 
             this(SpanList.Range list, size_t startLine)
             {
-                writeln("A");
                 r = list;
                 size_t bufferStartRow = 0;
                 while(!r.empty && bufferStartRow + r.front.newLines < startLine)
@@ -3098,10 +3149,6 @@ writeln("REMOVED: ", removed);
                 if (r.empty)
                     return;
 
-
-                writeln("B");
-                writeln(r.front);
-                writeln(r.front.spannedText());
                 int chomp = 0;
                 buffer = r.front.spannedText();
                 r.popFront();
@@ -3118,7 +3165,6 @@ writeln("REMOVED: ", removed);
                     buffer = buffer[chomp..$];
                     offset += chomp;
                 }
-                writeln("C");
 
                 // Fill up the buffer with at least one line
                 if (count(buffer, '\n') == 0)
@@ -3131,7 +3177,6 @@ writeln("REMOVED: ", removed);
                         r.popFront();
                     }
                 }
-                writeln("D");
                 setSlice();
             }
 
@@ -3210,9 +3255,14 @@ writeln("REMOVED: ", removed);
                     case REMOVE: // undoing a previous remove
                         m_totalNewLines += change.node.payload.newLines;
                         break;
-                    case GROW:
+                    case GROW: // undoing a previous grow
+                        m_totalNewLines -= change.n;
                         break;
-                    case SHRINK:
+                    case SHRINK_LEFT: // undoing a previous shrink_left
+                        m_totalNewLines += change.n;
+                        break;
+                    case SHRINK_RIGHT: // undoing a previous shrink_right
+                        m_totalNewLines += change.n;
                         break;
                 }
             }
@@ -3224,7 +3274,6 @@ writeln("REMOVED: ", removed);
 
         override void redo()
         {
-            writeln("REDO");
             auto changes = m_spans.redo();
             if (changes.length == 0)
                 return;
@@ -3239,9 +3288,14 @@ writeln("REMOVED: ", removed);
                     case REMOVE: // redoing a previous remove
                         m_totalNewLines -= change.node.payload.newLines;
                         break;
-                    case GROW:
+                    case GROW: // redoing a previous grow
+                        m_totalNewLines += change.n;
                         break;
-                    case SHRINK:
+                    case SHRINK_LEFT: // redoing a previous shrink_left
+                        m_totalNewLines -= change.n;
+                        break;
+                    case SHRINK_RIGHT: // redoing a previous shrink_right
+                        m_totalNewLines -= change.n;
                         break;
                 }
             }
