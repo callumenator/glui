@@ -565,7 +565,6 @@ abstract class Widget
             glPopMatrix();
         }
 
-
         // Handle events
         void event(ref Event event) {}
 

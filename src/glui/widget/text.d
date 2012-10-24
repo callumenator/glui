@@ -304,14 +304,6 @@ class WidgetText : WidgetWindow
                 // Text has not been cached, so cache and draw it
                 glNewList(m_cacheId, GL_COMPILE_AND_EXECUTE);
 
-                auto clip = m_clip;
-                clip[0] += 1;
-                clip[1] += 1;
-                clip[2] -= 2;
-                clip[3] -= 2;
-                clipboxToScreen(clip);
-                glScissor(clip[0], clip[1], clip[2], clip[3]);
-
                 renderHighlights(); // line highlights
                 renderSelection(); // text selection
 
@@ -434,8 +426,8 @@ class WidgetText : WidgetWindow
             float[4] selectionColor = [0.,0.,1.,1.];
             if (lowerCaret.row == upperCaret.row)
             {
-                drawBox(offset0[0], -offset0[1],
-                        offset1[0], -offset0[1] + m_font.m_lineHeight,
+                drawBox(offset0[0], -offset0[1] - m_font.m_maxHoss,
+                        offset1[0], -offset0[1] + m_font.m_maxHeight,
                         selectionColor);
             }
             else
@@ -449,12 +441,12 @@ class WidgetText : WidgetWindow
                     return;
 
                 // Draw first selection row
-                drawBox(offset0[0], -offset0[1],
+                drawBox(offset0[0], -offset0[1] - m_font.m_maxHoss,
                         offset0[0] + m_text.getLineWidth(m_font, lowerCaret.row),
-                        -offset0[1] + m_font.m_lineHeight, selectionColor);
+                        -offset0[1] + m_font.m_maxHeight, selectionColor);
 
                 // Draw last selection row
-                drawBox(0, -offset1[1], offset1[0], -offset1[1] + m_font.m_lineHeight, selectionColor);
+                drawBox(0, -offset1[1], offset1[0] - m_font.m_maxHoss, -offset1[1] + m_font.m_maxHeight, selectionColor);
 
                 // Draw rows in-between
                 if (upperCaret.row > lowerCaret.row + 1)
@@ -466,7 +458,7 @@ class WidgetText : WidgetWindow
                         if (row > lineRange1)
                             return;
 
-                        float y0 = -offset0[1] - (row - cast(int)(lowerCaret.row))*m_font.m_lineHeight;
+                        float y0 = -offset0[1] - m_font.m_maxHoss - (row - cast(int)(lowerCaret.row))*m_font.m_maxHeight;
                         drawBox(0, y0, m_text.getLineWidth(m_font, row),
                                 y0 + m_font.m_lineHeight, selectionColor);
                     }
@@ -2130,7 +2122,7 @@ class Node
 class SpanList
 {
     Node head, tail; // sentinels
-    size_t length;
+    size_t length;   // this is the number of nodes
     Tuple!(Node,"node",size_t,"index") lastInsert;
     Tuple!(Node,"node",size_t,"index") lastRemove;
     string dummy = "DUMMY";
@@ -2948,6 +2940,7 @@ class PieceTableTextArea : TextArea
             auto totalDel = removed.count('\n');
             m_totalNewLines -= totalDel;
             auto length = to - from + 1; // this includes newlines
+            m_totalChars -= length;
 
             if (from == m_caret.offset)
             {
@@ -2974,7 +2967,19 @@ class PieceTableTextArea : TextArea
 
         override string getText()
         {
-            return getTextLines(0, nLines);
+            char[] buffer;
+            buffer.length = m_totalChars;
+
+            size_t c;
+            auto r = m_spans[];
+            while(!r.empty)
+            {
+                buffer[c..c+r.front.length] = r.front.spannedText();
+                c += r.front.length;
+                r.popFront();
+            }
+
+            return cast(string)buffer;
         }
 
         override char leftText()
@@ -3540,6 +3545,7 @@ class PieceTableTextArea : TextArea
             }
 
             m_totalNewLines += newLines;
+            m_totalChars += s.length;
 
             if (index == m_caret.offset)
             {
@@ -3577,6 +3583,7 @@ class PieceTableTextArea : TextArea
 
         uint m_tabSpaces = 4;
         uint m_totalNewLines;
+        uint m_totalChars;
         public string m_currentLine;
         size_t m_maxSpanSize = 2000;
 
