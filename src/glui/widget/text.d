@@ -940,7 +940,9 @@ class WidgetText : WidgetWindow
                     }
                     else if (m_editable)
                     {
+
                         deleteSelectedText();
+
 
                         /++
                         if (key == KC_BRACERIGHT)
@@ -961,6 +963,8 @@ class WidgetText : WidgetWindow
                         m_refreshCache = true;
                         needRender();
                         adjustVisiblePortion();
+
+
                     }
                     break;
                 }
@@ -2216,6 +2220,8 @@ class SpanList
         // Grow the last-used node if possible
         if (allowMerge && lastInsert.node !is null && index == lastInsert.index)
         {
+            debug { writeln("GROW"); }
+
             lastInsert.node.payload.length += s.length;
             lastInsert.node.payload.newLines += s.newLines;
 
@@ -2302,11 +2308,19 @@ class SpanList
         lNode.prev.next = rNode.next;
         rNode.next.prev = lNode.prev;
 
+        if (lNode is rNode)
+        {
+            remove(lNode);
+            undoStack.push( Change( lNode, Change.Action.REMOVE) );
+            undoCount ++;
+            return lNode.payload.spannedText();
+        }
+
         Appender!string removed;
         while(lNode !is rNode)
         {
             removed.put( lNode.payload.spannedText() );
-            undoStack.push( Change(lNode, Change.Action.REMOVE) );
+            undoStack.push( Change( lNode, Change.Action.REMOVE) );
             undoCount ++;
             lNode = lNode.next;
         }
@@ -2371,43 +2385,31 @@ class SpanList
             debug { writeln("Can't shrink"); }
         }
 
-
-        if (left.offset == 0)
+        size_t lOff = 0, rOff = 0; // offsets frmo left and right edge
+        if (left.offset > 0) with(left.node.payload) // Insert a node/span for the left edge of the left node
         {
-            removed = left.span.spannedText(); // added to undo stack in remove call below
-        }
-        else if (left.offset > 0) with(left.span)
-        {
-            writeln("left.offset>0");
-            removed = (spannedText())[left.offset .. $];
+            debug { writeln("Left partial"); }
+            lOff = left.offset;
             auto newSpan = Span(buffer, offset, left.offset);
             auto newNode = insertBefore(left.node, newSpan);
-
             undoStack.push( Change(newNode, Change.Action.INSERT) );
             undoCount ++;
         }
 
-        //if (right.node is tail)
-        //    right.node = tail.prev;
-        if (right.offset == right.span.length - 1)
+        if (right.offset < right.span.length - 1) with(right.node.payload)
         {
-            removed ~= right.span.spannedText(); // added to undo stack in remove call below
-        }
-        else if (right.offset + 1 < right.span.length) with(right.span)
-        {
-            writeln("right.offset+1<length");
-            removed ~= (spannedText())[0 .. right.offset + 1];
-            auto newSpan = Span(buffer, offset + right.offset + 1, right.span.length - (right.offset + 1));
+            debug { writeln("Right partial"); }
+            rOff = length - right.offset - 1;
+            auto newSpan = Span(buffer, offset + right.offset + 1, length - (right.offset + 1));
             auto newNode = insertAfter(right.node, newSpan);
-
             undoStack.push( Change(newNode, Change.Action.INSERT) );
             undoCount ++;
         }
 
-        remove(left.node, right.node, undoCount);
+        removed = remove(left.node, right.node, undoCount);
         undoSize.push(undoCount);
-
-        return removed;
+        writeln("REMOVED: ", removed[lOff..$-rOff]);
+        return removed[lOff..$-rOff];
     }
 
     unittest /** remove **/
@@ -2419,6 +2421,7 @@ class SpanList
         l.insertAt(0, Span(&buffer, 0, buffer.length));
 
         // Shrinking removes
+        //writeln("TEST SHRINK LEFT RIGHT");
         assert(l.remove(0, 5) == "this i");
         assert(l.remove(0, 9) == "s a test b");
         assert(l[].front.spannedText() == "uffer for running tests\non the" ~
@@ -2428,6 +2431,7 @@ class SpanList
         l.clear();
 
         // Remove part of adjacent spans
+        //writeln("TEST [xxx|xx][xx|xx]");
         l.insertAt(0, Span(&buffer, 0, 35));
         l.insertAt(-1, Span(&buffer, 35, buffer.length - 35));
         auto s = l[];
@@ -2439,20 +2443,68 @@ class SpanList
         l.clear();
 
         // Remove all of left span and part of adjacent right span
+        //writeln("TEST |xxxxx][xx|xx]");
         l.insertAt(0, Span(&buffer, 0, 35));
         l.insertAt(-1, Span(&buffer, 35, buffer.length - 35));
         assert(l.remove(0, 40) == "this is a test buffer for running tests\no");
+        writeln(l[].front.spannedText());
         assert(l[].front.spannedText() == "n the functions found in the SpanList class blah blah");
 
         l.clear();
 
         // Remove part of left span and all of adjacent right span
+        //writeln("TEST [xx|xxx][xxxx|");
         l.insertAt(0, Span(&buffer, 0, 35));
         l.insertAt(-1, Span(&buffer, 35, buffer.length - 35));
         assert(l.remove(30, 100) == "ing tests\non the functions found in the SpanList class blah blah");
         assert(l[].front.spannedText() == "this is a test buffer for runn");
 
-        assert(false, "End of Test");
+        l.clear();
+
+        // Remove part of left span, middle spans, and part of right span
+        //writeln("TEST [xx|xxx][xxxx][xxxx][xx|xx]");
+        l.insertAt(0, Span(&buffer, 0, 20));
+        l.insertAt(-1, Span(&buffer, 20, 20));
+        l.insertAt(-1, Span(&buffer, 40, 20));
+        l.insertAt(-1, Span(&buffer, 60, 34));
+        assert(l[].back.spannedText() == "nd in the SpanList class blah blah");
+        assert(l.remove(5, 65) == "is a test buffer for running tests\non the functions found in ");
+        s = l[];
+        assert(s.front.spannedText() == "this ");
+        s.popFront();
+        assert(s.front.spannedText() == "the SpanList class blah blah");
+
+        l.clear();
+
+        // Remove all of left span, middle spans, and part of right span
+        //writeln("TEST |xxxxx][xxxx][xxxx][xx|xx]");
+        l.insertAt(0, Span(&buffer, 0, 20));
+        l.insertAt(-1, Span(&buffer, 20, 20));
+        l.insertAt(-1, Span(&buffer, 40, 20));
+        l.insertAt(-1, Span(&buffer, 60, 34));
+        assert(l.remove(0, 65) == buffer[0..66]);
+        assert(l[].front.spannedText() == buffer[66..$]);
+
+        l.clear();
+
+        // Remove part of left span, middle spans, and all of the right span
+        //writeln("TEST [xx|xxx][xxxx][xxxx][xxxx|");
+        l.insertAt(0, Span(&buffer, 0, 20));
+        l.insertAt(-1, Span(&buffer, 20, 20));
+        l.insertAt(-1, Span(&buffer, 40, 20));
+        l.insertAt(-1, Span(&buffer, 60, 34));
+        assert(l.remove(5, 94) == buffer[5..94]);
+        assert(l[].front.spannedText() == buffer[0..5]);
+
+        l.clear();
+
+        // Remove one middle span
+        //writeln("TEST [xxxxx]|xxxx|[xxxx][xxxx]");
+        l.insertAt(0, Span(&buffer, 0, 20));
+        l.insertAt(-1, Span(&buffer, 20, 20));
+        l.insertAt(-1, Span(&buffer, 40, 20));
+        l.insertAt(-1, Span(&buffer, 60, 34));
+        assert(l.remove(20, 39) == buffer[20..40]);
     }
 
     /**
@@ -2460,16 +2512,18 @@ class SpanList
     */
     string shrinkLeft(Node node, size_t shrinkBy, ref size_t undoCount)
     {
-        auto initialLength = node.payload.length;
         auto del = (node.payload.spannedText())[0 .. shrinkBy];
-        node.payload.length -= shrinkBy;
-        node.payload.offset += shrinkBy;
+        auto newLines = del.count('\n');
+        auto newLen = node.payload.length - shrinkBy;
 
-        if (node.payload.length == 0) {
+        if (newLen == 0) {
             undoStack.push( Change(node, Change.Action.REMOVE) );
             remove(node);
         } else {
-            undoStack.push( Change(node, Change.Action.SHRINK_LEFT, initialLength - node.payload.length) );
+            undoStack.push( Change(node, Change.Action.SHRINK_LEFT, shrinkBy, newLines) );
+            node.payload.length -= shrinkBy;
+            node.payload.offset += shrinkBy;
+            node.payload.newLines -= newLines;
         }
 
         undoCount ++;
@@ -2481,15 +2535,17 @@ class SpanList
     */
     string shrinkRight(Node node, size_t shrinkBy, ref size_t undoCount)
     {
-        auto initialLength = node.payload.length;
         auto del = (node.payload.spannedText())[$ - shrinkBy .. $];
-        node.payload.length -= shrinkBy;
+        auto newLines = del.count('\n');
+        auto newLen = node.payload.length - shrinkBy;
 
-        if (node.payload.length == 0) {
+        if (newLen == 0) {
             undoStack.push( Change(node, Change.Action.REMOVE) );
             remove(node);
         } else {
-            undoStack.push( Change(node, Change.Action.SHRINK_RIGHT, initialLength - node.payload.length) );
+            undoStack.push( Change(node, Change.Action.SHRINK_RIGHT, shrinkBy, newLines) );
+            node.payload.length -= shrinkBy;
+            node.payload.newLines -= newLines;
         }
 
         undoCount ++;
@@ -2513,7 +2569,6 @@ class SpanList
 
         res = l.shrinkLeft(n, 11, undoCount);
         assert(res == "fghijklmnop", "Shrink left fail 1: " ~ res);
-        assert(n.payload.spannedText() == "", "Shrink left fail 2: " ~ n.payload.spannedText());
 
         n.payload = s;
         res = l.shrinkRight(n, 7, undoCount);
@@ -2522,7 +2577,6 @@ class SpanList
 
         res = l.shrinkRight(n, 9, undoCount);
         assert(res == "abcdefghi", "Shrink right fail 1: " ~ res);
-        assert(n.payload.spannedText() == "", "Shrink right fail 2: " ~ n.payload.spannedText());
     }
 
     /**
@@ -2540,6 +2594,7 @@ class SpanList
         foreach(i; 0..nels)
         {
             auto change = undoStack.pop();
+            writeln(change.action);
             redoStack.push(change);
 
             final switch (change.action) with(Change.Action)
@@ -2994,7 +3049,7 @@ class PieceTableTextArea : TextArea
             }
 
             if (r.empty)
-                assert(false, "getCaret: Index out of bounds");
+                return loc;
 
             int i = 0;
             auto text = r.front.spannedText();
