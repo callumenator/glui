@@ -441,12 +441,18 @@ class WidgetText : WidgetWindow
                     return;
 
                 // Draw first selection row
-                drawBox(offset0[0], -offset0[1] - m_font.m_maxHoss,
-                        offset0[0] + m_text.getLineWidth(m_font, lowerCaret.row),
-                        -offset0[1] + m_font.m_maxHeight, selectionColor);
+                drawBox(offset0.x,
+                        -offset0.y - m_font.m_maxHoss,
+                        offset0.x + m_text.getLineWidth(m_font, lowerCaret.row),
+                        -offset0.y + m_font.m_maxHeight,
+                        selectionColor);
 
                 // Draw last selection row
-                drawBox(0, -offset1[1], offset1[0] - m_font.m_maxHoss, -offset1[1] + m_font.m_maxHeight, selectionColor);
+                drawBox(0,
+                        -offset1.y - m_font.m_maxHoss,
+                        offset1.x,
+                        -offset1.y + m_font.m_maxHeight,
+                        selectionColor);
 
                 // Draw rows in-between
                 if (upperCaret.row > lowerCaret.row + 1)
@@ -458,9 +464,12 @@ class WidgetText : WidgetWindow
                         if (row > lineRange1)
                             return;
 
-                        float y0 = -offset0[1] - m_font.m_maxHoss - (row - cast(int)(lowerCaret.row))*m_font.m_maxHeight;
-                        drawBox(0, y0, m_text.getLineWidth(m_font, row),
-                                y0 + m_font.m_lineHeight, selectionColor);
+                        float y0 = -offset0.y - (row - cast(int)(lowerCaret.row))*m_font.m_lineHeight;
+                        drawBox(0,
+                                y0 - m_font.m_maxHoss,
+                                m_text.getLineWidth(m_font, row),
+                                y0 + m_font.m_maxHeight,
+                                selectionColor);
                     }
                 }
             }

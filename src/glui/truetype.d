@@ -345,9 +345,67 @@ public
         return offset;
     }
 
+    /**
+    * Render a HighlightedText structure
+    */
+    int[2] renderCharacters(ref const(Font) font,
+                            HighlightedText text,
+                            int[2] offset = [0,0],
+                            uint tabSpaces = 4)
+    in
+    {
+        assert(font !is null, "Null font passed to truetype.renderCharacter");
+    }
+    body
+    {
+        bindFontBuffers(font);
 
+        foreach(span; text.spans)
+        {
+            foreach(char c; text.buffer[span.left..span.right])
+            {
+                if (c == '\n')
+                {
+                    glColor4fv(span.background.ptr);
+                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
 
+                    glTranslatef(-offset[0], -1*font.m_lineHeight, 0);
+                    offset[0] = 0;
+                    offset[1] += font.m_lineHeight;
+                    continue;
+                }
+                else if (c == '\t')
+                {
+                    foreach(i; 0..tabSpaces)
+                    {
+                        auto index = font.index(' ');
 
+                        glColor4fv(span.background.ptr);
+                        glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
+                        offset[0] += font.m_wids[index];
+                        glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+                    }
+                    continue;
+                }
+
+                auto index = font.index(c);
+
+                glColor4fv(span.background.ptr);
+                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+
+                glColor4fv(span.foreground.ptr);
+                glTranslatef(font.m_xoffs[index], 0, 0);
+                glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
+
+                offset[0] += font.m_wids[index];
+                glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);
+            }
+        }
+
+        unbindFontBuffers(font);
+        return offset;
+    }
 
 
     // get the horizontal length in screen coords of the line of text
@@ -365,7 +423,7 @@ public
     }
 
 
-} // public functions
+} // end public functions
 
 
 private
@@ -632,7 +690,8 @@ struct HighlightedText
     struct ColoredSpan
     {
         size_t left, right;
-        RGBA color;
+        RGBA foreground;
+        RGBA background;
     }
 
     string buffer;
@@ -673,9 +732,13 @@ abstract class SyntaxHighlighter
         RGBA defaultBackground = {1,1,1,1};
 }
 
-import pegged.grammar, pegged.peg;
 
-mixin(grammar(`
+
+version(none)
+{
+    import pegged.grammar, pegged.peg;
+
+    mixin(grammar(`
     ParseD:
 
         Line <- (Spaces (Keyword / Other / Number / String / Parens / Symbol) Spaces)*
@@ -853,4 +916,4 @@ class DSyntaxHighlighter : SyntaxHighlighter
 
 } // class DSyntaxHighlighter
 
-
+} // version(none)
