@@ -346,6 +346,10 @@ public
     }
 
 
+
+
+
+
     // get the horizontal length in screen coords of the line of text
     int getLineLength(string text, Font font)
     in
@@ -362,8 +366,6 @@ public
 
 
 } // public functions
-
-
 
 
 private
@@ -624,6 +626,18 @@ private
 
 } // private functions
 
+
+struct HighlightedText
+{
+    struct ColoredSpan
+    {
+        size_t left, right;
+        RGBA color;
+    }
+
+    string buffer;
+    ColoredSpan[] spans;
+}
 
 abstract class SyntaxHighlighter
 {
