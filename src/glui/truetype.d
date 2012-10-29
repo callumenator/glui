@@ -281,6 +281,7 @@ public
         return offset;
     }
 
+version(none) {
 
     /**
     * Render a string of characters at the current position, with highlighted syntax.
@@ -344,6 +345,8 @@ public
         unbindFontBuffers(font);
         return offset;
     }
+
+}
 
     /**
     * Render a HighlightedText structure
@@ -692,51 +695,125 @@ struct HighlightedText
         size_t left, right;
         RGBA foreground;
         RGBA background;
+
+        this(size_t l, size_t r, RGBA fore, RGBA back = RGBA(0,0,0,0))
+        {
+            left = l;
+            right = r;
+            foreground = fore;
+            background = back;
+        }
     }
 
     string buffer;
     ColoredSpan[] spans;
 }
 
-abstract class SyntaxHighlighter
+
+//import dawg.dlexer;
+
+interface SyntaxHighlighter
 {
-    struct ColoredText
-    {
-        string text;
-        RGBA color = {1,1,1,1};
-        RGBA background = {0,0,0,0};
-    }
-
-    enum SyntaxElement
-    {
-        KEYWORD,
-        PARENS,
-        OPERATOR,
-        NUMBER,
-        STRING
-    }
-
-    ColoredText[] parse(string text);
-
-    void setElement(SyntaxElement stx, RGBA fg, RGBA bg)
-    {
-        color[stx] = fg;
-        background[stx] = bg;
-    }
-
-    private:
-        RGBA[SyntaxElement] color;
-        RGBA[SyntaxElement] background;
-
-        RGBA defaultColor = {1,1,1,1};
-        RGBA defaultBackground = {1,1,1,1};
+    HighlightedText highlight(string s, size_t startLine, size_t stopLine);
 }
+
+version(none){
+
+class DSyntaxHighlighter : SyntaxHighlighter
+{
+    DLexer!string lexer;
+
+    HighlightedText highlight(string s, size_t startLine, size_t stopLine)
+    {
+        HighlightedText result;
+        result.buffer = s;
+        lexer.input = s;
+
+        //while(lexer.front._loc._line < startLine)
+        //    lexer.popFront();
+
+        size_t l, r;
+        while(lexer.front._loc._line < stopLine) with(HighlightedText)
+        {
+            if (r > l)
+                result.spans ~= ColoredSpan(l, r, RGBA(1,1,1,1));
+
+            DToken t = lexer.front;
+            switch(t._id) with(Tok)
+            {
+                case LComment:
+                    result.spans ~= ColoredSpan(t._loc._idx,
+                                                t._loc._idx + t._text.length,
+                                                RGBA(0,.1,1,1));
+                    l = t._loc._idx + t._text.length;
+                    break;
+                default: r = t._loc._idx + t._text.length; break;
+            }
+            lexer.popFront();
+        }
+
+        if (r > l)
+            result.spans ~= HighlightedText.ColoredSpan(l, r, RGBA(1,1,1,1));
+
+        foreach(sp; result.spans)
+            writeln(sp.left, ", ", sp.right);
+
+        return result;
+    }
+
+}
+
+}
+
+
+
+
+
+
+
+
 
 
 
 version(none)
 {
     import pegged.grammar, pegged.peg;
+
+    abstract class SyntaxHighlighter
+    {
+        struct ColoredText
+        {
+            string text;
+            RGBA color = {1,1,1,1};
+            RGBA background = {0,0,0,0};
+        }
+
+        enum SyntaxElement
+        {
+            KEYWORD,
+            PARENS,
+            OPERATOR,
+            NUMBER,
+            STRING
+        }
+
+        ColoredText[] parse(string text);
+
+        void setElement(SyntaxElement stx, RGBA fg, RGBA bg)
+        {
+            color[stx] = fg;
+            background[stx] = bg;
+        }
+
+        private:
+            RGBA[SyntaxElement] color;
+            RGBA[SyntaxElement] background;
+
+            RGBA defaultColor = {1,1,1,1};
+            RGBA defaultBackground = {1,1,1,1};
+    }
+
+
 
     mixin(grammar(`
     ParseD:

@@ -308,10 +308,15 @@ class WidgetText : WidgetWindow
                 renderSelection(); // text selection
 
                 auto startRow = m_allowVScroll ? m_vscroll.current : 0;
-                auto _text = m_text.getTextLines(startRow, m_dim.y / m_font.m_lineHeight);
+                auto stopRow = m_dim.y / m_font.m_lineHeight;
+                auto _text = m_text.getTextLines(startRow, stopRow);
 
                 if (m_highlighter)
-                    renderCharacters(m_font, _text, m_highlighter);
+                {
+                    auto h = m_highlighter.highlight(m_text.getText(), startRow, stopRow);
+                    renderCharacters(m_font, h);
+                    //renderCharacters(m_font, _text, m_highlighter);
+                }
                 else
                     renderCharacters(m_font, _text, m_textColor);
 
