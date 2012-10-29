@@ -2226,8 +2226,6 @@ class SpanList
         // Grow the last-used node if possible
         if (allowMerge && lastInsert.node !is null && index == lastInsert.index)
         {
-            debug { writeln("GROW"); }
-
             lastInsert.node.payload.length += s.length;
             lastInsert.node.payload.newLines += s.newLines;
 
@@ -2358,7 +2356,6 @@ class SpanList
         auto right = findNode(to);
         if (right.node is tail)
         {
-            debug { writeln("Right is tail"); }
             right.node = right.node.prev;
             right.span = right.node.payload;
             right.offset = right.span.length - 1;
@@ -2369,32 +2366,26 @@ class SpanList
         // If the left and right node are the same, we may be able to shrink
         if (left.node is right.node)
         {
-            debug { writeln("Left is Right"); }
-
             // Try to shrink from left or right
             size_t len = right.offset - left.offset + 1;
             if (left.offset == 0)
             {
-                debug { writeln("Shrink left"); }
                 removed = shrinkLeft(left.node, len, undoCount);
                 undoSize.push(1);
                 return removed;
             }
             else if (right.offset >= left.span.length - 1)
             {
-                debug { writeln("Shrink right"); }
                 removed = shrinkRight(left.node, len, undoCount);
                 undoSize.push(1);
                 return removed;
             }
             // else fall through to generic remove
-            debug { writeln("Can't shrink"); }
         }
 
         size_t lOff = 0, rOff = 0; // offsets frmo left and right edge
         if (left.offset > 0) with(left.node.payload) // Insert a node/span for the left edge of the left node
         {
-            debug { writeln("Left partial"); }
             lOff = left.offset;
             auto newSpan = Span(buffer, offset, left.offset);
             auto newNode = insertBefore(left.node, newSpan);
@@ -2404,7 +2395,6 @@ class SpanList
 
         if (right.offset < right.span.length - 1) with(right.node.payload)
         {
-            debug { writeln("Right partial"); }
             rOff = length - right.offset - 1;
             auto newSpan = Span(buffer, offset + right.offset + 1, length - (right.offset + 1));
             auto newNode = insertAfter(right.node, newSpan);
@@ -2414,7 +2404,6 @@ class SpanList
 
         removed = remove(left.node, right.node, undoCount);
         undoSize.push(undoCount);
-        writeln("REMOVED: ", removed[lOff..$-rOff]);
         return removed[lOff..$-rOff];
     }
 

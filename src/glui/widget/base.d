@@ -40,7 +40,8 @@ import
 public import
     glui.event,
     glui.widget.event,
-    glui.widget.text;
+    glui.widget.text,
+    glui.widget.table;
 
 
 // Treat 2-element static arrays as (x,y) pairs
@@ -781,6 +782,16 @@ abstract class Widget
             // If click was inside my bounds, list me as focused
             if (m_visible && this.isInside(pos) && m_focusable)
             {
+                // Give parent a chance to steal the focus
+                if (m_parent)
+                {
+                    if (m_parent.stealFocus(pos, this))
+                    {
+                        finalFocus = m_parent;
+                        return true;
+                    }
+                }
+
                 finalFocus = this;
 
                 // But if I have children, pass the focus on to one of them
@@ -820,6 +831,14 @@ abstract class Widget
             m_lastFocused = last;
             foreach(child; m_children)
                 child.lastFocused(last + 1);
+        }
+
+        /**
+        * Steal the focus from a child.
+        */
+        bool stealFocus(int[2] pos, Widget child)
+        {
+            return false;
         }
 
         /**
@@ -1223,8 +1242,8 @@ class WidgetRoot : Widget
             }
         }
 
-        // Give the focus to the new widget (use force when focusing non-root-managed widgets)
-        void changeFocus(Widget newFocus, Flag!"force" force = Flag!"force".no)
+        // Give the focus to the new widget
+        void changeFocus(Widget newFocus)
         {
             if (newFocus is m_focused)
                 return;
@@ -1304,6 +1323,7 @@ class WidgetRoot : Widget
                     auto pos = event.get!MouseMove.pos;
                     auto delta = event.get!MouseMove.delta;
                     m_recieveDrag.drag(pos, delta);
+                    writeln(m_recieveDrag);
                     needRender();
                 }
             }
