@@ -3089,7 +3089,7 @@ class PieceTableTextArea : TextArea
             float _x = 0;
             foreach(char c; r.front)
             {
-                if (_x >= x)
+                if (std.math.abs(_x - x) < 3)
                     break;
 
                 if (c == '\t')
