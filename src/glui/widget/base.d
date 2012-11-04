@@ -1323,7 +1323,6 @@ class WidgetRoot : Widget
                     auto pos = event.get!MouseMove.pos;
                     auto delta = event.get!MouseMove.delta;
                     m_recieveDrag.drag(pos, delta);
-                    writeln(m_recieveDrag);
                     needRender();
                 }
             }

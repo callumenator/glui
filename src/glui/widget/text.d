@@ -581,7 +581,9 @@ class WidgetText : WidgetWindow
                 {
                     if (amIDragging &&
                         (m_allowVScroll && root.mouse.ypos > m_screenPos.y + m_dim.y ||
-                         m_allowHScroll && root.mouse.xpos > m_screenPos.x + m_dim.x ))
+                         m_allowVScroll && root.mouse.ypos < m_screenPos.y ||
+                         m_allowHScroll && root.mouse.xpos > m_screenPos.x + m_dim.x ||
+                         m_allowHScroll && root.mouse.xpos < m_screenPos.x ))
                     {
                         drag(root.mouse.pos, [0,0]);
                         adjustVisiblePortion();
@@ -2442,7 +2444,6 @@ class SpanList
         l.insertAt(0, Span(&buffer, 0, 35));
         l.insertAt(-1, Span(&buffer, 35, buffer.length - 35));
         assert(l.remove(0, 40) == "this is a test buffer for running tests\no");
-        writeln(l[].front.spannedText());
         assert(l[].front.spannedText() == "n the functions found in the SpanList class blah blah");
 
         l.clear();
@@ -2589,7 +2590,6 @@ class SpanList
         foreach(i; 0..nels)
         {
             auto change = undoStack.pop();
-            writeln(change.action);
             redoStack.push(change);
 
             final switch (change.action) with(Change.Action)
@@ -2933,8 +2933,6 @@ class PieceTableTextArea : TextArea
             m_caretUndoStack.push(m_caret);
 
             auto removed = m_spans.remove(from, to);
-
-            writeln("removed: ", removed);
 
             if (removed.length == 0)
                 return "";
