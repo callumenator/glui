@@ -256,7 +256,7 @@ public
                     auto index = font.index(' ');
 
                     glColor4fv(bgcolor.ptr);
-                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*95*typeof(font.m_indices[0]).sizeof));
+                    glDrawElements(GL_QUADS, 4, GL_UNSIGNED_SHORT, cast(void*)(4*index*typeof(font.m_indices[0]).sizeof));
 
                     offset[0] += font.m_wids[index];
                     glTranslatef(font.m_wids[index] - font.m_xoffs[index], 0, 0);

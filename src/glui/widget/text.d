@@ -855,19 +855,27 @@ class WidgetText : WidgetWindow
                     {
                         deleteSelectedText();
 
-                        // If current line is indented (has tabs) replicate for the new line
+                        // If current line is indented replicate for the new line
+                        auto cCol = m_text.col;
                         auto cLine = m_text.getCurrentLine();
+                        std.stdio.writeln(cLine);
                         m_text.insert("\n");
-                        foreach(char c; cLine)
+
+                        auto r = cLine.save();
+                        auto c = 0;
+                        while(c < cCol && !r.empty && (r.front.isWhite()))
                         {
-                            if (c == '\t')
-                                m_text.insert('\t');
-                            else
-                                break;
+                            c ++;
+                            m_text.insert(r.front.to!char); // unicode!!
+                            r.popFront();
                         }
 
-                        if (m_autoBraceIndent && strip(cLine) == "{") // If current line is a brace, check for auto indent
-                            m_text.insert("\t");
+                        if (m_autoBraceIndent) // If current line ends with an lbrace, check for auto indent
+                        {
+                            auto stripped = stripRight(cLine);
+                            if (cCol >= stripped.length && stripped.length >= 1 && stripped[$-1] == '{')
+                                m_text.insert("\t");
+                        }
 
                         m_drawCaret = true;
                         m_refreshCache = true;
@@ -948,22 +956,10 @@ class WidgetText : WidgetWindow
                     }
                     else if (m_editable)
                     {
-
                         deleteSelectedText();
 
-
-                        /++
-                        if (key == KC_BRACERIGHT)
-                        {
-                            auto cLine = m_text.getCurrentLine();
-                            if (m_autoBraceIndent && strip(cLine) == "}") // check for auto indent
-                            {
-                                auto loc = m_text.searchLeft('{');
-                                if (m_text.leftText() == '\t')
-                                    m_text.del();
-                            }
-                        }
-                        ++/
+                        if (key == KC_BRACERIGHT && m_autoBraceIndent)
+                            closeBraceIndent();
 
                         m_text.insert(cast(char)key);
                         eventSignal.emit(this, WidgetEvent(TextInsert(to!string(cast(char)key))));
@@ -1182,6 +1178,58 @@ class WidgetText : WidgetWindow
                     m_text.insert(paste);
                     m_refreshCache = true;
                     needRender();
+                }
+            }
+        }
+
+        void closeBraceIndent()
+        {
+            auto cLine = m_text.getCurrentLine();
+            if (m_text.row > 0 && m_autoBraceIndent && strip(cLine).empty) // check for auto indent
+            {
+                bool found = false;
+                int depth = 0;
+                int lineNum = m_text.row-1;
+                auto pLine = m_text.getLine(lineNum);
+                while(lineNum >= 0)
+                {
+                    foreach(c; retro(pLine))
+                    {
+                        if (c == '}')
+                            depth ++;
+                        else if (c == '{')
+                        {
+                            if (depth == 0)
+                            {
+                                found = true;
+                                break;
+                            }
+                            else
+                                depth --;
+                        }
+                    }
+
+                    if (found)
+                        break;
+
+                    lineNum --;
+                    pLine = m_text.getLine(lineNum);
+                }
+
+                if (found)
+                {
+                    // Delete all indent on the current line
+                    while(m_text.col > 0)
+                        m_text.backspace();
+
+                    // Count indent on line with brace
+                    foreach(c; pLine)
+                    {
+                        if (c != '\t' && c != '\n')
+                            break;
+                        else
+                            m_text.insert(c);
+                    }
                 }
             }
         }
@@ -2512,10 +2560,13 @@ class SpanList
         auto newLines = del.count('\n');
         auto newLen = node.payload.length - shrinkBy;
 
-        if (newLen == 0) {
+        if (newLen == 0)
+        {
             undoStack.push( Change(node, Change.Action.REMOVE) );
             remove(node);
-        } else {
+        }
+        else
+        {
             undoStack.push( Change(node, Change.Action.SHRINK_LEFT, shrinkBy, newLines) );
             node.payload.length -= shrinkBy;
             node.payload.offset += shrinkBy;
@@ -2535,10 +2586,13 @@ class SpanList
         auto newLines = del.count('\n');
         auto newLen = node.payload.length - shrinkBy;
 
-        if (newLen == 0) {
+        if (newLen == 0)
+        {
             undoStack.push( Change(node, Change.Action.REMOVE) );
             remove(node);
-        } else {
+        }
+        else
+        {
             undoStack.push( Change(node, Change.Action.SHRINK_RIGHT, shrinkBy, newLines) );
             node.payload.length -= shrinkBy;
             node.payload.newLines -= newLines;
