@@ -286,8 +286,6 @@ class WidgetText : WidgetWindow
         {
             super.render(Flag!"RenderChildren".no);
 
-            //m_vscroll.range = [0, m_text.nLines];
-
             if (m_font is null)
                 return;
 
@@ -318,8 +316,9 @@ class WidgetText : WidgetWindow
                     //renderCharacters(m_font, _text, m_highlighter);
                 }
                 else
+                {
                     renderCharacters(m_font, _text, m_textColor);
-
+                }
                 glEndList();
                 m_refreshCache = false;
             }
@@ -858,7 +857,6 @@ class WidgetText : WidgetWindow
                         // If current line is indented replicate for the new line
                         auto cCol = m_text.col;
                         auto cLine = m_text.getCurrentLine();
-                        std.stdio.writeln(cLine);
                         m_text.insert("\n");
 
                         auto r = cLine.save();
@@ -881,7 +879,6 @@ class WidgetText : WidgetWindow
                         m_refreshCache = true;
                         needRender();
                         adjustVisiblePortion();
-
                         eventSignal.emit(this, WidgetEvent(TextInsert("\n")));
                     }
                     break;
@@ -967,7 +964,6 @@ class WidgetText : WidgetWindow
                         m_refreshCache = true;
                         needRender();
                         adjustVisiblePortion();
-
 
                     }
                     break;
@@ -3300,9 +3296,17 @@ class PieceTableTextArea : TextArea
 
         override void home()
         {
-            m_caret.offset -= m_caret.col;
-            m_caret.col = 0;
-            m_seekColumn = m_caret.col;
+            if (strip(m_currentLine[0..m_caret.col]).empty)
+            {
+                m_caret.offset -= m_caret.col;
+                m_caret.col = 0;
+                m_seekColumn = m_caret.col;
+            }
+            else
+            {
+                while(m_caret.col > 0 && !strip(m_currentLine[0..m_caret.col]).empty)
+                    moveLeft();
+            }
         }
 
         override void end()
