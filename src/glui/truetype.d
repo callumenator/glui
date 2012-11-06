@@ -36,6 +36,8 @@ public
     class Font
     {
         FT_Face m_face;
+        string filename;
+
         float m_ptSize = 0;
         int[] m_wids, m_xoffs;
         GLfloat[] m_vertices; // vertex, texcoord, vertex, texcoord, etc.
@@ -54,6 +56,11 @@ public
             m_maxHoss = 0;
         uint m_vertexBuffer;
         uint m_indexBuffer;
+
+        this(string _filename)
+        {
+            filename = _filename;
+        }
 
         /**
         * Return the array index for a given character.
@@ -82,15 +89,15 @@ public
         if (fontPtr !is null)
             return *fontPtr;
 
-        Font font = new Font;
+        Font font = new Font(filename);
         string fontName = baseName(baseName(filename)) ~ to!string(pointSize);
         FontGlyph glyph = loadFontGlyph(filename, pointSize);
 
         if (glyph.m_face is null)
         {
             // Glyph was not loaded.
-            throw new Exception("Could not load " ~ filename);
-            return font;
+            //throw new Exception("Could not load " ~ filename);
+            return null;
         }
 
         font.m_face = glyph.m_face;

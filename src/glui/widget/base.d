@@ -2110,7 +2110,8 @@ class WidgetScroll : WidgetWindow
 
         override void event(ref Event event)
         {
-            if (!amIHovered && !m_parent.amIHovered && !m_parent.isAChildHovered) return;
+            if (ctrlIsDown || (!amIHovered && !m_parent.amIHovered && !m_parent.isAChildHovered))
+                return;
 
             if (event.type == EventType.MOUSEWHEEL && m_orient == Orientation.VERTICAL)
             {

@@ -617,6 +617,13 @@ class WidgetText : WidgetWindow
                     needRender();
                     break;
                 }
+                case MOUSEWHEEL:
+                {
+                    if (ctrlIsDown)
+                        changeFontSize(2 * event.get!MouseWheel.delta / 120);
+
+                    break;
+                }
                 default: break;
             }
         } // event
@@ -1227,6 +1234,26 @@ class WidgetText : WidgetWindow
                             m_text.insert(c);
                     }
                 }
+            }
+        }
+
+        void changeFontSize(int delta)
+        {
+            if (!m_font)
+                return;
+
+            auto newSize = cast(int)(m_font.m_ptSize + delta);
+            if (newSize < 4)
+                return;
+
+            auto newFont = loadFont(m_font.filename, newSize);
+
+            if (newFont)
+            {
+                m_font = newFont;
+                adjustVisiblePortion();
+                m_refreshCache = true;
+                needRender();
             }
         }
 
