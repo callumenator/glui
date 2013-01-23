@@ -67,9 +67,9 @@ version (WindowsVista) {
 }
 
 // Just a bit of syntactic sugar for the static ifs
-const uint WINVER = _WIN32_WINDOWS < _WIN32_WINNT ?
+enum uint WINVER = _WIN32_WINDOWS < _WIN32_WINNT ?
                     _WIN32_WINDOWS : _WIN32_WINNT;
-const bool _WIN32_WINNT_ONLY = _WIN32_WINDOWS == uint.max;
+enum bool _WIN32_WINNT_ONLY = _WIN32_WINDOWS == uint.max;
 
 version (IE7) {
 	const uint _WIN32_IE = 0x700;

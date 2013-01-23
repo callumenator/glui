@@ -35,7 +35,7 @@ int main()
 
     WidgetRoot root = new WidgetRoot(Window("window1"));
 
-    auto highlighter = new DSyntaxHighlighter;
+    //auto highlighter = new DSyntaxHighlighter;
 
     auto textl = root.create!WidgetText(null, courier, widgetArgs(
                                         "dim", [480, 680],
@@ -44,8 +44,7 @@ int main()
                                         "bordercolor", RGBA(1,1,1,1),
                                         "editable", true,
                                         "vscroll", true,
-                                        "candrag", true,
-                                        "highlighter", highlighter));
+                                        "candrag", true));
 
     auto layout = root.create!WidgetTree(null, widgetArgs(
                                           "dim", [300, 400],
