@@ -1,6 +1,3 @@
-
-Currently requires 2.061-head to compile on Windows (due to Optlink bug)
-
 This repo contains routines for creating and managing windows, handling window events,
 loading and rendering truetype fonts using freetype, and drawing GUI elements in openGL.
 
