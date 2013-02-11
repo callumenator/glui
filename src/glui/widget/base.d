@@ -1072,7 +1072,9 @@ class WidgetRoot : Widget
             glBindTexture(GL_TEXTURE_2D, 0);
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_LIGHTING);
-            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+            float[4] envColor = [1.0,1.0,1.0,1.0];
+            glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, envColor.ptr); // Set this, so we can use GL_BLEND with LUMINANCE textures
+            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
 
             glScissor(0, 0, m_dim[0], m_dim[1]);
