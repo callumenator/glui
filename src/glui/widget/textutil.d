@@ -823,12 +823,7 @@ struct Span
         return newLines;
     }
 
-    string spannedText()
-    in
-    {
-        assert(buffer !is null);
-    }
-    body
+    string spannedText() in { assert(buffer !is null); } body
     {
         return (*buffer)[offset..offset+this.length];
     }
@@ -839,11 +834,7 @@ struct Span
     * span contains the original span up to and including splitAt - 1,
     * the right span contains the original span from splitAt to length.
     */
-    Tuple!(Span, Span) split(size_t splitAt)
-    in
-    {
-        assert(splitAt > 0 && splitAt < length);
-    }
+    Tuple!(Span, Span) split(size_t splitAt) in { assert(splitAt > 0 && splitAt < length); }
     body
     {
         auto left = Span(buffer, offset, splitAt);
@@ -1655,13 +1646,6 @@ class PieceTableTextArea : TextArea
         }
 
         override string remove(size_t from, size_t to)
-        in
-        {
-            //assert(from < to);
-            //writeln("REMOVE: ", from, ", ", to);
-            //assert(from == m_caret.offset || to == m_caret.offset);
-        }
-        body
         {
             m_caretUndoStack.push(m_caret);
 
@@ -1678,19 +1662,19 @@ class PieceTableTextArea : TextArea
 
             if (from == m_caret.offset)
             {
-                m_currentLine = byLine(m_caret.row).front; // optimize
+                m_currentLine = byLine(m_caret.row).front;
                 return removed;
             }
 
             m_caret.offset = from;
 
-            if (totalDel > 0) // optimize for single newline deletion
+            if (totalDel > 0)
                 setCaret(from);
             else
                 m_caret.col -= (length - totalDel);
 
             m_seekColumn = m_caret.col;
-            m_currentLine = byLine(m_caret.row).front; // optimize
+            m_currentLine = byLine(m_caret.row).front;
 
             return removed;
         }
@@ -1722,7 +1706,8 @@ class PieceTableTextArea : TextArea
                 return cast(char)0;
             else if (m_caret.col == 0)
                 return '\n';
-            else return m_currentLine[m_caret.col-1];
+            else
+                return m_currentLine[m_caret.col-1];
         }
 
         override char rightText()
@@ -1731,7 +1716,8 @@ class PieceTableTextArea : TextArea
                 return cast(char)0;
             else if (m_caret.col == m_currentLine.length)
                 return '\n';
-            else return m_currentLine[m_caret.col];
+            else
+                return m_currentLine[m_caret.col];
         }
 
         override string getLine(size_t line)
@@ -1763,18 +1749,14 @@ class PieceTableTextArea : TextArea
             return text.data;
         }
 
-        override string getTextBetween(size_t from, size_t to)
-        in
-        {
-            assert(from < to);
-        }
-        body
+        override string getTextBetween(size_t from, size_t to) in { assert(from < to); } body
         {
             auto a = getCaret(from);
             auto b = getCaret(to);
             auto block = getTextLines(a.row, (b.row - a.row) + 1);
             return block[(a.col)..(a.col + (to-from))];
         }
+
         override Caret getCaret(size_t index)
         {
             Caret loc;
@@ -2250,7 +2232,7 @@ class PieceTableTextArea : TextArea
         }
 
         void insertAt(string* buf,
-                      size_t index /** logical index **/,
+                      size_t index, /** logical index **/
                       string s,
                       bool allowMerge)
         {

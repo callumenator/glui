@@ -31,7 +31,9 @@ import
     glui.widget.textutil,
     glui.widget.base;
 
-
+/**
+* Prototypes for clipboard copy/paste operations
+*/
 version(Windows)
 {
     import core.sys.windows.windows;
@@ -50,7 +52,7 @@ version(Windows)
 }
 
 /**
-* Text box. This is a possibly editable box for rendering text.
+* Text box. This is a (possibly) editable box for rendering text.
 */
 class WidgetText : WidgetWindow
 {

@@ -45,22 +45,6 @@ public import
     glui.widget.table;
 
 
-// Treat 2-element static arrays as (x,y) pairs
-T x(T)(T[2] v) { return v[0]; }
-T y(T)(T[2] v) { return v[1]; } // ditto
-ref T x(T)(ref T[2] v) { return v[0]; }
-ref T y(T)(ref T[2] v) { return v[1]; } // ditto
-
-// Treat 4-element static arrays as (r,g,b,a) colors
-T r(T)(T[4] v) { return v[0]; }
-T g(T)(T[4] v) { return v[1]; }
-T b(T)(T[4] v) { return v[2]; }
-T a(T)(T[4] v) { return v[3]; }
-ref T r(T)(ref T[4] v) { return v[0]; }
-ref T g(T)(ref T[4] v) { return v[1]; }
-ref T b(T)(ref T[4] v) { return v[2]; }
-ref T a(T)(ref T[4] v) { return v[3]; }
-
 // Structure for storing RGBA colors
 struct RGBA
 {
@@ -108,191 +92,11 @@ struct RGBA
     }
 
     alias v this;
-
 }
 
 
 // Number of points to include in rounded corners
 enum arcResolution = 10;
-
-
-// Distance between two points
-float distance(int[2] p1, int[2] p2)
-{
-    return sqrt( cast(float)((p1.x - p2.x)*(p1.x - p2.x) + (p1.y - p2.y)*(p1.y - p2.y)));
-}
-
-
-// Check if a given point is within a widgets boundary
-bool isInside(Widget w, int[2] point)
-{
-    int[4] clip = w.clip;
-
-    if (w.parent) // Allow the widgets container to transform the clip box
-    {
-        w.parent.transformPos(w, point);
-        w.parent.transformClip(w, clip);
-    }
-
-    auto radius = min(w.cornerRadius, w.dim.x/2, w.dim.y/2);  // TODO: is this a slow point?
-
-    // First check for point inside one of the two sqaures which cover the non-rounded corners
-    if (point.x >= clip[0] && point.x <= clip[0] + clip[2] &&
-        point.y >= clip[1] + radius && point.y <= clip[1] + clip[3] - radius)
-        return true;
-    else if (point.x >= clip[0] + radius && point.x <= clip[0] + clip[2] - radius &&
-             point.y >= clip[1] && point.y <= clip[1] + clip[3] )
-        return true;
-    // Check if we are in one of the corners
-    else if ((distance([clip[0] + radius, clip[1] + clip[3] - radius], [point.x, point.y]) <= radius) ||
-             (distance([clip[0] + clip[2] - radius, clip[1] + clip[3] - radius], [point.x, point.y]) <= radius) ||
-             (distance([clip[0] + clip[2] - radius, clip[1] + radius], [point.x, point.y]) <= radius) ||
-             (distance([clip[0] + radius, clip[1] + radius], [point.x, point.y]) <= radius))
-            return true;
-    else
-        return false;
-}
-
-
-// Check if a given point is within a given box (this one won't account for rounded corners!)
-bool isInside(int[2] scrPos, int[2] dim, int[2] point)
-{
-    return (point.x >= scrPos.x && point.x <= scrPos.x + dim.x &&
-            point.y >= scrPos.y && point.y <= scrPos.y + dim.y );
-}
-
-
-/**
-* Test to see if the bounding boxes of two widgets overlap
-*/
-bool overlap(Widget w1, Widget w2)
-{
-    auto p1 = w1.screenPos;
-    auto d1 = w1.dim;
-
-    if (w1.parent) // Allow widget container to transform geometry
-    {
-        w1.parent.transformPos(w1, p1);
-        w1.parent.transformDim(w1, d1);
-    }
-
-    auto p2 = w2.screenPos;
-    auto d2 = w2.dim;
-
-    if (w2.parent) // Allow widget container to transform geometry
-    {
-        w2.parent.transformPos(w2, p2);
-        w2.parent.transformDim(w2, d2);
-    }
-
-    if (p1.x + d1.x < p2.x) return false; // a is left of b
-    if (p1.x > p2.x + d2.x) return false; // a is right of b
-    if (p1.y + d1.y < p2.y) return false; // a is above b
-    if (p1.y > p2.y + d2.y) return false; // a is below b
-    return true; // boxes overlap
-}
-
-
-/**
-* Calculate the smallest clipping box, given two boxes.
-*/
-void smallestBox(ref int[4] childbox, int[4] parentbox)
-{
-    int[4] cbox = [childbox[0], childbox[1], childbox[0] + childbox[2], childbox[1] + childbox[3]];
-    int[4] pbox = [parentbox[0], parentbox[1], parentbox[0] + parentbox[2], parentbox[1] + parentbox[3]];
-
-    if (cbox[0] <= pbox[0]) cbox[0] = pbox[0] + 1;
-    if (cbox[1] <= pbox[1]) cbox[1] = pbox[1] + 1;
-    if (cbox[2] >= pbox[2]) cbox[2] = pbox[2] - 1;
-    if (cbox[3] >= pbox[3]) cbox[3] = pbox[3] - 1;
-
-    childbox[0] = cbox[0];
-    childbox[1] = cbox[1];
-    childbox[2] = cbox[2] - cbox[0];
-    childbox[3] = cbox[3] - cbox[1];
-
-    if (childbox[2] < 0) childbox[2] = 0;
-    if (childbox[3] < 0) childbox[3] = 0;
-}
-
-
-alias Variant[string] WidgetArgs;
-
-void fill(T...)(WidgetArgs args, T fields)
-{
-    Variant* ptr = null;
-
-    foreach(field; fields)
-    {
-        static if (is(typeof(field) dummy == KeyVal!U, U))
-        {
-            ptr = field.key in args;
-            if (ptr !is null)
-            {
-                static if (is(U == int[2]))
-                    *field.val = ptr.get!(int[]);
-                else
-                    *field.val = ptr.get!U;
-            }
-        }
-    }
-}
-
-KeyVal!T arg(T)(string k, ref T t)
-{
-    KeyVal!T kv;
-    kv.key = k.toLower;
-    kv.val = &t;
-    return kv;
-}
-
-struct KeyVal(T)
-{
-    string key;
-    T* val;
-}
-
-WidgetArgs widgetArgs(T...)(T args)
-{
-    WidgetArgs out_args;
-    string current = "";
-    Variant holder;
-    bool expectVal = false;
-
-    foreach(arg; args)
-    {
-        static if (isTuple!(typeof(arg)))
-        {
-            auto sub_args = widgetArgs(arg.expand);
-            foreach(key, val; sub_args)
-                out_args[key] = Variant(val);
-        }
-        else
-        {
-            if (!expectVal)
-            {
-                static if (is(typeof(arg) == string))
-                {
-                    current = arg.toLower;
-                    expectVal = true;
-                }
-                else
-                {
-                    // We don't really need to assert, but
-                    assert(false, "Error: expected argument name, not " ~ arg.to!string);
-                }
-            }
-            else
-            {
-                holder = arg;
-                out_args[current] = holder;
-                expectVal = false;
-                current = "";
-            }
-        }
-    }
-    return out_args;
-}
 
 
 enum EdgeFlag
@@ -2551,6 +2355,200 @@ class WidgetTree : WidgetWindow
         int m_widgetIndent = 20;
 }
 
+
+// Treat 2-element static arrays as (x,y) pairs
+T x(T)(T[2] v) { return v[0]; }
+T y(T)(T[2] v) { return v[1]; } // ditto
+ref T x(T)(ref T[2] v) { return v[0]; }
+ref T y(T)(ref T[2] v) { return v[1]; } // ditto
+
+// Treat 4-element static arrays as (r,g,b,a) colors
+T r(T)(T[4] v) { return v[0]; }
+T g(T)(T[4] v) { return v[1]; }
+T b(T)(T[4] v) { return v[2]; }
+T a(T)(T[4] v) { return v[3]; }
+ref T r(T)(ref T[4] v) { return v[0]; }
+ref T g(T)(ref T[4] v) { return v[1]; }
+ref T b(T)(ref T[4] v) { return v[2]; }
+ref T a(T)(ref T[4] v) { return v[3]; }
+
+// Distance between two points
+float distance(int[2] p1, int[2] p2)
+{
+    return sqrt( cast(float)((p1.x - p2.x)*(p1.x - p2.x) + (p1.y - p2.y)*(p1.y - p2.y)));
+}
+
+
+// Check if a given point is within a widgets boundary
+bool isInside(Widget w, int[2] point)
+{
+    int[4] clip = w.clip;
+
+    if (w.parent) // Allow the widgets container to transform the clip box
+    {
+        w.parent.transformPos(w, point);
+        w.parent.transformClip(w, clip);
+    }
+
+    auto radius = min(w.cornerRadius, w.dim.x/2, w.dim.y/2);  // TODO: is this a slow point?
+
+    // First check for point inside one of the two sqaures which cover the non-rounded corners
+    if (point.x >= clip[0] && point.x <= clip[0] + clip[2] &&
+        point.y >= clip[1] + radius && point.y <= clip[1] + clip[3] - radius)
+        return true;
+    else if (point.x >= clip[0] + radius && point.x <= clip[0] + clip[2] - radius &&
+             point.y >= clip[1] && point.y <= clip[1] + clip[3] )
+        return true;
+    // Check if we are in one of the corners
+    else if ((distance([clip[0] + radius, clip[1] + clip[3] - radius], [point.x, point.y]) <= radius) ||
+             (distance([clip[0] + clip[2] - radius, clip[1] + clip[3] - radius], [point.x, point.y]) <= radius) ||
+             (distance([clip[0] + clip[2] - radius, clip[1] + radius], [point.x, point.y]) <= radius) ||
+             (distance([clip[0] + radius, clip[1] + radius], [point.x, point.y]) <= radius))
+            return true;
+    else
+        return false;
+}
+
+
+// Check if a given point is within a given box (this one won't account for rounded corners!)
+bool isInside(int[2] scrPos, int[2] dim, int[2] point)
+{
+    return (point.x >= scrPos.x && point.x <= scrPos.x + dim.x &&
+            point.y >= scrPos.y && point.y <= scrPos.y + dim.y );
+}
+
+
+/**
+* Test to see if the bounding boxes of two widgets overlap
+*/
+bool overlap(Widget w1, Widget w2)
+{
+    auto p1 = w1.screenPos;
+    auto d1 = w1.dim;
+
+    if (w1.parent) // Allow widget container to transform geometry
+    {
+        w1.parent.transformPos(w1, p1);
+        w1.parent.transformDim(w1, d1);
+    }
+
+    auto p2 = w2.screenPos;
+    auto d2 = w2.dim;
+
+    if (w2.parent) // Allow widget container to transform geometry
+    {
+        w2.parent.transformPos(w2, p2);
+        w2.parent.transformDim(w2, d2);
+    }
+
+    if (p1.x + d1.x < p2.x) return false; // a is left of b
+    if (p1.x > p2.x + d2.x) return false; // a is right of b
+    if (p1.y + d1.y < p2.y) return false; // a is above b
+    if (p1.y > p2.y + d2.y) return false; // a is below b
+    return true; // boxes overlap
+}
+
+
+/**
+* Calculate the smallest clipping box, given two boxes.
+*/
+void smallestBox(ref int[4] childbox, int[4] parentbox)
+{
+    int[4] cbox = [childbox[0], childbox[1], childbox[0] + childbox[2], childbox[1] + childbox[3]];
+    int[4] pbox = [parentbox[0], parentbox[1], parentbox[0] + parentbox[2], parentbox[1] + parentbox[3]];
+
+    if (cbox[0] <= pbox[0]) cbox[0] = pbox[0] + 1;
+    if (cbox[1] <= pbox[1]) cbox[1] = pbox[1] + 1;
+    if (cbox[2] >= pbox[2]) cbox[2] = pbox[2] - 1;
+    if (cbox[3] >= pbox[3]) cbox[3] = pbox[3] - 1;
+
+    childbox[0] = cbox[0];
+    childbox[1] = cbox[1];
+    childbox[2] = cbox[2] - cbox[0];
+    childbox[3] = cbox[3] - cbox[1];
+
+    if (childbox[2] < 0) childbox[2] = 0;
+    if (childbox[3] < 0) childbox[3] = 0;
+}
+
+
+alias Variant[string] WidgetArgs;
+
+void fill(T...)(WidgetArgs args, T fields)
+{
+    Variant* ptr = null;
+
+    foreach(field; fields)
+    {
+        static if (is(typeof(field) dummy == KeyVal!U, U))
+        {
+            ptr = field.key in args;
+            if (ptr !is null)
+            {
+                static if (is(U == int[2]))
+                    *field.val = ptr.get!(int[]);
+                else
+                    *field.val = ptr.get!U;
+            }
+        }
+    }
+}
+
+KeyVal!T arg(T)(string k, ref T t)
+{
+    KeyVal!T kv;
+    kv.key = k.toLower;
+    kv.val = &t;
+    return kv;
+}
+
+struct KeyVal(T)
+{
+    string key;
+    T* val;
+}
+
+WidgetArgs widgetArgs(T...)(T args)
+{
+    WidgetArgs out_args;
+    string current = "";
+    Variant holder;
+    bool expectVal = false;
+
+    foreach(arg; args)
+    {
+        static if (isTuple!(typeof(arg)))
+        {
+            auto sub_args = widgetArgs(arg.expand);
+            foreach(key, val; sub_args)
+                out_args[key] = Variant(val);
+        }
+        else
+        {
+            if (!expectVal)
+            {
+                static if (is(typeof(arg) == string))
+                {
+                    current = arg.toLower;
+                    expectVal = true;
+                }
+                else
+                {
+                    // We don't really need to assert, but
+                    assert(false, "Error: expected argument name, not " ~ arg.to!string);
+                }
+            }
+            else
+            {
+                holder = arg;
+                out_args[current] = holder;
+                expectVal = false;
+                current = "";
+            }
+        }
+    }
+    return out_args;
+}
 
 
 
