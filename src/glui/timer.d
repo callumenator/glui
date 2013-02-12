@@ -98,15 +98,9 @@ class TimerPool
     void timer(ulong msecs, bool delegate() dg)
     {
         if (free.empty)
-        {
-            writeln("NEW TIMER");
             (new Timer(&timerDone)).set(msecs, dg).start();
-        }
         else
-        {
-            writeln("OLD TIMER");
             free.removeAny.set(msecs, dg).start();
-        }
     }
 
 private:
