@@ -35,6 +35,9 @@ int main()
 
     WidgetRoot root = new WidgetRoot(Window("window1"));
 
+    scope(exit)
+        root.destroy();
+
     //auto highlighter = new DSyntaxHighlighter;
 
     auto textl = root.create!WidgetText(null, courier, widgetArgs(
@@ -98,8 +101,6 @@ int main()
         if (Window().keyState().keys[KEY.KC_ESCAPE])
             finish = true;
     }
-
-    root.destroy();
 
     return 0;
 
