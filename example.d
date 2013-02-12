@@ -99,6 +99,7 @@ int main()
             finish = true;
     }
 
+    root.destroy();
 
     return 0;
 

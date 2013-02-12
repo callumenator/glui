@@ -207,7 +207,7 @@ class WidgetText : WidgetWindow
             if (m_caretBlinkDelay == -1) m_caretBlinkDelay = 600;
 
             // Request recurrent timer event from root for blinking the caret
-            if (m_editable) requestTimer(m_caretBlinkDelay, &this.timerEvent, true);
+            if (m_editable) root.requestTimer(m_caretBlinkDelay, &this.timerEvent);
 
             // Make scroll bars
             if (m_allowVScroll)
@@ -266,14 +266,11 @@ class WidgetText : WidgetWindow
         }
 
         // Timer event is used to turn on/off the caret
-        void timerEvent(long delay)
+        bool timerEvent()
         {
-            // If this is the caret timer, toggle caretDraw flag, and call render
-            if (delay == m_caretBlinkDelay)
-            {
-                m_drawCaret = !m_drawCaret;
-                needRender();
-            }
+            m_drawCaret = !m_drawCaret;
+            needRender();
+            return m_alive;
         }
 
         int scrollEvent(Widget widget, WidgetEvent event)
@@ -1313,12 +1310,12 @@ class WidgetLabel : WidgetText
     public:
         override void set(Font font, WidgetArgs args)
         {
-            super.set(font, args);
+            m_editable = false; // set this here, to avoid allocating a caret timer
             m_type = "WIDGETLABEL";
+            super.set(font, args);
 
             // Alignment is vertically centered by default:
             m_vAlign = WidgetText.VAlign.CENTER;
-            m_editable = false;
 
             int[2] dims = [0,0];
             bool fixedWidth = false, fixedHeight = false;

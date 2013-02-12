@@ -34,6 +34,7 @@ import
     derelict.util.exception;
 
 import
+    glui.timer,
     glui.window,
     glui.truetype;
 
@@ -344,6 +345,11 @@ abstract class Widget
         this.setParent(parent);
     }
 
+    ~this()
+    {
+        m_alive = false;
+    }
+
     public:
 
         // All widgets use this event signaler
@@ -588,18 +594,6 @@ abstract class Widget
             DIMENSION   = 0x02
         }
         void geometryChanged(GeometryChangeFlag flag) {}
-
-        // Schedule a timer event from WidgetRoot
-        void requestTimer(long delay, void delegate(long) dgt, bool recurring = false)
-        {
-            m_root.requestTimer(this, delay, dgt, recurring);
-        }
-
-        // UnSchedule a timer event from WidgetRoot
-        void removeTimer(long delay, void delegate(long) dgt, bool recurring = false)
-        {
-            m_root.removeTimer(this, delay, dgt, recurring);
-        }
 
         // Override these to control dragging of your widget
         bool requestDrag(int[2] pos)
@@ -866,6 +860,12 @@ abstract class Widget
             m_children.clear;
         }
 
+        // Set alive = false
+        void kill()
+        {
+            m_alive = false;
+        }
+
 
         // Delete a child from this widget's list of children
         void delChild(Widget w)
@@ -965,6 +965,7 @@ abstract class Widget
         Widget m_parent = null;
         Widget[] m_children = null;
         WidgetRoot m_root = null;
+        bool m_alive = true;
 
         int[2] m_pos = [0,0]; // position relative to parent
         int[2] m_dim = [10,10]; // absolute width currently...
@@ -1009,6 +1010,7 @@ class WidgetRoot : Widget
             m_parent = null;
             m_type = "WIDGETROOT";
             m_window = wnd;
+            m_timerPool = new TimerPool(5);
             wnd.event.connect(&this.injectEvent);
             m_eventTimer.start();
             setViewport();
@@ -1022,31 +1024,10 @@ class WidgetRoot : Widget
             if (m_needRender)
                 render(Flag!"RenderChildren".yes);
 
-            // Check to see if timer events need to be issued
-            long ctime = m_eventTimer.peek().msecs;
-            auto scope keys = m_timerCallbacks.keys;
-            auto scope times = m_timerCallbacks.values;
-            foreach(index, key; keys)
-            {
-                if (ctime >= times[index])
-                {
-                    if (!key.oneTimeOnly)
-                        m_timerCallbacks[key] = times[index] + key.delay; // Event is recurrent, so update calltime
-                    else
-                        m_timerCallbacks.remove(key);
-
-                    /**
-                    * Event needs to be issued (remember: widgets might call requestTimer()
-                    * or removeTimer() from key.dgt!)
-                    */
-                    key.dgt(key.delay);
-                }
-            }
-
+            // Make the delay between polls equal to 30 msecs TODO: this rate should be configurable
             auto callTimeDiff = m_eventTimer.peek().msecs - m_lastPollTick;
             m_lastPollTick = m_eventTimer.peek().msecs;
 
-            // Make the delay between polls equal to 30 msecs TODO: this rate should be configurable
             auto delay = 30 - callTimeDiff;
             if (delay > 0)
                 Thread.sleep( dur!("msecs")( delay ) );
@@ -1372,6 +1353,13 @@ class WidgetRoot : Widget
             return newWidget;
         }
 
+        // Recursively destroy all widgets
+        void destroy()
+        {
+            foreach(w; m_children)
+                this.destroy(w);
+        }
+
         // Destroy a widget, recursively destroying its child hierarchy
         void destroy(Widget w)
         {
@@ -1405,6 +1393,7 @@ class WidgetRoot : Widget
                 destroyRecurse(child);
 
             w.clearChildren();
+            w.kill();
         }
 
         // Print out the widget hierarchy
@@ -1440,19 +1429,10 @@ class WidgetRoot : Widget
         // Widgets can check if they hovered
         const bool isHovered(const Widget w) const { return m_hovered is w; }
 
-        // Widgets can register for timer callbacks. By default they are one-off.
-        void requestTimer(Widget widget, long delay_msecs, void delegate(long) callback, bool recurring = false)
+        // Widgets can register for timer callbacks.
+        void requestTimer(ulong delay_msecs, bool delegate() callback)
         {
-            long ctime = m_eventTimer.peek().msecs;
-            m_timerCallbacks[TimerCallback(widget, callback, delay_msecs, !recurring)] = ctime + delay_msecs;
-        }
-
-        // Widgets can remove a previously requested timer
-        void removeTimer(Widget widget, long delay_msecs, void delegate(long) callback, bool recurring = false)
-        {
-            TimerCallback key = TimerCallback(widget, callback, delay_msecs, !recurring);
-            if (key in m_timerCallbacks)
-                m_timerCallbacks.remove(key);
+            m_timerPool.timer(delay_msecs, callback);
         }
 
         // Get the current elapsed time in milliseconds from the stopwatch
@@ -1489,9 +1469,11 @@ class WidgetRoot : Widget
         Widget[] m_widgetList;
         Widget m_focused = null;
         Widget m_hovered = null;
+        TimerPool m_timerPool = null;
 
         long m_lastPollTick = 0; // For calculating framerate, deciding when to sleep
 
+        /++
         // Widgets can register for timer events
         struct TimerCallback
         {
@@ -1501,6 +1483,7 @@ class WidgetRoot : Widget
             bool oneTimeOnly = true;
         }
         long[TimerCallback] m_timerCallbacks; // AA value is the time event should be called
+        ++/
 
         StopWatch m_eventTimer;
 
@@ -2183,14 +2166,9 @@ class WidgetScroll : WidgetWindow
             if (!m_hideWhenNotHovered || m_fadingIn)
                 return;
 
-            if (m_fadingOut)
-            {
-                m_fadingOut = false;
-                removeTimer(10, &this.fadeTimer, true);
-            }
-
+            m_fadingOut = false;
             m_fadingIn = true;
-            requestTimer(10, &this.fadeTimer, true);
+            delayed(10, &this.fadeInTimer);
         }
 
         // Lost the mouse hover, start fading out
@@ -2199,60 +2177,62 @@ class WidgetScroll : WidgetWindow
             if (!m_hideWhenNotHovered || m_fadingOut)
                 return;
 
-            if (m_fadingIn)
-            {
-                m_fadingIn = false;
-                removeTimer(10, &this.fadeTimer, true);
-            }
-
+            m_fadingIn = false;
             m_fadingOut = true;
-            requestTimer(10, &this.fadeTimer, true);
+            delayed(10, &this.fadeOutTimer);
         }
 
         // This is used for fade-in/fade-out
-        void fadeTimer(long delay)
+        bool fadeInTimer()
         {
-            if (m_fadingIn)
+            if (m_fadingOut)
+                return false;
+
+            m_alpha += m_fadeInc;
+
+            m_color.a = m_backgroundAlphaMax * m_alpha;
+            m_slideColor.a = m_slideAlphaMax * m_alpha;
+            m_slideBorder.a = m_slideBorderAlphaMax * m_alpha;
+
+            // Check if we have finished fading
+            if (m_alpha >= 1)
             {
-                m_alpha += m_fadeInc;
-
-                m_color.a = m_backgroundAlphaMax * m_alpha;
-                m_slideColor.a = m_slideAlphaMax * m_alpha;
-                m_slideBorder.a = m_slideBorderAlphaMax * m_alpha;
-
-                // Check if we have finished fading
-                if (m_alpha >= 1)
-                {
-                    m_alpha = 1;
-                    m_color.a = m_backgroundAlphaMax;
-                    m_slideColor.a = m_slideAlphaMax;
-                    m_slideBorder.a = m_slideBorderAlphaMax;
-                    m_fadingIn = false;
-                    removeTimer(10, &this.fadeTimer, true);
-                }
-            }
-            else if (m_fadingOut)
-            {
-                m_alpha -= m_fadeInc;
-
-                m_color.a = m_backgroundAlphaMax * m_alpha;
-                m_slideColor.a = m_slideAlphaMax * m_alpha;
-                m_slideBorder.a = m_slideBorderAlphaMax * m_alpha;
-
-                // Check if we have finished fading
-                if (m_alpha <= 0)
-                {
-                    m_alpha = 0;
-                    m_color.a = 0;
-                    m_slideColor.a = 0;
-                    m_slideBorder.a = 0;
-                    m_fadingOut = false;
-                    removeTimer(10, &this.fadeTimer, true);
-                }
+                m_alpha = 1;
+                m_color.a = m_backgroundAlphaMax;
+                m_slideColor.a = m_slideAlphaMax;
+                m_slideBorder.a = m_slideBorderAlphaMax;
+                m_fadingIn = false;
             }
 
             m_refreshCache = true;
             needRender();
+            return m_fadingIn;
+        }
+
+        bool fadeOutTimer()
+        {
+            if (m_fadingIn)
+                return false;
+
+            m_alpha -= m_fadeInc;
+
+            m_color.a = m_backgroundAlphaMax * m_alpha;
+            m_slideColor.a = m_slideAlphaMax * m_alpha;
+            m_slideBorder.a = m_slideBorderAlphaMax * m_alpha;
+
+            // Check if we have finished fading
+            if (m_alpha <= 0)
+            {
+                m_alpha = 0;
+                m_color.a = 0;
+                m_slideColor.a = 0;
+                m_slideBorder.a = 0;
+                m_fadingOut = false;
+            }
+
+            m_refreshCache = true;
+            needRender();
+            return m_fadingOut;
         }
 
     private:
@@ -2438,17 +2418,18 @@ class WidgetTree : WidgetWindow
             return clip;
         }
 
-        void transitionTimer(long delay)
+        bool transitionTimer()
         {
             m_transitionCalls ++;
             if (m_transitioning)
             {
                 updateTree();
+                return true;
             }
             else
             {
                 m_transitionCalls = 0;
-                removeTimer(10, &transitionTimer, true);
+                return false;
             }
         }
 
