@@ -2,6 +2,7 @@
 module glui.widget.tree;
 
 import
+    std.algorithm,
     std.stdio;
 
 import
@@ -11,6 +12,24 @@ import
     glui.truetype,
     glui.widget.base,
     glui.widget.text;
+
+class Node
+{
+    this(Widget w) { widget = w; }
+    Widget widget = null;
+    Node parent = null;
+    Node[] children = null;
+    bool shown = false;
+    bool expanded = false;
+
+    bool isSibling(Node n) {
+        return (parent !is null && parent.children.canFind!"a is b"(n));
+    }
+
+    bool isParent(Node n) {
+        return n is parent;
+    }
+}
 
 
 
@@ -37,7 +56,6 @@ class WidgetTree : WidgetWindow
             int scrollCr = 0, scrollTh = 10; // corner radius and thickness
 
             fill(args, arg("gap", m_widgetGap),
-                       arg("orientation", m_orient),
                        arg("indent", m_widgetIndent),
                        arg("autoresize", m_autoResize),
                        arg("scroll", scroll),
@@ -103,6 +121,16 @@ class WidgetTree : WidgetWindow
                 updateTree();
         }
 
+        Widget add(Widget wparent, string label, Font font, Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
+        {
+            auto widget = root.create!WidgetLabel(this, font, widgetArgs(
+                                                  "text", label,
+                                                  "background", RGBA(.5,.5,.5,.5),
+                                                  "textbgcolor", RGBA(0,0,0,0)));
+            add(wparent, widget, noUpdate);
+            return widget;
+        }
+
         override void transformPos(Widget w, ref int[2] pos)
         {
             Widget.transformPos(this, pos);
@@ -157,61 +185,6 @@ class WidgetTree : WidgetWindow
                     }
                 }
             }
-
-            if (event.type == EventType.MOUSEMOVE &&
-                (amIHovered || isAChildHovered) )
-            {
-                auto pos = event.get!MouseMove.pos;
-
-                Widget focus = null;
-                foreach(child; m_children)
-                    if (child.focus(pos, focus))
-                        break;
-
-                if (focus !is null &&
-                    focus.type != "WIDGETSCROLL") // we got a hit
-                {
-                    Node n = null;
-                    foreach(node; m_tree)
-                    if (findParentNode(node, focus, n))
-                        break;
-
-                    if (n !is null && n !is m_lastHovered)
-                    {
-                        if (m_lastHovered !is null)
-                        {
-                            bool collapseOld = true;
-
-                            if (n is m_lastHovered.parent) // child to parent
-                                collapseOld = true;
-                            else if (n.parent is m_lastHovered) // parent to child
-                                collapseOld = false;
-                            else if (n.isSibling(m_lastHovered)) // sibling to sibling
-                                collapseOld = true;
-                            else if (!n.isSibling(m_lastHovered)) // branch to branch
-                            {
-                                collapseBranch(m_lastHovered);
-                                collapseOld = false;
-                            }
-
-                            if (collapseOld)
-                            {
-                                m_lastHovered.expanded = false;
-                                foreach(child; m_lastHovered.children)
-                                    setVisibility(child);
-                            }
-                        }
-
-                        m_lastHovered = n;
-                        n.expanded = true;
-                        foreach(child; n.children)
-                            setVisibility(child);
-
-                        updateTree();
-                    }
-                }
-
-            }
         }
 
         // Clip tree to include the scroll bar
@@ -226,22 +199,6 @@ class WidgetTree : WidgetWindow
 
             return clip;
         }
-
-        bool transitionTimer()
-        {
-            m_transitionCalls ++;
-            if (m_transitioning)
-            {
-                updateTree();
-                return true;
-            }
-            else
-            {
-                m_transitionCalls = 0;
-                return false;
-            }
-        }
-
 
         override void render(Flag!"RenderChildren" recurse)
         {
@@ -263,19 +220,6 @@ class WidgetTree : WidgetWindow
                 m_vScroll.postRender();
             }
         }
-
-        override void lostHover()
-        {
-            writeln(isAChildHovered);
-            if (!isAChildHovered && m_lastHovered !is null)
-            {
-                writeln("LOST HOVER");
-                collapseBranch(m_lastHovered);
-                m_lastHovered = null;
-            }
-        }
-
-    private:
 
         void setVisibility(Node n)
         {
@@ -332,56 +276,6 @@ class WidgetTree : WidgetWindow
             updateScreenInfo();
             int xoffset = 10, yoffset = 10, width = 0, height = 0;
 
-            uint depth = 0;
-            void recurseHorizontal(Node node)
-            {
-                ++depth;
-
-                if (node.widget.dim.x + xoffset > width)
-                    width = node.widget.dim.x + xoffset;
-
-                if (node.widget.dim.y + yoffset > height)
-                    height = node.widget.dim.y + yoffset;
-
-                node.widget.setPos(xoffset, yoffset);
-                node.widget.updateScreenInfo();
-
-                // See if widget is still visible inside the clipping area
-                node.widget.showing = true && node.shown;
-
-                if (node.shown)
-                {
-                    if (depth == 1)
-                    {
-                        auto y = yoffset;
-                        foreach(child; node.children)
-                        {
-                            yoffset += node.widget.dim.y + m_widgetGap;
-                            recurseHorizontal(child);
-                        }
-                        yoffset = y;
-                        xoffset += node.widget.dim.x + m_widgetGap;
-                    }
-                    else
-                    {
-                        auto y = yoffset;
-                        auto x = xoffset;
-                        xoffset += node.widget.dim.x + m_widgetGap;
-                        foreach(child; node.children)
-                        {
-                            recurseHorizontal(child);
-                            yoffset += node.widget.dim.y + m_widgetGap;
-                        }
-                        yoffset = y;
-                        xoffset = x;
-                    }
-                }
-
-                --depth;
-            }
-
-
-
             void recurse(Node node)
             {
                 xoffset += m_widgetIndent;
@@ -408,14 +302,8 @@ class WidgetTree : WidgetWindow
                 xoffset -= m_widgetIndent;
             }
 
-            void delegate(Node) dg;
-            if (m_orient == Orientation.VERTICAL)
-                dg = &recurse;
-            else
-                dg = &recurseHorizontal;
-
             foreach(node; m_tree)
-                dg(node);
+                recurse(node);
 
             if (m_vScroll)
                 m_vScroll.range = [0, yoffset];
@@ -425,37 +313,191 @@ class WidgetTree : WidgetWindow
             needRender();
         }
 
-        class Node
+        Node[] m_tree;
+        WidgetScroll m_vScroll;
+        bool m_clipToScrollBar = true;
+        bool m_autoResize = false; // resize to fit whole tree
+        int  m_widgetGap = 5;
+        int  m_widgetIndent = 20;
+}
+
+
+class WidgetMenu : WidgetTree
+{
+    package:
+
+        this(WidgetRoot root, Widget parent)
         {
-            this(Widget w) { widget = w; }
-            Widget widget = null;
-            Node parent = null;
-            Node[] children = null;
-            bool shown = false;
-            bool expanded = false;
+            super(root, parent);
+            root.eventSignal.connect(&globalEvent);
+        }
 
-            bool isSibling(Node n) {
-                return (parent !is null && parent.children.canFind!"a is b"(n));
-            }
+    public:
 
-            bool isParent(Node n) {
-                return n is parent;
+        override void set(WidgetArgs args)
+        {
+            super.set(args);
+            m_vScroll = null;
+            m_autoResize = true;
+            setColor(RGBA(0,0,0,0));
+            setBorderColor(RGBA(0,0,0,0));
+            m_type = "WIDGETMENU";
+
+            fill(args, arg("gap", m_widgetGap),
+                       arg("indent", m_widgetIndent));
+        }
+
+        override void event(ref Event event)
+        {
+            if (event.type == EventType.MOUSEMOVE &&
+                (amIHovered || isAChildHovered) )
+            {
+                auto pos = event.get!MouseMove.pos;
+
+                Widget focus = null;
+                foreach(child; m_children)
+                    if (child.focus(pos, focus))
+                        break;
+
+                if (focus !is null &&
+                    focus.type != "WIDGETSCROLL") // we got a hit
+                {
+                    Node n = null;
+                    foreach(node; m_tree)
+                    if (findParentNode(node, focus, n))
+                        break;
+
+                    if (n !is null && n !is m_lastHovered)
+                    {
+                        if (m_lastHovered !is null)
+                        {
+                            bool collapseOld = true;
+
+                            if (n is m_lastHovered.parent) // child to parent
+                                collapseOld = true;
+                            else if (n.parent is m_lastHovered) // parent to child
+                                collapseOld = false;
+                            else if (n.isSibling(m_lastHovered)) // sibling to sibling
+                                collapseOld = true;
+                            else if (!n.isSibling(m_lastHovered)) // branch to branch
+                            {
+                                collapseBranch(m_lastHovered);
+                                collapseOld = false;
+                            }
+
+                            if (collapseOld)
+                            {
+                                m_lastHovered.expanded = false;
+                                foreach(child; m_lastHovered.children)
+                                    setVisibility(child);
+                            }
+                        }
+
+                        m_lastHovered = n;
+                        n.expanded = true;
+                        foreach(child; n.children)
+                            setVisibility(child);
+
+                        updateTree();
+                    }
+                }
             }
         }
 
-        Node[] m_tree;
+        /**
+        * Look for global hover changes, to collapse children when Tree base loses hover.
+        */
+        int globalEvent(Widget w, WidgetEvent e)
+        {
+            if (e.type == WidgetEventType.GLOBALHOVERCHANGE)
+            {
+                auto change = e.get!GlobalHoverChange;
+                if (isMyChild(change.oldHover) && !(isMyChild(change.newHover) || change.newHover is this))
+                {
+                    lostHover();
+                    return 0;
+                }
+            }
+            return 0;
+        }
 
-        WidgetScroll m_vScroll;
-        Orientation m_orient = Orientation.VERTICAL;
+        /**
+        * Collapse children if we lose hover.
+        */
+        override void lostHover()
+        {
+            if (!isAChildHovered && m_lastHovered !is null)
+            {
+                collapseBranch(m_lastHovered);
+                m_lastHovered = null;
+            }
+        }
+
+        override void updateTree()
+        {
+            updateScreenInfo();
+            int xoffset = 10, yoffset = 10, width = 0, height = 0;
+
+            uint depth = 0;
+            void recurseHorizontal(Node node)
+            {
+                ++depth;
+
+                if (node.widget.dim.x + xoffset > width)
+                    width = node.widget.dim.x + xoffset;
+
+                if (node.widget.dim.y + yoffset > height)
+                    height = node.widget.dim.y + yoffset;
+
+                node.widget.setPos(xoffset, yoffset);
+                node.widget.updateScreenInfo();
+
+                // See if widget is still visible inside the clipping area
+                node.widget.showing = true && node.shown;
+
+                if (node.shown)
+                {
+                    if (depth == 1)
+                    {
+                        auto y = yoffset;
+                        foreach(child; node.children)
+                        {
+                            yoffset += node.widget.dim.y;
+                            recurseHorizontal(child);
+                        }
+                        yoffset = y;
+                        xoffset += node.widget.dim.x;
+                    }
+                    else
+                    {
+                        auto y = yoffset;
+                        auto x = xoffset;
+                        xoffset += node.widget.dim.x;
+                        foreach(index, child; node.children)
+                        {
+                            if (index == 0)
+                                yoffset += (node.widget.dim.y - child.widget.dim.y)/2.0;
+
+                            recurseHorizontal(child);
+                            yoffset += child.widget.dim.y;
+                        }
+                        yoffset = y;
+                        xoffset = x;
+                    }
+                }
+
+                --depth;
+            }
+
+            foreach(node; m_tree)
+                recurseHorizontal(node);
+
+            if (m_autoResize)
+                setDim(width, height);
+
+            needRender();
+        }
 
         Node m_lastHovered;
-
-        bool m_clipToScrollBar = true;
-        bool m_transitioning = false;
-        int m_transitionCalls = 0;
-        int m_transitionInc = 1;
-        int m_widgetGap = 5;
-        int m_widgetIndent = 20;
-        bool m_autoResize = false; // resize to fit whole tree
 }
 

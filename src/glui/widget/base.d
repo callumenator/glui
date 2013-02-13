@@ -216,12 +216,7 @@ abstract class Widget
         }
 
         // Set position
-        void setPos(int[] pos)
-        in
-        {
-            assert(pos.length == 2);
-        }
-        body
+        void setPos(int[] pos) in { assert(pos.length == 2); } body
         {
             m_pos = pos;
             geometryChanged(GeometryChangeFlag.POSITION);
@@ -235,12 +230,7 @@ abstract class Widget
         }
 
         // Set dimension
-        void setDim(int[] dim)
-        in
-        {
-            assert(dim.length == 2);
-        }
-        body
+        void setDim(int[] dim) in { assert(dim.length == 2); } body
         {
             m_dim = dim;
             geometryChanged(GeometryChangeFlag.DIMENSION);
@@ -292,6 +282,21 @@ abstract class Widget
                     return true;
             }
             return hovered;
+        }
+
+        /**
+        * Return true if w is a child of this.
+        */
+        bool isMyChild(const(Widget) w) const
+        {
+            if (m_children.canFind(w))
+                return true;
+
+            foreach(widget; m_children)
+                if (widget.isMyChild(w))
+                    return true;
+
+            return false;
         }
 
         @property bool amIDragging() const { return m_root.isDragging(this); }
@@ -592,7 +597,7 @@ abstract class Widget
 
                 finalFocus = this;
 
-                // But if I have children, pass the focus on to one of them
+                // If I have children, give them a chance at getting the focus
                 foreach(widget; m_children)
                     widget.focus(pos, finalFocus);
 
@@ -973,6 +978,16 @@ class WidgetRoot : Widget
                 return;
 
             Widget newFocus = null;
+            foreach(widget; retro(m_children))
+                if (widget.visible)
+                    if (widget.focus(pos, newFocus))
+                        break;
+
+            changeFocus(newFocus);
+            return;
+
+            /++
+            Widget newFocus = null;
             foreach(widget; m_widgetList)
             {
                 if (widget.focus(pos, newFocus))
@@ -984,6 +999,7 @@ class WidgetRoot : Widget
 
             // If we get to here, no widget was clicked on, set m_focused to null
             changeFocus(null);
+            ++/
         }
 
         // Cycle the focus amongst top level children !! TODO this doesn't respect visibility
@@ -1068,8 +1084,37 @@ class WidgetRoot : Widget
             if (m_window.mouseState.buttonsDown != 0)
                 return;
 
+            Widget newHover = null;
+            foreach(widget; retro(m_children))
+                if (widget.visible)
+                    if (widget.focus(pos, newHover))
+                        break;
+
+            if (m_hovered !is null && newHover is m_hovered)
+                return; // currently hovered widget is still hovered
+
+            if (newHover !is m_hovered)
+            {
+                auto oldHover = m_hovered;
+                m_hovered = newHover; // set this here, so widgets can check children hovered in lostHover()
+
+                // Fire a global focus change event
+                eventSignal.emit(this, WidgetEvent(GlobalHoverChange(newHover, oldHover)));
+                if (oldHover !is null)
+                {
+                    oldHover.lostHover();
+                    oldHover.eventSignal.emit(oldHover, WidgetEvent(LostHover()));
+                }
+                if (newHover !is null)
+                {
+                    newHover.gainedHover();
+                    newHover.eventSignal.emit(newHover, WidgetEvent(GainedHover()));
+                }
+            }
+
+            /++
             // Only give hover to topmost widget
-            foreach(widget; m_widgetList)
+            foreach(widget; m_children)
             {
                 if (!widget.visible)
                     continue;
@@ -1086,16 +1131,11 @@ class WidgetRoot : Widget
                         previous.lostHover();
 
                     m_hovered.gainedHover();
-                    writeln(m_hovered);
+                    writeln("HOVERED: ", m_hovered);
                     return;
                 }
             }
-
-            // If we get to here, no widget is hovered, set m_hovered to null
-            if (m_hovered !is null)
-                m_hovered.lostHover();
-
-            m_hovered = null;
+            ++/
         }
 
         // Check for dragging
@@ -1766,6 +1806,7 @@ class WidgetScroll : WidgetWindow
         @property bool fadeInAndOut() const { return m_hideWhenNotHovered; }
         @property int[2] range() const { return m_range; }
         @property int current() const { return m_current; }
+        @property Orientation orientation() const { return m_orient; }
 
         // Set
         @property void range(int[2] v)

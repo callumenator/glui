@@ -26,6 +26,7 @@ enum WidgetEventType
 {
     // Global events fired by root
     GLOBALFOCUSCHANGE,
+    GLOBALHOVERCHANGE,
 
     // Widget
     DRAG,
@@ -60,11 +61,33 @@ struct GlobalFocusChange
 
         @property Widget newFocus() { return m_newFocus; }
         @property Widget oldFocus() { return m_oldFocus; }
-        @property WidgetEventType type() { return WidgetEventType.GAINEDFOCUS; }
+        @property WidgetEventType type() { return WidgetEventType.GLOBALFOCUSCHANGE; }
 
     private:
         Widget m_newFocus;
         Widget m_oldFocus;
+}
+
+/**
+* WidgetRoot fires this whenever the hover changes.
+*/
+struct GlobalHoverChange
+{
+    public:
+
+        this(Widget newHover, Widget oldHover)
+        {
+            m_newHover = newHover;
+            m_oldHover = oldHover;
+        }
+
+        @property Widget newHover() { return m_newHover; }
+        @property Widget oldHover() { return m_oldHover; }
+        @property WidgetEventType type() { return WidgetEventType.GLOBALHOVERCHANGE; }
+
+    private:
+        Widget m_newHover;
+        Widget m_oldHover;
 }
 
 
