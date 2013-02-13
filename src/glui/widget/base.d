@@ -2072,12 +2072,16 @@ class WidgetScroll : WidgetWindow
 
 class WidgetTree : WidgetWindow
 {
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
+    package:
+
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
 
     public:
+
+        enum Orientation { VERTICAL, HORIZONTAL }
 
         override void set(WidgetArgs args)
         {
@@ -2087,11 +2091,14 @@ class WidgetTree : WidgetWindow
             RGBA scrollBg = RGBA(0,0,0,1);
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
-            bool scrollFade = true;
+            bool scrollFade = true, scroll = true;
             int scrollCr = 0, scrollTh = 10; // corner radius and thickness
 
             fill(args, arg("gap", m_widgetGap),
+                       arg("orientation", m_orient),
                        arg("indent", m_widgetIndent),
+                       arg("autoresize", m_autoResize),
+                       arg("scroll", scroll),
                        arg("cliptoscrollbar", m_clipToScrollBar),
                        arg("scrollbackground", scrollBg),
                        arg("scrollforeground", scrollFg),
@@ -2100,17 +2107,18 @@ class WidgetTree : WidgetWindow
                        arg("scrollcornerradius", scrollCr),
                        arg("scrollthick", scrollTh));
 
-            m_vScroll = m_root.create!WidgetScroll(this,
-                                    widgetArgs(
-                                    "pos", [m_dim.x - scrollTh, 0],
-                                    "dim", [scrollTh, m_dim.y - scrollTh],
-                                    "range", [0,1000],
-                                    "fade", scrollFade,
-                                    "slidercolor", scrollFg,
-                                    "sliderborder", scrollBd,
-                                    "background", scrollBg,
-                                    "cornerRadius", scrollCr,
-                                    "orientation", Orientation.VERTICAL));
+            if (scroll)
+                m_vScroll = m_root.create!WidgetScroll(this,
+                                        widgetArgs(
+                                        "pos", [m_dim.x - scrollTh, 0],
+                                        "dim", [scrollTh, m_dim.y - scrollTh],
+                                        "range", [0,1000],
+                                        "fade", scrollFade,
+                                        "slidercolor", scrollFg,
+                                        "sliderborder", scrollBd,
+                                        "background", scrollBg,
+                                        "cornerRadius", scrollCr,
+                                        "orientation", Orientation.VERTICAL));
 
         }
 
@@ -2157,7 +2165,7 @@ class WidgetTree : WidgetWindow
         {
             Widget.transformPos(this, pos);
 
-            if (w != m_vScroll)
+            if (m_vScroll !is null && w != m_vScroll)
                 pos[1] -= m_vScroll.current;
         }
 
@@ -2165,7 +2173,7 @@ class WidgetTree : WidgetWindow
         {
             Widget.transformClip(this, clipbox);
 
-            if (w != m_vScroll)
+            if (m_vScroll !is null && w != m_vScroll)
                 clipbox[1] -= m_vScroll.current;
         }
 
@@ -2179,7 +2187,7 @@ class WidgetTree : WidgetWindow
             // Look for mouse clicks on any of our branches
             if (event.type == EventType.MOUSECLICK &&
                 (amIHovered || isAChildHovered) &&
-                !m_root.isHovered(m_vScroll))
+                (m_vScroll is null || !m_root.isHovered(m_vScroll)) )
             {
                 auto pos = event.get!MouseClick.pos;
 
@@ -2213,7 +2221,7 @@ class WidgetTree : WidgetWindow
         override int[4] getChildClipBox(Widget w)
         {
             auto clip = getClipBox();
-            if (w.type != "WIDGETSCROLL" && m_clipToScrollBar)
+            if (w.type != "WIDGETSCROLL" && m_vScroll !is null && m_clipToScrollBar)
                 clip[2] -= m_vScroll.dim.x;
 
             if (m_parent)
@@ -2242,18 +2250,21 @@ class WidgetTree : WidgetWindow
         {
             super.render(Flag!"RenderChildren".no);
 
-            glTranslatef(0, -m_vScroll.current, 0);
+            if (m_vScroll)
+                glTranslatef(0, -m_vScroll.current, 0);
 
             long maxFocus;
             foreach(child; m_children)
                 if (child !is m_vScroll)
                     renderChild(child, maxFocus);
 
-            glTranslatef(0, m_vScroll.current, 0);
-
-            m_vScroll.preRender();
-            m_vScroll.render(Flag!"RenderChildren".yes);
-            m_vScroll.postRender();
+            if (m_vScroll)
+            {
+                glTranslatef(0, m_vScroll.current, 0);
+                m_vScroll.preRender();
+                m_vScroll.render(Flag!"RenderChildren".yes);
+                m_vScroll.postRender();
+            }
         }
 
     private:
@@ -2298,54 +2309,71 @@ class WidgetTree : WidgetWindow
         void updateTree()
         {
             updateScreenInfo();
-            int xoffset = 10, yoffset = 10, width = m_dim.x;
+            int xoffset = 10, yoffset = 10, width = 0, height = 0;
 
-            foreach(node; m_tree)
-                updateTreeRecurse(node, xoffset, yoffset, width);
+            alias Tuple!(int,"x",int,"y") Base;
+            Base[] bases;
 
-            m_vScroll.range = [0, yoffset];
-            needRender();
-        }
-
-        void updateTreeRecurse(Node node, ref int xoffset, ref int yoffset, ref int width)
-        {
-            xoffset += m_widgetIndent;
-            width = node.widget.dim.x + xoffset;
-            node.widget.setPos(xoffset, yoffset);
-            node.widget.updateScreenInfo();
-
-            // See if widget is still visible inside the clipping area
-            node.widget.showing = true && node.shown;
-
-            if (node.shown)
+            uint depth = 0;
+            void recurse(Node node)
             {
-                yoffset += node.widget.dim.y + m_widgetGap;
+                ++depth;
 
-                foreach(child; node.children)
-                    updateTreeRecurse(child, xoffset, yoffset, width);
+                if (m_orient == Orientation.VERTICAL)
+                    xoffset += m_widgetIndent;
+                else
+                    xoffset += m_widgetIndent;
+
+                if (node.widget.dim.x + xoffset > width)
+                    width = node.widget.dim.x + xoffset;
+                if (node.widget.dim.y + yoffset > height)
+                    height = node.widget.dim.y + yoffset;
+
+                node.widget.setPos(xoffset, yoffset);
+                node.widget.updateScreenInfo();
+
+                // See if widget is still visible inside the clipping area
+                node.widget.showing = true && node.shown;
+
+                if (node.shown)
+                {
+                    yoffset += node.widget.dim.y + m_widgetGap;
+
+                    foreach(child; node.children)
+                        recurse(child);
+                }
+
+                xoffset -= m_widgetIndent;
+                --depth;
             }
 
-            xoffset -= m_widgetIndent;
+
+
+            foreach(node; m_tree)
+                recurse(node);
+
+            if (m_vScroll)
+                m_vScroll.range = [0, yoffset];
+            else if (m_autoResize)
+                setDim(width, height);
+
+            needRender();
         }
 
         class Node
         {
-                this(Widget w)
-                {
-                    widget = w;
-                }
-
-                Widget widget = null;
-                Node parent = null;
-                Node[] children = null;
-
-                bool shown = false;
-                bool expanded = false;
+            this(Widget w) { widget = w; }
+            Widget widget = null;
+            Node parent = null;
+            Node[] children = null;
+            bool shown = false;
+            bool expanded = false;
         }
 
         Node[] m_tree;
 
         WidgetScroll m_vScroll;
+        Orientation m_orient = Orientation.VERTICAL;
 
         bool m_clipToScrollBar = true;
         bool m_transitioning = false;
@@ -2353,6 +2381,7 @@ class WidgetTree : WidgetWindow
         int m_transitionInc = 1;
         int m_widgetGap = 5;
         int m_widgetIndent = 20;
+        bool m_autoResize = false; // resize to fit whole tree
 }
 
 

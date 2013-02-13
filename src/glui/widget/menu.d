@@ -1,7 +1,11 @@
 
 module glui.widget.menu;
 
-import std.stdio;
+import
+    std.stdio;
+
+import
+    derelict.opengl.gl;
 
 import
     glui.truetype,
@@ -22,37 +26,40 @@ class WidgetMenu: WidgetWindow
         void set(Font font, WidgetArgs args)
         {
             super.set(args);
-
             m_type = "WIDGETMENU";
             m_font = font;
+            setDim(1000, 500);
         }
 
-        struct MenuItem
+        WidgetTree createMenu(string label)
         {
-            string value;
-            string id;
-            MenuItem[] children;
+            auto newTree = root.create!WidgetTree(this, widgetArgs(
+                                            "autoresize", true,
+                                            "scroll", false,
+                                            "pos", [5,5],
+                                            "background", RGBA(0,.9,.3,.3),
+                                            "bordercolor", RGBA(1,1,1,1),
+                                            "resize", ResizeFlag.X | ResizeFlag.Y,
+                                            "clipToScrollBar", false,
+                                            "scrollFade", false,
+                                            "scrollforeground", RGBA(0,0,0,1),
+                                            "scrollborder", RGBA(1,1,1,1)));
+
+            auto branch =  root.create!WidgetLabel(null, m_font, widgetArgs(
+                                            "text", label,
+                                            "dim", [200,25],
+                                            "background", RGBA(97,48,145,255)));
+            newTree.add(null, branch);
+            return newTree;
         }
 
-        MenuItem m_rootMenu = MenuItem("", "/", null)
-
-        MenuItem addItem(string value, string id, string parent = null, Font font = null)
+        void add(WidgetTree parent, string label)
         {
-            if (parent is null)
-                parent = m_rootMenu;
-
-            if (font is null)
-                font = m_font;
-
-            auto newItem = root.create!WidgetLabel(parent, m_font, widgetArgs("text", value));
-            return newItem;
         }
 
         override void render(Flag!"RenderChildren" recurse = Flag!"RenderChildren".yes)
         {
             super.render(Flag!"RenderChildren".no);
-
-            m_rootMenu.render(Flag!"RenderChildren".yes);
 
             if (recurse)
                 renderChildren();
@@ -80,5 +87,6 @@ class WidgetMenu: WidgetWindow
         }
 
         Font m_font;
+        GLuint m_cacheId;
 
 }

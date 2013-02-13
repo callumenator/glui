@@ -84,10 +84,10 @@ class WidgetText : WidgetWindow
 
         // Set
         @property void editable(bool v) { m_editable = v; }
-        @property void textColor(RGBA v) { m_textColor = v; }
-        @property void textBgColor(RGBA v) { m_textBgColor = v; }
-        @property void halign(HAlign v) { m_hAlign = v; }
-        @property void valign(VAlign v) { m_vAlign = v; }
+        @property void textColor(RGBA v) { m_textColor = v; m_refreshCache = true; }
+        @property void textBgColor(RGBA v) { m_textBgColor = v; m_refreshCache = true; }
+        @property void halign(HAlign v) { m_hAlign = v; m_refreshCache = true; }
+        @property void valign(VAlign v) { m_vAlign = v; m_refreshCache = true; }
 
         @property void highlighter(SyntaxHighlighter v)
         {
@@ -1304,15 +1304,24 @@ class WidgetText : WidgetWindow
 // Convenience class for static text
 class WidgetLabel : WidgetText
 {
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
+    package:
+
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
 
     public:
+
+        override @property void text(string v)
+        {
+            m_text.set(v);
+            updateDims();
+        }
+
         override void set(Font font, WidgetArgs args)
         {
-            m_editable = false; // set this here, to avoid allocating a caret timer
+            m_editable = false; // set this before super, to avoid allocating a caret timer
             m_type = "WIDGETLABEL";
             super.set(font, args);
 
@@ -1320,43 +1329,54 @@ class WidgetLabel : WidgetText
             m_vAlign = WidgetText.VAlign.CENTER;
 
             int[2] dims = [0,0];
-            bool fixedWidth = false, fixedHeight = false;
-
-            fill(args, arg("fixedwidth", fixedWidth),
-                       arg("fixedheight", fixedHeight));
+            fill(args, arg("fixedwidth", m_fixedWidth),
+                       arg("fixedheight", m_fixedHeight));
 
             if ("fixeddims" in args)
             {
                 auto v = ("fixeddims" in args).get!bool;
-                fixedWidth = v;
-                fixedHeight = v;
+                m_fixedWidth = v;
+                m_fixedHeight = v;
             }
 
             if ("text" in args)
             {
-                auto s = ("text" in args).get!string;
-                m_text.set(s);
-
-                // Set default dimensions
-                auto lines = split(s, "\n");
-                float xdim = 0;
-                foreach(line; lines)
-                {
-                    auto l = 1.2*getLineLength(line, m_font);
-                    if (l > xdim)
-                        xdim = l;
-                }
-
-                dims = [cast(int)xdim,
-                        cast(int)(1.5*lines.length*m_font.m_lineHeight)];
-
-
+                m_text.set(("text" in args).get!string);
+                updateDims();
             }
-
-            if (fixedWidth) dims.x = m_dim.x;
-            if (fixedHeight) dims.y = m_dim.y;
-            setDim(dims.x, dims.y);
         }
+
+    private:
+
+        void updateDims()
+        {
+            if (m_fixedWidth && m_fixedHeight)
+                return;
+
+            auto dims = calculateDims();
+            if (m_fixedWidth) dims.x = m_dim.x;
+            if (m_fixedHeight) dims.y = m_dim.y;
+            setDim(dims.x, dims.y);
+            m_refreshCache = true;
+            needRender();
+        }
+
+        int[2] calculateDims()
+        {
+            float xdim = 0;
+            auto lines = split(m_text.getText(), "\n");
+            foreach(line; lines)
+            {
+                auto l = getLineLength(line, m_font) + 5;
+                if (l > xdim)
+                    xdim = l;
+            }
+            return [cast(int)xdim, cast(int)(1.5*lines.length*m_font.m_lineHeight)];
+        }
+
+        bool m_fixedWidth;
+        bool m_fixedHeight;
+
 }
 
 
