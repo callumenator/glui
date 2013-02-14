@@ -4,7 +4,6 @@
 * Copyright: Copyright 2012 -
 * License: $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
 * Authors: Callum Anderson
-* Revised: July 24, 2012
 * Summary: UI base elements.
 */
 
@@ -36,7 +35,8 @@ import
 import
     glui.timer,
     glui.window,
-    glui.truetype;
+    glui.truetype,
+    glui.widget.loader;
 
 public import
     glui.event,
@@ -840,6 +840,11 @@ class WidgetRoot : Widget
             auto delay = 30 - callTimeDiff;
             if (delay > 0)
                 Thread.sleep( dur!("msecs")( delay ) );
+        }
+
+        void load(string text)
+        {
+            parseUI(this, text);
         }
 
         // Render all widgets which have this root

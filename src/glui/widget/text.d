@@ -1,4 +1,4 @@
-// Written in the\ D programming language.
+// Written in the D programming language.
 
 /**
 * Copyright: Copyright 2012 -

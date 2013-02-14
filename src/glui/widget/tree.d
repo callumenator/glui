@@ -1,3 +1,11 @@
+// Written in the D programming language.
+
+/**
+* Copyright: Copyright 2012 -
+* License: $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+* Authors: Callum Anderson
+* Summary: Tree widgets, Tree, Menu, etc.
+*/
 
 module glui.widget.tree;
 
