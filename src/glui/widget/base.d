@@ -45,6 +45,8 @@ public import
     glui.widget.table;
 
 
+alias Tuple!(string[],"keys",Variant[],"vals") Args;
+
 // Structure for storing RGBA colors
 struct RGBA
 {
@@ -170,6 +172,32 @@ abstract class Widget
                        arg("candrag", m_canDrag),
                        arg("resize", m_resize));
         }
+
+
+        Widget set(string key, Variant val)
+        {
+            switch(key.toLower())
+            {
+                case "dim": m_dim = val.get!(int[]); break;
+                case "pos": m_pos = val.get!(int[]); break;
+                case "cornerradius": m_cornerRadius = val.get!int; break;
+                case "showing": m_showing = val.get!bool; break;
+                case "clipped": m_clipped = val.get!bool; break;
+                case "drag": m_canDrag = val.get!bool; break;
+                case "resize": m_resize = val.get!ResizeFlag; break;
+                default: break;
+            }
+            return this;
+        }
+
+        Widget set(Args args) in { assert(args.keys.length == args.vals.length); } body
+        {
+            foreach(i, key; args.keys)
+                set(key, args.vals[i]);
+            return this;
+        }
+
+
 
 
         // Get
@@ -1116,31 +1144,6 @@ class WidgetRoot : Widget
                     newHover.eventSignal.emit(newHover, WidgetEvent(GainedHover()));
                 }
             }
-
-            /++
-            // Only give hover to topmost widget
-            foreach(widget; m_children)
-            {
-                if (!widget.visible)
-                    continue;
-
-                if (m_hovered !is null && (widget is m_hovered) && m_hovered.isInside(pos))
-                    return; // currently hovered widget is still hovered
-
-                if (widget.isInside(pos))
-                {
-                    auto previous = m_hovered;
-                    m_hovered = widget; // set this here, so widgets can check children hovered in lostHover()
-
-                    if (previous !is null)
-                        previous.lostHover();
-
-                    m_hovered.gainedHover();
-                    writeln("HOVERED: ", m_hovered);
-                    return;
-                }
-            }
-            ++/
         }
 
         // Check for dragging
@@ -1184,6 +1187,28 @@ class WidgetRoot : Widget
 
         // Create a widget under this root
         T create(T : Widget, KeyVal...)(Widget parent, KeyVal args)
+        {
+            T newWidget = new T(this, parent);
+            assert (newWidget !is null);
+
+            newWidget.set(args);
+            newWidget.geometryChanged(Widget.GeometryChangeFlag.POSITION |
+                                      Widget.GeometryChangeFlag.DIMENSION);
+
+            m_widgetList ~= newWidget;
+            newWidget.applyFocus(Clock.currSystemTick.length);
+
+            if (!m_focused)
+                m_focused = newWidget;
+            else
+                m_focused.applyFocus(Clock.currSystemTick.length + 1);
+
+            sortWidgetList();
+            needRender();
+            return newWidget;
+        }
+
+        T create(T : Widget)(Widget parent, Args args)
         {
             T newWidget = new T(this, parent);
             assert (newWidget !is null);
@@ -1469,10 +1494,12 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
 class WidgetWindow : Widget
 {
 
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
+    package:
+
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
 
     public:
 
@@ -1514,6 +1541,27 @@ class WidgetWindow : Widget
             fill(args, arg("background", m_color),
                        arg("bordercolor", m_borderColor),
                        arg("texture", m_texture));
+        }
+
+        override WidgetWindow set(string key, Variant val)
+        {
+            super.set(key, val);
+
+            switch(key.toLower())
+            {
+                case "background": m_color = val.get!RGBA; break;
+                case "bordercolor": m_borderColor = val.get!RGBA; break;
+                case "texture": m_texture = val.get!GLuint; break;
+                default: break;
+            }
+            return this;
+        }
+
+        override Widget set(Args args) in { assert(args.keys.length == args.vals.length); } body
+        {
+            foreach(i, key; args.keys)
+                set(key, args.vals[i]);
+            return this;
         }
 
         override void geometryChanged(Widget.GeometryChangeFlag flag)
