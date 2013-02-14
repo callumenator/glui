@@ -49,8 +49,8 @@ Widget[] parseObject(WidgetRoot root, Widget parent, string name, JSONValue[stri
     {
         if (val.type == JSON_TYPE.OBJECT)
             allObjs ~= parseObject(root, newObj, key, val.object);
-        else
-            newObj.set(key, getVal(val));
+        else {}
+            //newObj.set(key, getVal(val));
     }
 
     allObjs ~= newObj;

@@ -21,6 +21,7 @@ import
     std.conv,
     std.string,
     std.datetime,
+    std.variant,
     std.typetuple;
 
 import
@@ -56,10 +57,14 @@ version(Windows)
 */
 class WidgetText : WidgetWindow
 {
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
+    alias Widget.set set;
+
+    package:
+
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
 
     public:
 
@@ -164,19 +169,16 @@ class WidgetText : WidgetWindow
             return m_text.getCaret(m_font, relx, rely);
         }
 
-        void set(Font font, WidgetArgs args)
+        override WidgetText set(Args args)
         {
             super.set(args);
 
             m_type = "WIDGETTEXT";
             m_cacheId = glGenLists(1);
             m_text = new PieceTableTextArea;
-            //m_text = new SimpleTextArea;
-
-            m_font = font;
-            m_repeatDelayTime = -1;
-            m_repeatHoldTime = -1;
-            m_caretBlinkDelay = -1;
+            m_repeatDelayTime = 20;
+            m_repeatHoldTime = 500;
+            m_caretBlinkDelay = 600;
 
             // Scroll bar options
             RGBA scrollBg = RGBA(0,0,0,1);
@@ -185,28 +187,30 @@ class WidgetText : WidgetWindow
             bool scrollFade = true;
             int scrollCr = 0, scrollTh = 10;
 
-            fill(args, arg("textcolor", m_textColor),
-                       arg("textbackground", m_textBgColor),
-                       arg("editable", m_editable),
-                       arg("vscroll", m_allowVScroll),
-                       arg("hscroll", m_allowHScroll),
-                       arg("repeatdelay", m_repeatDelayTime),
-                       arg("repeathold", m_repeatHoldTime),
-                       arg("caretblinkdelay", m_caretBlinkDelay),
-                       arg("valign", m_vAlign),
-                       arg("halign", m_hAlign),
-                       arg("highlighter", m_highlighter),
-                       arg("scrollbackground", scrollBg),
-                       arg("scrollforeground", scrollFg),
-                       arg("scrollborder", scrollBd),
-                       arg("scrollfade", scrollFade),
-                       arg("scrollcornerradius", scrollCr),
-                       arg("scrollthick", scrollTh));
-
-            // Set some reasonable defaults
-            if (m_repeatDelayTime == -1) m_repeatDelayTime = 20;
-            if (m_repeatHoldTime == -1)  m_repeatHoldTime = 500;
-            if (m_caretBlinkDelay == -1) m_caretBlinkDelay = 600;
+            foreach(key, val; zip(args.keys, args.vals))
+            {
+                switch(key.toLower())
+                {
+                    case "font": m_font.grab(val); break;
+                    case "textcolor": m_textColor.grab(val); break;
+                    case "textbackground": m_textBgColor.grab(val); break;
+                    case "editable": m_editable.grab(val); break;
+                    case "vscroll": m_allowVScroll.grab(val); break;
+                    case "hscroll": m_allowHScroll.grab(val); break;
+                    case "repeatdelay": m_repeatDelayTime.grab(val); break;
+                    case "repeathold": m_repeatHoldTime.grab(val); break;
+                    case "caretblinkdelay": m_caretBlinkDelay.grab(val); break;
+                    case "valign": m_vAlign.grab(val); break;
+                    case "halign": m_hAlign.grab(val); break;
+                    case "scrollbackground": scrollBg.grab(val); break;
+                    case "scrollforeground": scrollFg.grab(val); break;
+                    case "scrollborder": scrollBd.grab(val); break;
+                    case "scrollfade": scrollFade.grab(val); break;
+                    case "scrollcornerradius": scrollCr.grab(val); break;
+                    case "scrollthick": scrollTh.grab(val); break;
+                    default: break;
+                }
+            }
 
             // Request recurrent timer event from root for blinking the caret
             if (m_editable) root.requestTimer(m_caretBlinkDelay, &this.timerEvent);
@@ -215,7 +219,6 @@ class WidgetText : WidgetWindow
             if (m_allowVScroll)
             {
                 m_vscroll = m_root.create!WidgetScroll(this,
-                                    widgetArgs(
                                     "pos", [m_dim.x - scrollTh, 0],
                                     "dim", [scrollTh, m_dim.y - scrollTh],
                                     "range", [0,1000],
@@ -224,7 +227,7 @@ class WidgetText : WidgetWindow
                                     "sliderborder", scrollBd,
                                     "background", scrollBg,
                                     "cornerRadius", scrollCr,
-                                    "orientation", Orientation.VERTICAL));
+                                    "orientation", Orientation.VERTICAL);
 
                 m_vscroll.eventSignal.connect(&this.scrollEvent);
             }
@@ -232,7 +235,6 @@ class WidgetText : WidgetWindow
             if (m_allowHScroll)
             {
                 m_hscroll = m_root.create!WidgetScroll(this,
-                                    widgetArgs(
                                     "pos", [m_dim.x - scrollTh, 0],
                                     "dim", [scrollTh, m_dim.y - scrollTh],
                                     "range", [0,1000],
@@ -241,8 +243,10 @@ class WidgetText : WidgetWindow
                                     "sliderborder", scrollBd,
                                     "background", scrollBg,
                                     "cornerRadius", scrollCr,
-                                    "orientation", Orientation.HORIZONTAL));
+                                    "orientation", Orientation.HORIZONTAL);
             }
+
+            return this;
         }
 
         // Geometry has changed, so update scroll bars
@@ -1304,6 +1308,8 @@ class WidgetText : WidgetWindow
 // Convenience class for static text
 class WidgetLabel : WidgetText
 {
+    alias Widget.set set;
+
     package:
 
         this(WidgetRoot root, Widget parent)
@@ -1319,31 +1325,30 @@ class WidgetLabel : WidgetText
             updateDims();
         }
 
-        override void set(Font font, WidgetArgs args)
+        override WidgetLabel set(Args args)
         {
-            m_editable = false; // set this before super, to avoid allocating a caret timer
+            m_editable = false;
+            super.set(args);
             m_type = "WIDGETLABEL";
-            super.set(font, args);
 
             // Alignment is vertically centered by default:
             m_vAlign = WidgetText.VAlign.CENTER;
 
             int[2] dims = [0,0];
-            fill(args, arg("fixedwidth", m_fixedWidth),
-                       arg("fixedheight", m_fixedHeight));
-
-            if ("fixeddims" in args)
+            foreach(key, val; zip(args.keys, args.vals))
             {
-                auto v = ("fixeddims" in args).get!bool;
-                m_fixedWidth = v;
-                m_fixedHeight = v;
+                switch(key.toLower())
+                {
+                    case "fixedwidth": m_fixedWidth.grab(val); break;
+                    case "fixedheight": m_fixedHeight.grab(val); break;
+                    case "fixeddims": m_fixedWidth = m_fixedHeight = val.get!bool; break;
+                    case "text": m_text.set(val.get!string); break;
+                    default: break;
+                }
             }
 
-            if ("text" in args)
-            {
-                m_text.set(("text" in args).get!string);
-                updateDims();
-            }
+            updateDims();
+            return this;
         }
 
     private:

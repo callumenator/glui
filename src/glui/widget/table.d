@@ -1,7 +1,10 @@
 
 module glui.widget.table;
 
-import std.stdio;
+import
+    std.range,
+    std.variant,
+    std.stdio;
 
 import
     glui.truetype,
@@ -10,27 +13,36 @@ import
 
 class WidgetTable : WidgetWindow
 {
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
+    alias Widget.set set;
+
+    package:
+
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
 
     public:
 
-        void set(Font font, WidgetArgs args)
+        override WidgetTable set(Args args)
         {
             super.set(args);
-
             m_type = "WIDGETTABLE";
-            m_font = font;
-            int cols = 1, rows = 1;
 
-            fill(args, arg("columns", cols),
-                       arg("rows", rows));
+            int cols = 1, rows = 1;
+            foreach(key, val; zip(args.keys, args.vals))
+            {
+                switch(key.toLower())
+                {
+                    case "font": m_font.grab(val); break;
+                    case "columns": cols.grab(val); break;
+                    case "rows": rows.grab(val); break;
+                    default: break;
+                }
+            }
 
             m_columns = cols;
             m_rows = rows;
-
             auto cell_x = m_dim.x / cols;
             auto cell_y = m_dim.y / rows;
 
@@ -40,14 +52,14 @@ class WidgetTable : WidgetWindow
                 row.length = m_columns;
                 foreach(cidx, ref cell; row)
                 {
-                    cell = root.create!WidgetText(this, font, widgetArgs(
+                    cell = root.create!WidgetText(this,
+                                    "font", m_font,
                                     "dim", [cell_x, cell_y],
                                     "pos", cast(int[])[cidx * cell_x, ridx * cell_y],
-                                    "bordercolor", RGBA(1,1,1,1)));
+                                    "bordercolor", RGBA(1,1,1,1));
                 }
             }
-
-
+            return this;
         }
 
         override void render(Flag!"RenderChildren" recurse = Flag!"RenderChildren".yes)

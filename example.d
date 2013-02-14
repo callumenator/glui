@@ -20,6 +20,7 @@ import
     glui.widget.base;
 
 
+
 int main()
 {
 	Window("window1", WindowState(0,0,1000,700), Flag!"Create".yes, Flag!"Show".yes);

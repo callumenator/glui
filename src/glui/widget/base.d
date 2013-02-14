@@ -25,7 +25,8 @@ import
     std.traits;
 
 public import /// import publicly so users can call Flag!
-    std.typecons;
+    std.typecons,
+    std.string;
 
 import
     derelict.freetype.ft,
@@ -145,60 +146,42 @@ enum Orientation
 */
 abstract class Widget
 {
-    package this(WidgetRoot root, Widget parent)
-    {
-        m_root = root;
-        this.setParent(parent);
-    }
+    package:
 
-    ~this()
-    {
-        m_alive = false;
-    }
+        this(WidgetRoot root, Widget parent)
+        {
+            m_root = root;
+            this.setParent(parent);
+        }
+
+        ~this()
+        {
+            m_alive = false;
+        }
 
     public:
 
         // All widgets use this event signaler
         PrioritySignal!(Widget, WidgetEvent) eventSignal;
 
-        void set(WidgetArgs args)
+        Widget set(Args args)
         {
-            fill(args, arg("dim", m_dim),
-                       arg("pos", m_pos),
-                       arg("cornerradius", m_cornerRadius),
-                       arg("showing", m_showing),
-                       arg("clipped", m_clipped),
-                       arg("blocking", m_blocking),
-                       arg("candrag", m_canDrag),
-                       arg("resize", m_resize));
-        }
-
-
-        Widget set(string key, Variant val)
-        {
-            switch(key.toLower())
+            foreach(key, val; zip(args.keys, args.vals))
             {
-                case "dim": m_dim = val.get!(int[]); break;
-                case "pos": m_pos = val.get!(int[]); break;
-                case "cornerradius": m_cornerRadius = val.get!int; break;
-                case "showing": m_showing = val.get!bool; break;
-                case "clipped": m_clipped = val.get!bool; break;
-                case "drag": m_canDrag = val.get!bool; break;
-                case "resize": m_resize = val.get!ResizeFlag; break;
-                default: break;
+                switch(key.toLower())
+                {
+                    case "dim": m_dim.grab(val); break;
+                    case "pos": m_pos.grab(val); break;
+                    case "cornerradius": m_cornerRadius.grab(val); break;
+                    case "showing": m_showing.grab(val); break;
+                    case "clipped": m_clipped.grab(val); break;
+                    case "drag": m_canDrag.grab(val); break;
+                    case "resize": m_resize.grab(val); break;
+                    default: break;
+                }
             }
             return this;
         }
-
-        Widget set(Args args) in { assert(args.keys.length == args.vals.length); } body
-        {
-            foreach(i, key; args.keys)
-                set(key, args.vals[i]);
-            return this;
-        }
-
-
-
 
         // Get
         @property int[2] screenPos() const { return m_screenPos; }
@@ -798,7 +781,6 @@ abstract class Widget
                 m_parent.transformClip(this, clipbox);
         }
 
-
         Widget m_parent = null;
         Widget[] m_children = null;
         WidgetRoot m_root = null;
@@ -1018,21 +1000,6 @@ class WidgetRoot : Widget
 
             changeFocus(newFocus);
             return;
-
-            /++
-            Widget newFocus = null;
-            foreach(widget; m_widgetList)
-            {
-                if (widget.focus(pos, newFocus))
-                {
-                    changeFocus(newFocus);
-                    return;
-                }
-            }
-
-            // If we get to here, no widget was clicked on, set m_focused to null
-            changeFocus(null);
-            ++/
         }
 
         // Cycle the focus amongst top level children !! TODO this doesn't respect visibility
@@ -1186,34 +1153,12 @@ class WidgetRoot : Widget
         }
 
         // Create a widget under this root
-        T create(T : Widget, KeyVal...)(Widget parent, KeyVal args)
+        T create(T : Widget, U...)(Widget parent, U args)
         {
             T newWidget = new T(this, parent);
             assert (newWidget !is null);
 
-            newWidget.set(args);
-            newWidget.geometryChanged(Widget.GeometryChangeFlag.POSITION |
-                                      Widget.GeometryChangeFlag.DIMENSION);
-
-            m_widgetList ~= newWidget;
-            newWidget.applyFocus(Clock.currSystemTick.length);
-
-            if (!m_focused)
-                m_focused = newWidget;
-            else
-                m_focused.applyFocus(Clock.currSystemTick.length + 1);
-
-            sortWidgetList();
-            needRender();
-            return newWidget;
-        }
-
-        T create(T : Widget)(Widget parent, Args args)
-        {
-            T newWidget = new T(this, parent);
-            assert (newWidget !is null);
-
-            newWidget.set(args);
+            newWidget.set(pack(args));
             newWidget.geometryChanged(Widget.GeometryChangeFlag.POSITION |
                                       Widget.GeometryChangeFlag.DIMENSION);
 
@@ -1350,18 +1295,6 @@ class WidgetRoot : Widget
 
         long m_lastPollTick = 0; // For calculating framerate, deciding when to sleep
 
-        /++
-        // Widgets can register for timer events
-        struct TimerCallback
-        {
-            Widget widget;
-            void delegate(long) dgt;
-            long delay;
-            bool oneTimeOnly = true;
-        }
-        long[TimerCallback] m_timerCallbacks; // AA value is the time event should be called
-        ++/
-
         StopWatch m_eventTimer;
 
         bool m_dragging = false; // are we dragging the focused widget?
@@ -1374,118 +1307,6 @@ class WidgetRoot : Widget
 
 
 
-/**
-* CTFE
-* This code gets mixed in to create a square box, plain or textured.
-*/
-string squareBox(bool textured = false)
-{
-    if (!textured)
-    {
-        return "
-               glVertex2i(0, 0);
-               glVertex2i(width, 0);
-               glVertex2i(width, height);
-               glVertex2i(0, height);";
-    }
-    else
-    {
-        return "
-               glTexCoord2i(0, 1);
-               glVertex2i(0, 0);
-               glTexCoord2i(1, 1);
-               glVertex2i(width, 0);
-               glTexCoord2i(1, 0);
-               glVertex2i(width, height);
-               glTexCoord2i(0, 0);
-               glVertex2i(0, height); ";
-    }
-}
-
-
-/**
-* CTFE
-* This code gets mixed in to produce a box with rounded corners. The
-* resolution of the arc is set by the global enum arcResolution at
-* the top of this module.
-*/
-string roundedBox(int resolution = arcResolution, /** enum defined at top of module **/
-                  bool textured = false)
-{
-    string s = "";
-    string sx, sy;
-
-    // Do the four corners separately, easier for my brain
-    foreach(n; 0..4)
-    {
-        foreach(i; 1..resolution)
-        {
-            float angle = 0;
-            string px, py;
-            if (n == 0) // 180..90
-            {
-                angle = (3.1415926575/2.) * (2.0 - (cast(float)i)/(cast(float)resolution));
-                px = "r";
-                py = "r";
-            }
-            else if (n == 1) // 90..180
-            {
-                angle = (3.1415926575/2.) * (1.0 - (cast(float)i)/(cast(float)resolution));
-                px = "width - r";
-                py = "r";
-            }
-            else if (n == 2) // 360..270
-            {
-                angle = (3.1415926575/2.) * (4.0 - (cast(float)i)/(cast(float)resolution));
-                px = "width - r";
-                py = "height - r";
-            }
-            else if (n == 3) // 270..180
-            {
-                angle = (3.1415926575/2.) * (3.0 - (cast(float)i)/(cast(float)resolution));
-                px = "r";
-                py = "height - r";
-            }
-
-            int fx = cast(int) (cos(angle)*1000000.);
-            int fy = cast(int) (-sin(angle)*1000000.);
-
-            string fsx = fx.to!string;
-            string fsy = fy.to!string;
-
-            string xprefix, yprefix;
-            if (fsx[0] == '-')
-            {
-                xprefix = "-";
-                fsx = fsx[1..$];
-            }
-
-            if (fsy[0] == '-')
-            {
-                yprefix = "-";
-                fsy = fsy[1..$];
-            }
-
-            if (fsx.length == 7)
-                sx = xprefix ~ fsx[0] ~ "." ~ fsx[1..$];
-            else
-                sx = xprefix ~ "0." ~ fsx;
-
-            if (fsy.length == 7)
-                sy = yprefix ~ fsy[0] ~ "." ~ fsy[1..$];
-            else
-                sy = yprefix ~ "0." ~ fsy;
-
-            if (textured)
-                s ~= "glTexCoord2f( (" ~ px ~ "+ r*(" ~ sx ~ ")) / width, 1 - (" ~ py ~ "+ r*(" ~ sy ~ ")) / height);\n";
-
-            s ~= "glVertex2f(" ~ px ~ "+ r*(" ~ sx ~ ")," ~ py ~ "+ r*(" ~ sy ~ "));\n";
-        }
-    }
-    return s;
-
-} // roundedBox
-
 
 /**
 * Basic window, a box with optional outline. This forms the base-class
@@ -1493,6 +1314,7 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
 */
 class WidgetWindow : Widget
 {
+    alias Widget.set set;
 
     package:
 
@@ -1531,36 +1353,22 @@ class WidgetWindow : Widget
             needRender();
         }
 
-        override void set(WidgetArgs args)
+        override WidgetWindow set(Args args)
         {
             super.set(args);
-
             m_type = "WIDGETWINDOW";
             m_cacheId = glGenLists(1);
 
-            fill(args, arg("background", m_color),
-                       arg("bordercolor", m_borderColor),
-                       arg("texture", m_texture));
-        }
-
-        override WidgetWindow set(string key, Variant val)
-        {
-            super.set(key, val);
-
-            switch(key.toLower())
+            foreach(key, val; zip(args.keys, args.vals))
             {
-                case "background": m_color = val.get!RGBA; break;
-                case "bordercolor": m_borderColor = val.get!RGBA; break;
-                case "texture": m_texture = val.get!GLuint; break;
-                default: break;
+                switch(key.toLower())
+                {
+                    case "background": setColor(val.get!RGBA); break;
+                    case "bordercolor": setBorderColor(val.get!RGBA); break;
+                    case "texture": setTexture(val.get!GLuint); break;
+                    default: break;
+                }
             }
-            return this;
-        }
-
-        override Widget set(Args args) in { assert(args.keys.length == args.vals.length); } body
-        {
-            foreach(i, key; args.keys)
-                set(key, args.vals[i]);
             return this;
         }
 
@@ -1669,17 +1477,23 @@ class WidgetWindow : Widget
 
 class WidgetPanWindow : WidgetWindow
 {
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
+    alias Widget.set set;
+
+    package:
+
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
 
     public:
 
-        override void set(WidgetArgs args)
+        override WidgetPanWindow set(Args args)
         {
             super.set(args);
             m_canDrag = true;
+            m_type = "WIDGETPANWINDOW";
+            return this;
         }
 
         override bool requestDrag(int[2] pos)
@@ -1801,59 +1615,47 @@ class WidgetPanWindow : WidgetWindow
 
 class WidgetScroll : WidgetWindow
 {
-    package this(WidgetRoot root, Widget parent)
-    {
-        super(root, parent);
-    }
+    alias Widget.set set;
+
+    package:
+
+        this(WidgetRoot root, Widget parent)
+        {
+            super(root, parent);
+        }
 
     public:
 
-        override void set(WidgetArgs args)
+        override WidgetScroll set(Args args)
         {
             super.set(args);
             m_type = "WIDGETSCROLL";
-
-            int smin, smax;
-            fill(args, arg("min", smin),
-                       arg("max", smax),
-                       arg("orientation", m_orient),
-                       arg("fade", m_hideWhenNotHovered),
-                       arg("scrolldelta", m_scrollDelta),
-                       arg("slidercolor", m_slideColor),
-                       arg("sliderborder", m_slideBorder),
-                       arg("sliderlength", m_slideLength));
-
-            if ("range" in args)
-            {
-                auto rnge = ("range" in args).get!(int[]);
-                smin = rnge[0];
-                smax = rnge[1];
-            }
-
-            if (smin > smax)
-                smin = smax = 0;
-
-            m_range = [smin, smax];
-            m_backgroundAlphaMax = m_color.a;
-            m_slideAlphaMax = m_slideColor.a;
-            m_slideBorderAlphaMax = m_slideBorder.a;
             m_resize = ResizeFlag.NONE;
 
-            if (m_orient == Orientation.VERTICAL)
+            foreach(key, val; zip(args.keys, args.vals))
             {
-                m_onParentResizeX = AdaptX.MAINTAIN_RIGHT;
-                m_onParentResizeY = AdaptY.RESIZE;
+                switch(key.toLower())
+                {
+                    case "orientation": m_orient.grab(val); break;
+                    case "fade": m_hideWhenNotHovered.grab(val); break;
+                    case "scrolldelta": m_scrollDelta.grab(val); break;
+                    case "slidercolor": m_slideColor.grab(val);  break;
+                    case "sliderborder": m_slideBorder.grab(val); break;
+                    case "sliderlength": m_slideLength.grab(val); break;
+                    case "range": range = val.get!(int[]); break;
+                    default: break;
+                }
             }
 
-            if (m_orient == Orientation.HORIZONTAL)
-            {
-                m_onParentResizeX = AdaptX.RESIZE;
-                m_onParentResizeY = AdaptY.MAINTAIN_BOTTOM;
-            }
-
+            m_slideBorderAlphaMax = m_slideBorder.a;
+            m_slideAlphaMax = m_slideColor.a;
             fadeInAndOut = m_hideWhenNotHovered;
             updateSlider();
+            updateOrientation();
+
+            return this;
         }
+
 
         // Get
         @property bool fadeInAndOut() const { return m_hideWhenNotHovered; }
@@ -1862,9 +1664,14 @@ class WidgetScroll : WidgetWindow
         @property Orientation orientation() const { return m_orient; }
 
         // Set
-        @property void range(int[2] v)
+        @property void range(int[] v) in { assert(v.length == 2); } body
         {
             m_range[] = v[];
+            if (m_range[0] > m_range[1])
+            {
+                m_range = [0,0];
+                return;
+            }
 
             if (m_orient == Orientation.VERTICAL)
             {
@@ -1907,10 +1714,31 @@ class WidgetScroll : WidgetWindow
             }
         }
 
+        override void setColor(RGBA c)
+        {
+            m_color = c;
+            m_backgroundAlphaMax = m_color.a;
+        }
+
         // If the geometry has changed, update
         override void geometryChanged(Widget.GeometryChangeFlag flag)
         {
             super.geometryChanged(flag);
+            updateSlider();
+        }
+
+        void updateOrientation()
+        {
+            if (m_orient == Orientation.VERTICAL)
+            {
+                m_onParentResizeX = AdaptX.MAINTAIN_RIGHT;
+                m_onParentResizeY = AdaptY.RESIZE;
+            }
+            else if (m_orient == Orientation.HORIZONTAL)
+            {
+                m_onParentResizeX = AdaptX.RESIZE;
+                m_onParentResizeY = AdaptY.MAINTAIN_BOTTOM;
+            }
             updateSlider();
         }
 
@@ -1937,8 +1765,9 @@ class WidgetScroll : WidgetWindow
 
             m_refreshCache = true;
             needRender();
-
         }
+
+
         // Render, call super then render the slider and buttons
         override void render(Flag!"RenderChildren" recurse)
         {
@@ -2283,6 +2112,32 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 }
 
 
+void grab(T)(ref T member, Variant val)
+{
+    static if (is(T == int[2]))
+        member = val.get!(int[]);
+    else
+        member = val.get!T;
+}
+
+Args pack(T...)(T t)
+{
+    Args args;
+    foreach(i, e; t)
+    {
+        static if (i % 2 == 0)
+            static if (isSomeString!(typeof(e)))
+                args.keys ~= e;
+            else assert(false);
+        else
+            args.vals ~= Variant(e);
+    }
+    return args;
+}
+
+
+version(None) {
+
 alias Variant[string] WidgetArgs;
 
 void fill(T...)(WidgetArgs args, T fields)
@@ -2360,8 +2215,122 @@ WidgetArgs widgetArgs(T...)(T args)
     }
     return out_args;
 }
+}
 
 
+
+
+/**
+* CTFE
+* This code gets mixed in to create a square box, plain or textured.
+*/
+string squareBox(bool textured = false)
+{
+    if (!textured)
+    {
+        return "
+               glVertex2i(0, 0);
+               glVertex2i(width, 0);
+               glVertex2i(width, height);
+               glVertex2i(0, height);";
+    }
+    else
+    {
+        return "
+               glTexCoord2i(0, 1);
+               glVertex2i(0, 0);
+               glTexCoord2i(1, 1);
+               glVertex2i(width, 0);
+               glTexCoord2i(1, 0);
+               glVertex2i(width, height);
+               glTexCoord2i(0, 0);
+               glVertex2i(0, height); ";
+    }
+}
+
+
+/**
+* CTFE
+* This code gets mixed in to produce a box with rounded corners. The
+* resolution of the arc is set by the global enum arcResolution at
+* the top of this module.
+*/
+string roundedBox(int resolution = arcResolution, /** enum defined at top of module **/
+                  bool textured = false)
+{
+    string s = "";
+    string sx, sy;
+
+    // Do the four corners separately, easier for my brain
+    foreach(n; 0..4)
+    {
+        foreach(i; 1..resolution)
+        {
+            float angle = 0;
+            string px, py;
+            if (n == 0) // 180..90
+            {
+                angle = (3.1415926575/2.) * (2.0 - (cast(float)i)/(cast(float)resolution));
+                px = "r";
+                py = "r";
+            }
+            else if (n == 1) // 90..180
+            {
+                angle = (3.1415926575/2.) * (1.0 - (cast(float)i)/(cast(float)resolution));
+                px = "width - r";
+                py = "r";
+            }
+            else if (n == 2) // 360..270
+            {
+                angle = (3.1415926575/2.) * (4.0 - (cast(float)i)/(cast(float)resolution));
+                px = "width - r";
+                py = "height - r";
+            }
+            else if (n == 3) // 270..180
+            {
+                angle = (3.1415926575/2.) * (3.0 - (cast(float)i)/(cast(float)resolution));
+                px = "r";
+                py = "height - r";
+            }
+
+            int fx = cast(int) (cos(angle)*1000000.);
+            int fy = cast(int) (-sin(angle)*1000000.);
+
+            string fsx = fx.to!string;
+            string fsy = fy.to!string;
+
+            string xprefix, yprefix;
+            if (fsx[0] == '-')
+            {
+                xprefix = "-";
+                fsx = fsx[1..$];
+            }
+
+            if (fsy[0] == '-')
+            {
+                yprefix = "-";
+                fsy = fsy[1..$];
+            }
+
+            if (fsx.length == 7)
+                sx = xprefix ~ fsx[0] ~ "." ~ fsx[1..$];
+            else
+                sx = xprefix ~ "0." ~ fsx;
+
+            if (fsy.length == 7)
+                sy = yprefix ~ fsy[0] ~ "." ~ fsy[1..$];
+            else
+                sy = yprefix ~ "0." ~ fsy;
+
+            if (textured)
+                s ~= "glTexCoord2f( (" ~ px ~ "+ r*(" ~ sx ~ ")) / width, 1 - (" ~ py ~ "+ r*(" ~ sy ~ ")) / height);\n";
+
+            s ~= "glVertex2f(" ~ px ~ "+ r*(" ~ sx ~ ")," ~ py ~ "+ r*(" ~ sy ~ "));\n";
+        }
+    }
+    return s;
+
+} // roundedBox
 
 
 

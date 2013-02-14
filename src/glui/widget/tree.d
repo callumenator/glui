@@ -10,8 +10,10 @@
 module glui.widget.tree;
 
 import
+    std.range,
     std.algorithm,
-    std.stdio;
+    std.stdio,
+    std.variant;
 
 import
     derelict.opengl.gl;
@@ -39,10 +41,10 @@ class Node
     }
 }
 
-
-
 class WidgetTree : WidgetWindow
 {
+    alias Widget.set set;
+
     package:
 
         this(WidgetRoot root, Widget parent)
@@ -52,42 +54,42 @@ class WidgetTree : WidgetWindow
 
     public:
 
-        override void set(WidgetArgs args)
+        override WidgetTree set(Args args)
         {
             super.set(args);
             m_type = "WIDGETTREE";
 
-            RGBA scrollBg = RGBA(0,0,0,1);
-            RGBA scrollFg = RGBA(1,1,1,1);
-            RGBA scrollBd = RGBA(0,0,0,1);
-            bool scrollFade = true, scroll = true;
-            int scrollCr = 0, scrollTh = 10; // corner radius and thickness
+            auto scrollBg = RGBA(0,0,0,1);
+            auto scrollFg = RGBA(1,1,1,1);
+            auto scrollBd = RGBA(0,0,0,0);
+            bool scroll = true, fade = true;
+            int scrollCr = 0;
 
-            fill(args, arg("gap", m_widgetGap),
-                       arg("indent", m_widgetIndent),
-                       arg("autoresize", m_autoResize),
-                       arg("scroll", scroll),
-                       arg("cliptoscrollbar", m_clipToScrollBar),
-                       arg("scrollbackground", scrollBg),
-                       arg("scrollforeground", scrollFg),
-                       arg("scrollborder", scrollBd),
-                       arg("scrollfade", scrollFade),
-                       arg("scrollcornerradius", scrollCr),
-                       arg("scrollthick", scrollTh));
+            foreach(key, val; zip(args.keys, args.vals))
+            {
+                switch(key.toLower())
+                {
+                    case "gap": m_widgetGap.grab(val); break;
+                    case "indent": m_widgetIndent.grab(val); break;
+                    case "autoresize": m_autoResize.grab(val); break;
+                    case "scroll": scroll.grab(val); break;
+                    case "cliptoscrollbar": m_clipToScrollBar.grab(val); break;
+                    case "scrollbackground": scrollBg.grab(val); break;
+                    case "scrollforeground": scrollFg.grab(val); break;
+                    case "scrollborder": scrollBd.grab(val); break;
+                    case "scrollfade": fade.grab(val); break;
+                    case "scrollcornerradius": scrollCr.grab(val); break;
+                    default: break;
+                }
+            }
 
             if (scroll)
                 m_vScroll = m_root.create!WidgetScroll(this,
-                                        widgetArgs(
-                                        "pos", [m_dim.x - scrollTh, 0],
-                                        "dim", [scrollTh, m_dim.y - scrollTh],
-                                        "range", [0,1000],
-                                        "fade", scrollFade,
-                                        "slidercolor", scrollFg,
-                                        "sliderborder", scrollBd,
-                                        "background", scrollBg,
-                                        "cornerRadius", scrollCr,
-                                        "orientation", Orientation.VERTICAL));
+                                "range", [0,1000], "fade", fade,
+                                "slidercolor", scrollFg, "sliderborder", scrollBd,
+                                "background", scrollBg, "orientation", Orientation.VERTICAL);
 
+            return this;
         }
 
         void add(Widget wparent,
@@ -131,10 +133,12 @@ class WidgetTree : WidgetWindow
 
         Widget add(Widget wparent, string label, Font font, Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
         {
-            auto widget = root.create!WidgetLabel(this, font, widgetArgs(
+            auto widget = root.create!WidgetLabel(this,
+                                                  "font", font,
                                                   "text", label,
+                                                  "textcolor", RGBA(1,1,1,1),
                                                   "background", RGBA(.5,.5,.5,.5),
-                                                  "textbgcolor", RGBA(0,0,0,0)));
+                                                  "textbgcolor", RGBA(0,0,0,0));
             add(wparent, widget, noUpdate);
             return widget;
         }
@@ -332,27 +336,27 @@ class WidgetTree : WidgetWindow
 
 class WidgetMenu : WidgetTree
 {
+    alias Widget.set set;
+
     package:
 
         this(WidgetRoot root, Widget parent)
         {
             super(root, parent);
-            root.eventSignal.connect(&globalEvent);
         }
 
     public:
 
-        override void set(WidgetArgs args)
+        override WidgetMenu set(Args args)
         {
             super.set(args);
-            m_vScroll = null;
-            m_autoResize = true;
+            m_type = "WIDGETMENU";
+            root.eventSignal.connect(&globalEvent);
             setColor(RGBA(0,0,0,0));
             setBorderColor(RGBA(0,0,0,0));
-            m_type = "WIDGETMENU";
-
-            fill(args, arg("gap", m_widgetGap),
-                       arg("indent", m_widgetIndent));
+            m_vScroll = null;
+            m_autoResize = true;
+            return this;
         }
 
         override void event(ref Event event)
