@@ -114,7 +114,7 @@ struct RGBA
 
 
 // Number of points to include in rounded corners
-enum arcResolution = 10;
+enum arcResolution = 20;
 
 
 enum EdgeFlag
@@ -181,6 +181,9 @@ abstract class Widget
 
         Widget set(Args args)
         {
+            bool xresize, yresize;
+            string adaptx, adapty;
+
             foreach(key, val; zip(args.keys, args.vals))
             {
                 switch(key.toLower())
@@ -192,9 +195,34 @@ abstract class Widget
                     case "clipped": m_clipped.grab(val); break;
                     case "drag": m_canDrag.grab(val); break;
                     case "resize": m_resize.grab(val); break;
+                    case "xresize": xresize.grab(val); break;
+                    case "yresize": yresize.grab(val); break;
+                    case "adaptx": adaptx.grab(val); break;
+                    case "adapty": adapty.grab(val); break;
                     default: break;
                 }
             }
+
+            m_resize |= (xresize ? ResizeFlag.X : 0) | (yresize ? ResizeFlag.Y : 0);
+
+            if (adaptx !is null) {
+                switch(adaptx.toLower()) {
+                    case "resize": m_onParentResizeX = AdaptX.RESIZE; break;
+                    case "left": m_onParentResizeX = AdaptX.MAINTAIN_LEFT; break;
+                    case "right": m_onParentResizeX = AdaptX.MAINTAIN_RIGHT; break;
+                    default:break;
+                }
+            }
+            if (adapty !is null) {
+                switch(adapty.toLower()) {
+                    case "resize": m_onParentResizeY = AdaptY.RESIZE; break;
+                    case "top": m_onParentResizeY = AdaptY.MAINTAIN_TOP; break;
+                    case "bottom": m_onParentResizeY = AdaptY.MAINTAIN_BOTTOM; break;
+                    default:break;
+                }
+            }
+
+
             return this;
         }
 
@@ -749,10 +777,10 @@ abstract class Widget
 
             if (m_cornerRadius != 0)
             {
-                clip[0] += m_cornerRadius;
-                clip[1] += m_cornerRadius;
-                clip[2] -= 2*m_cornerRadius;
-                clip[3] -= 2*m_cornerRadius;
+                clip[0] += m_cornerRadius/4;
+                clip[1] += m_cornerRadius/4;
+                clip[2] -= 2*m_cornerRadius/4;
+                clip[3] -= 2*m_cornerRadius/4;
             }
 
             if (m_clipped && m_parent)
@@ -2162,7 +2190,7 @@ void grab(T)(ref T member, Variant val)
             member = RGBA(val.get!(RGBA));
         else if (val.type == typeid(float[]))
             member = RGBA(val.get!(float[]));
-        else if (val.type == typeid(int[]))
+        else if (val.type == typeid(double[]))
             member = RGBA(val.get!(double[]));
         else if (val.type == typeid(int[]))
             member = RGBA(val.get!(int[]));
@@ -2238,6 +2266,7 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
 {
     string s = "";
     string sx, sy;
+    enum halfPI = (3.1415926575/2.);
 
     // Do the four corners separately, easier for my brain
     foreach(n; 0..4)
@@ -2248,57 +2277,31 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
             string px, py;
             if (n == 0) // 180..90
             {
-                angle = (3.1415926575/2.) * (2.0 - (cast(float)i)/(cast(float)resolution));
+                angle = halfPI * (2.0 - (cast(float)i)/(cast(float)resolution));
                 px = "r";
                 py = "r";
             }
             else if (n == 1) // 90..180
             {
-                angle = (3.1415926575/2.) * (1.0 - (cast(float)i)/(cast(float)resolution));
+                angle = halfPI * (1.0 - (cast(float)i)/(cast(float)resolution));
                 px = "width - r";
                 py = "r";
             }
             else if (n == 2) // 360..270
             {
-                angle = (3.1415926575/2.) * (4.0 - (cast(float)i)/(cast(float)resolution));
+                angle = halfPI * (4.0 - (cast(float)i)/(cast(float)resolution));
                 px = "width - r";
                 py = "height - r";
             }
             else if (n == 3) // 270..180
             {
-                angle = (3.1415926575/2.) * (3.0 - (cast(float)i)/(cast(float)resolution));
+                angle = halfPI * (3.0 - (cast(float)i)/(cast(float)resolution));
                 px = "r";
                 py = "height - r";
             }
 
-            int fx = cast(int) (cos(angle)*1000000.);
-            int fy = cast(int) (-sin(angle)*1000000.);
-
-            string fsx = fx.to!string;
-            string fsy = fy.to!string;
-
-            string xprefix, yprefix;
-            if (fsx[0] == '-')
-            {
-                xprefix = "-";
-                fsx = fsx[1..$];
-            }
-
-            if (fsy[0] == '-')
-            {
-                yprefix = "-";
-                fsy = fsy[1..$];
-            }
-
-            if (fsx.length == 7)
-                sx = xprefix ~ fsx[0] ~ "." ~ fsx[1..$];
-            else
-                sx = xprefix ~ "0." ~ fsx;
-
-            if (fsy.length == 7)
-                sy = yprefix ~ fsy[0] ~ "." ~ fsy[1..$];
-            else
-                sy = yprefix ~ "0." ~ fsy;
+            sx = floatToString(cos(angle));
+            sy = floatToString(-sin(angle));
 
             if (textured)
                 s ~= "glTexCoord2f( (" ~ px ~ "+ r*(" ~ sx ~ ")) / width, 1 - (" ~ py ~ "+ r*(" ~ sy ~ ")) / height);\n";
@@ -2311,8 +2314,20 @@ string roundedBox(int resolution = arcResolution, /** enum defined at top of mod
 } // roundedBox
 
 
-
-
+/**
+* Convert a float to a string at compile time.
+*/
+string floatToString(T)(T t) if (is(T:double) || is(T:float))
+{
+    bool neg = t < 0;
+    auto s = (cast(int)(abs(t)*10000000.)).to!string;
+    if (s.length < 7)
+        foreach(i; 0..7 - s.length)
+            s = "0" ~ s;
+    auto decPos = s.length - 7;
+    s.insertInPlace(decPos, ".");
+    return neg ? "-" ~ s : s;
+}
 
 
 
