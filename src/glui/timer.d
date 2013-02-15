@@ -41,17 +41,16 @@ void delayed(ulong msecs, bool delegate() callback)
 class Timer : Thread
 {
     alias bool delegate() CallBack;
-    alias void delegate(Timer) DoneFunc;
 
-    this(DoneFunc done)
+    this(TimerPool pool)
     {
         super(&wait);
-        this.notifyDone = done;
+        this.pool = pool;
     }
 
-    this(DoneFunc done, ulong msecs, CallBack call)
+    this(TimerPool pool, ulong msecs, CallBack call)
     {
-        this(done);
+        this(pool);
         set(msecs, call);
     }
 
@@ -66,16 +65,17 @@ class Timer : Thread
     {
         do {
             Thread.sleep(dur!"msecs"(msecs));
-        } while(call());
+        } while(!pool.term && call());
 
-        notifyDone(this);
+        pool.timerDone(this);
     }
 
 private:
 
+    bool term;
     ulong msecs;
     CallBack call;
-    DoneFunc notifyDone;
+    TimerPool pool;
 }
 
 /**
@@ -93,12 +93,31 @@ class TimerPool
     }
 
     /**
+    * Timers check this to see if they should terminate.
+    */
+    @property bool term() const
+    {
+        return _term;
+    }
+
+    /**
+    * Teminate all timers in the pool.
+    */
+    void finalize()
+    {
+        _term = true;
+    }
+
+    /**
     * Called by client to schedule a timer event.
     */
     void timer(ulong msecs, bool delegate() dg)
     {
+        if (_term)
+            return;
+
         if (free.empty)
-            (new Timer(&timerDone)).set(msecs, dg).start();
+            (new Timer(this)).set(msecs, dg).start();
         else
             free.removeAny.set(msecs, dg).start();
     }
@@ -110,7 +129,7 @@ private:
     */
     void newTimer()
     {
-        free.insertFront(new Timer(&timerDone));
+        free.insertFront(new Timer(this));
     }
 
     /**
@@ -125,4 +144,5 @@ private:
     }
 
     SList!(Timer) free;
+    bool _term;
 }

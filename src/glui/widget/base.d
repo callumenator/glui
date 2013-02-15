@@ -86,6 +86,11 @@ struct RGBA
         return RGBA(v[0], v[1], v[2], v[3]);
     }
 
+    static RGBA opCall(double[] v) in { assert(v.length == 4); } body
+    {
+        return RGBA(v[0], v[1], v[2], v[3]);
+    }
+
     static RGBA opCall(int[] v) in { assert(v.length == 4); } body
     {
         return RGBA(v[0], v[1], v[2], v[3]);
@@ -1188,8 +1193,9 @@ class WidgetRoot : Widget
         // Recursively destroy all widgets
         void destroy()
         {
-            foreach(w; m_children)
-                this.destroy(w);
+            m_timerPool.finalize();
+            //foreach(w; m_children)
+            //    this.destroy(w);
         }
 
         // Destroy a widget, recursively destroying its child hierarchy
@@ -1377,7 +1383,6 @@ class WidgetWindow : Widget
                         m_color.grab(val);
                         setColor(m_color);
                         break;
-                        setColor(val.get!RGBA); break;
                     case "bordercolor":
                         m_borderColor.grab(val);
                         setBorderColor(m_borderColor);
@@ -2153,12 +2158,16 @@ void grab(T)(ref T member, Variant val)
         member = val.get!(int[]);
     else static if (is(T == RGBA))
     {
-        if (val.type == typeid(float[]))
+        if (val.type == typeid(RGBA))
+            member = RGBA(val.get!(RGBA));
+        else if (val.type == typeid(float[]))
             member = RGBA(val.get!(float[]));
+        else if (val.type == typeid(int[]))
+            member = RGBA(val.get!(double[]));
         else if (val.type == typeid(int[]))
             member = RGBA(val.get!(int[]));
         else
-            assert(false, "Assigning to RGBA failed");
+            assert(false, "Assigning to RGBA failed: " ~ val.type.to!string);
     }
     else
         member = val.get!T;
