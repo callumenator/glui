@@ -81,6 +81,16 @@ struct RGBA
         return RGBA(v[0], v[1], v[2], v[3]);
     }
 
+    static RGBA opCall(float[] v) in { assert(v.length == 4); } body
+    {
+        return RGBA(v[0], v[1], v[2], v[3]);
+    }
+
+    static RGBA opCall(int[] v) in { assert(v.length == 4); } body
+    {
+        return RGBA(v[0], v[1], v[2], v[3]);
+    }
+
     // Stored internally as floats [0..1]
     union
     {
@@ -1363,8 +1373,15 @@ class WidgetWindow : Widget
             {
                 switch(key.toLower())
                 {
-                    case "background": setColor(val.get!RGBA); break;
-                    case "bordercolor": setBorderColor(val.get!RGBA); break;
+                    case "background":
+                        m_color.grab(val);
+                        setColor(m_color);
+                        break;
+                        setColor(val.get!RGBA); break;
+                    case "bordercolor":
+                        m_borderColor.grab(val);
+                        setBorderColor(m_borderColor);
+                        break;
                     case "texture": setTexture(val.get!GLuint); break;
                     default: break;
                 }
@@ -2131,8 +2148,18 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 */
 void grab(T)(ref T member, Variant val)
 {
+    writeln(T.stringof, ", ", val);
     static if (is(T == int[2]))
         member = val.get!(int[]);
+    else static if (is(T == RGBA))
+    {
+        if (val.type == typeid(float[]))
+            member = RGBA(val.get!(float[]));
+        else if (val.type == typeid(int[]))
+            member = RGBA(val.get!(int[]));
+        else
+            assert(false, "Assigning to RGBA failed");
+    }
     else
         member = val.get!T;
 }
@@ -2143,13 +2170,17 @@ void grab(T)(ref T member, Variant val)
 */
 Args pack(T...)(T t)
 {
+    static if (T.length == 1 && is(typeof(t[0]) == Args))
+        return t[0];
+
     Args args;
     foreach(i, e; t)
     {
         static if (i % 2 == 0)
             static if (isSomeString!(typeof(e)))
                 args.keys ~= e;
-            else assert(false);
+            else
+                assert(false, "Expected string, got: " ~ e.to!string);
         else
             args.vals ~= Variant(e);
     }

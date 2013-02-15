@@ -16,13 +16,16 @@ import
     std.json;
 
 import
-    glui.widget.base;
+    glui.widget.base,
+    glui.widget.text,
+    glui.widget.tree;
 
 
 
 void parseUI(WidgetRoot root, string text)
 {
-
+    foreach(name, member; parseJSON(text).object)
+        parseObject(root, null, name, member.object);
 }
 
 
@@ -31,30 +34,43 @@ Widget[] parseObject(WidgetRoot root, Widget parent, string name, JSONValue[stri
     writeln(name);
     Widget newObj;
     Widget[] allObjs;
+    Args args;
 
-    if ("type" !in obj)
-        assert(false);
-
-    final switch (name)
+    if ("settings" in obj)
     {
-        case "WidgetWindow":
-            //newObj = root.create!WidgetWindow(parent);
-            break;
-        case "Widget":
-            //newObj = new C;
-            break;
+        assert(obj["settings"].type == JSON_TYPE.OBJECT);
+        args = toArgs(obj["settings"].object);
     }
+
+    /** CTFE **/ string makeCase(string[] types)
+    {
+        string s = "final switch(name)\n{\n";
+        foreach(t; types)
+            s ~= "case `" ~ t ~ "`: newObj = root.create!" ~ t ~ "(parent, args); break;\n";
+        return s ~ "\n}\n";
+    }
+
+    mixin(makeCase(["WidgetWindow",
+                    "WidgetText",
+                    "WidgetMenu"]));
 
     foreach(key, val; obj)
-    {
-        if (val.type == JSON_TYPE.OBJECT)
-            allObjs ~= parseObject(root, newObj, key, val.object);
-        else {}
-            //newObj.set(key, getVal(val));
-    }
+        if (key != "settings" && val.type == JSON_TYPE.OBJECT)
+                allObjs ~= parseObject(root, newObj, key, val.object);
 
     allObjs ~= newObj;
     return allObjs;
+}
+
+Args toArgs(JSONValue[string] obj)
+{
+    Args args;
+    foreach(k, v; obj)
+    {
+        args.keys ~= k;
+        args.vals ~= getVal(v);
+    }
+    return args;
 }
 
 /**
