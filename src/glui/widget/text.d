@@ -181,7 +181,7 @@ class WidgetText : WidgetWindow
             m_caretBlinkDelay = 600;
 
             // Scroll bar options
-            RGBA scrollBg = RGBA(0,0,0,1);
+            RGBA scrollBg = RGBA(0,1,0,1);
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
             bool scrollFade = true;
@@ -244,6 +244,8 @@ class WidgetText : WidgetWindow
                                     "background", scrollBg,
                                     "cornerRadius", scrollCr,
                                     "orientation", Orientation.HORIZONTAL);
+
+                m_hscroll.eventSignal.connect(&this.scrollEvent);
             }
 
             return this;
@@ -510,10 +512,6 @@ class WidgetText : WidgetWindow
         void resetYCoord()
         {
             glTranslatef(0, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
-
-            // Translate by the scroll amounts as well...
-            // if (m_allowVScroll)
-            //    glTranslatef(0, -m_vscroll.current*m_font.m_lineHeight, 0);
         }
 
         /**
@@ -530,8 +528,6 @@ class WidgetText : WidgetWindow
                     auto lines = m_text.nLines;
                     auto height = lines * m_font.m_lineHeight;
                     yoffset = m_dim.y/2.0f + m_font.m_maxHoss/2.0f - height/2.0f - m_font.m_lineHeight/2.0f;
-
-                    if (yoffset < 0) yoffset = 0;
                     break;
                 }
                 case BOTTOM:
@@ -1376,7 +1372,7 @@ class WidgetLabel : WidgetText
                 if (l > xdim)
                     xdim = l;
             }
-            return [cast(int)xdim, cast(int)(1.5*lines.length*m_font.m_lineHeight)];
+            return [cast(int)xdim, cast(int)(lines.length * m_font.m_lineHeight)];
         }
 
         bool m_fixedWidth;

@@ -62,7 +62,7 @@ class WidgetTree : WidgetWindow
             auto scrollBg = RGBA(0,0,0,1);
             auto scrollFg = RGBA(1,1,1,1);
             auto scrollBd = RGBA(0,0,0,0);
-            bool scroll = true, fade = true;
+            bool scroll = false, fade = true;
             int scrollCr = 0;
 
             foreach(key, val; zip(args.keys, args.vals))
@@ -349,14 +349,31 @@ class WidgetMenu : WidgetTree
 
         override WidgetMenu set(Args args)
         {
+            m_autoResize = true;
             super.set(args);
+
+            m_widgetGap = 0;
+            m_widgetIndent = 0;
             m_type = "WIDGETMENU";
             root.eventSignal.connect(&globalEvent);
             setColor(RGBA(0,0,0,0));
             setBorderColor(RGBA(0,0,0,0));
-            m_vScroll = null;
-            m_autoResize = true;
+
             return this;
+        }
+
+        alias WidgetTree.add add;
+
+        override Widget add(Widget wparent, string label, Font font, Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
+        {
+            auto widget = root.create!WidgetLabel(this,
+                                                  "font", font,
+                                                  "text", label,
+                                                  "textcolor", RGBA(1,1,1,1),
+                                                  "background", RGBA(.5,.5,.5,.5),
+                                                  "textbgcolor", RGBA(0,0,0,0));
+            add(wparent, widget, noUpdate);
+            return widget;
         }
 
         override void event(ref Event event)
@@ -424,7 +441,7 @@ class WidgetMenu : WidgetTree
             if (e.type == WidgetEventType.GLOBALHOVERCHANGE)
             {
                 auto change = e.get!GlobalHoverChange;
-                if (isMyChild(change.oldHover) && !(isMyChild(change.newHover) || change.newHover is this))
+                if (isMyChild(change.oldHover) && !isMyChild(change.newHover))
                 {
                     lostHover();
                     return 0;
@@ -441,6 +458,7 @@ class WidgetMenu : WidgetTree
             if (!isAChildHovered && m_lastHovered !is null)
             {
                 collapseBranch(m_lastHovered);
+                updateTree();
                 m_lastHovered = null;
             }
         }
@@ -448,27 +466,27 @@ class WidgetMenu : WidgetTree
         override void updateTree()
         {
             updateScreenInfo();
-            int xoffset = 10, yoffset = 10, width = 0, height = 0;
+            int xoffset = 0, yoffset = 0, width = 0, height = 0;
 
             uint depth = 0;
             void recurseHorizontal(Node node)
             {
                 ++depth;
 
-                if (node.widget.dim.x + xoffset > width)
-                    width = node.widget.dim.x + xoffset;
-
-                if (node.widget.dim.y + yoffset > height)
-                    height = node.widget.dim.y + yoffset;
-
-                node.widget.setPos(xoffset, yoffset);
-                node.widget.updateScreenInfo();
-
                 // See if widget is still visible inside the clipping area
                 node.widget.showing = true && node.shown;
 
                 if (node.shown)
                 {
+                    if (node.widget.dim.x + xoffset > width)
+                        width = node.widget.dim.x + xoffset;
+
+                    if (node.widget.dim.y + yoffset > height)
+                        height = node.widget.dim.y + yoffset;
+
+                    node.widget.setPos(xoffset, yoffset);
+                    node.widget.updateScreenInfo();
+
                     if (depth == 1)
                     {
                         auto y = yoffset;
@@ -505,7 +523,7 @@ class WidgetMenu : WidgetTree
                 recurseHorizontal(node);
 
             if (m_autoResize)
-                setDim(width, height);
+                setDim(width, height+1);
 
             needRender();
         }

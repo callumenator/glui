@@ -346,7 +346,7 @@ abstract class Widget
         {
             glPopMatrix();
             glScissor(0, 0, m_root.dim.x, m_root.dim.y);
-            //debug { renderClip(); }
+            debug { renderClip(); }
         }
 
         // Render this widget
@@ -1629,29 +1629,42 @@ class WidgetScroll : WidgetWindow
         override WidgetScroll set(Args args)
         {
             super.set(args);
+
             m_type = "WIDGETSCROLL";
-            m_resize = ResizeFlag.NONE;
+            int smin, smax;
 
             foreach(key, val; zip(args.keys, args.vals))
             {
                 switch(key.toLower())
                 {
+                    case "min": smin.grab(val); break;
+                    case "max": smax.grab(val); break;
                     case "orientation": m_orient.grab(val); break;
                     case "fade": m_hideWhenNotHovered.grab(val); break;
                     case "scrolldelta": m_scrollDelta.grab(val); break;
                     case "slidercolor": m_slideColor.grab(val);  break;
                     case "sliderborder": m_slideBorder.grab(val); break;
                     case "sliderlength": m_slideLength.grab(val); break;
-                    case "range": range = val.get!(int[]); break;
+                    case "range":
+                        auto rnge = val.get!(int[]);
+                        smin = rnge[0];
+                        smax = rnge[1];
+                        break;
                     default: break;
                 }
             }
 
-            m_slideBorderAlphaMax = m_slideBorder.a;
+            if (smin > smax)
+                smin = smax = 0;
+
+            m_range = [smin, smax];
+            m_backgroundAlphaMax = m_color.a;
             m_slideAlphaMax = m_slideColor.a;
+            m_slideBorderAlphaMax = m_slideBorder.a;
+            m_resize = ResizeFlag.NONE;
             fadeInAndOut = m_hideWhenNotHovered;
-            updateSlider();
             updateOrientation();
+            updateSlider();
 
             return this;
         }
@@ -2112,6 +2125,10 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 }
 
 
+/**
+* Helper for grabbing a typed value from a variant, base on
+* a reference to a variable.
+*/
 void grab(T)(ref T member, Variant val)
 {
     static if (is(T == int[2]))
@@ -2120,6 +2137,10 @@ void grab(T)(ref T member, Variant val)
         member = val.get!T;
 }
 
+/**
+* Helper for packing a type-safe variadic list of arguments
+* into an Args tuple (string[],Variant[]).
+*/
 Args pack(T...)(T t)
 {
     Args args;
@@ -2134,89 +2155,6 @@ Args pack(T...)(T t)
     }
     return args;
 }
-
-
-version(None) {
-
-alias Variant[string] WidgetArgs;
-
-void fill(T...)(WidgetArgs args, T fields)
-{
-    Variant* ptr = null;
-
-    foreach(field; fields)
-    {
-        static if (is(typeof(field) dummy == KeyVal!U, U))
-        {
-            ptr = field.key in args;
-            if (ptr !is null)
-            {
-                static if (is(U == int[2]))
-                    *field.val = ptr.get!(int[]);
-                else
-                    *field.val = ptr.get!U;
-            }
-        }
-    }
-}
-
-KeyVal!T arg(T)(string k, ref T t)
-{
-    KeyVal!T kv;
-    kv.key = k.toLower;
-    kv.val = &t;
-    return kv;
-}
-
-struct KeyVal(T)
-{
-    string key;
-    T* val;
-}
-
-WidgetArgs widgetArgs(T...)(T args)
-{
-    WidgetArgs out_args;
-    string current = "";
-    Variant holder;
-    bool expectVal = false;
-
-    foreach(arg; args)
-    {
-        static if (isTuple!(typeof(arg)))
-        {
-            auto sub_args = widgetArgs(arg.expand);
-            foreach(key, val; sub_args)
-                out_args[key] = Variant(val);
-        }
-        else
-        {
-            if (!expectVal)
-            {
-                static if (is(typeof(arg) == string))
-                {
-                    current = arg.toLower;
-                    expectVal = true;
-                }
-                else
-                {
-                    // We don't really need to assert, but
-                    assert(false, "Error: expected argument name, not " ~ arg.to!string);
-                }
-            }
-            else
-            {
-                holder = arg;
-                out_args[current] = holder;
-                expectVal = false;
-                current = "";
-            }
-        }
-    }
-    return out_args;
-}
-}
-
 
 
 
