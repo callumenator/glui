@@ -14,6 +14,8 @@ import
     std.range,
     std.stdio,
     core.thread,
+    core.sync.condition,
+    core.sync.mutex,
     std.datetime,
     std.parallelism;
 
@@ -44,6 +46,9 @@ class Timer : Thread
 
     this(TimerPool pool)
     {
+        mutex = new Mutex();
+        cond = new Condition(mutex);
+
         super(&wait);
         this.pool = pool;
     }
@@ -56,15 +61,24 @@ class Timer : Thread
 
     Timer set(ulong msecs, CallBack call) nothrow
     {
+        mutex.lock(); scope(exit) mutex.unlock();
         this.call = call;
         this.msecs = msecs;
         return this;
     }
 
+    void term()
+    {
+        mutex.lock(); scope(exit) mutex.unlock();
+        cond.notifyAll();
+    }
+
     void wait()
     {
+        mutex.lock(); scope(exit) mutex.unlock();
+
         do {
-            Thread.sleep(dur!"msecs"(msecs));
+            cond.wait(dur!"msecs"(msecs));
         } while(!pool.term && call());
 
         pool.timerDone(this);
@@ -72,10 +86,12 @@ class Timer : Thread
 
 private:
 
-    bool term;
     ulong msecs;
     CallBack call;
     TimerPool pool;
+    Mutex mutex;
+    Condition cond;
+
 }
 
 /**
@@ -105,6 +121,9 @@ class TimerPool
     */
     void finalize()
     {
+        foreach(timer; pool)
+            timer.term();
+
         _term = true;
     }
 
@@ -130,6 +149,7 @@ private:
     void newTimer()
     {
         free.insertFront(new Timer(this));
+        pool ~= free.front;
     }
 
     /**
@@ -144,5 +164,6 @@ private:
     }
 
     SList!(Timer) free;
+    Timer[] pool;
     bool _term;
 }

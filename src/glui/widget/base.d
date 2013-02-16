@@ -294,6 +294,12 @@ abstract class Widget
             geometryChanged(GeometryChangeFlag.DIMENSION);
         }
 
+        // Set clip box
+        void setClip(int[] clip) in { assert(clip.length == 4); } body
+        {
+            m_clip = clip;
+        }
+
         // Print out the hierarchy
         void print(ref Appender!(char[]) buf, ref string prefix)
         {
