@@ -109,6 +109,14 @@ public
         return font;
     }
 
+    /**
+    * Overload for loading a new font-size of a given Font object.
+    */
+    Font loadFont(Font font, int pointSize)
+    {
+        return loadFont(font.filename, pointSize);
+    }
+
     // Create a set of fonts from a list of files, with the given sizes
     void loadFonts(string[] filenames, int[] pointSizes)
     in

@@ -113,8 +113,7 @@ Variant getArr(JSONValue[] arr)
         mixin(makeCase("INTEGER", "int", "integer.to!int"));
         mixin(makeCase("UINTEGER", "uint", "uinteger.to!uint"));
         mixin(makeCase("FLOAT", "float", "floating"));
-
-        case OBJECT:
+        mixin(makeCase("OBJECT", "JSONValue[string]", "object"));
         case ARRAY:
         case TRUE:
         case FALSE:

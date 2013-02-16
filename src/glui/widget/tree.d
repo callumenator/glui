@@ -10,6 +10,7 @@
 module glui.widget.tree;
 
 import
+    std.conv,
     std.range,
     std.algorithm,
     std.stdio,
@@ -336,7 +337,9 @@ class WidgetTree : WidgetWindow
 
 class WidgetMenu : WidgetTree
 {
+    import std.json;
     alias Widget.set set;
+    alias WidgetTree.add add;
 
     package:
 
@@ -349,9 +352,9 @@ class WidgetMenu : WidgetTree
 
         override WidgetMenu set(Args args)
         {
-            m_autoResize = true;
             super.set(args);
 
+            m_autoResize = true;
             m_widgetGap = 0;
             m_widgetIndent = 0;
             m_type = "WIDGETMENU";
@@ -359,10 +362,73 @@ class WidgetMenu : WidgetTree
             setColor(RGBA(0,0,0,0));
             setBorderColor(RGBA(0,0,0,0));
 
+            // Look for font and size first, in case we are adding items
+            auto fontsize = 12;
+            auto index = args.keys.map!(a=>a.toLower()).countUntil("font");
+            if (index != -1)
+            {
+                auto fontname = args.vals[index].get!string;
+                index = args.keys.map!(a=>a.toLower()).countUntil("fontsize");
+                if (index != -1)
+                    fontsize = args.vals[index].get!int;
+                m_font = loadFont(fontname, fontsize);
+            }
+
+            foreach(key, val; zip(args.keys, args.vals))
+            {
+                switch(key.toLower)
+                {
+                    case "items": parseJSONItems(val.get!(JSONValue[string][])); break;
+                    default: break;
+                }
+            }
+
             return this;
         }
 
-        alias WidgetTree.add add;
+        void parseJSONItems(JSONValue[string][] items)
+        {
+            import glui.widget.loader;
+            foreach(obj; items)
+            {
+                auto id = "", label = "", fontname = "";
+                auto fontsize = 12;
+                Widget parent = null;
+                int[] padding = [0,0];
+
+                if ("label" in obj)
+                    label = obj["label"].str;
+                if ("parent" in obj)
+                    parent = root.findByID(obj["parent"].str);
+                if ("id" in obj)
+                    id = obj["id"].str;
+                if ("font" in obj)
+                    fontname = obj["font"].str;
+                if ("fontsize" in obj)
+                    fontsize = obj["fontsize"].integer.to!int;
+                if ("padding" in obj)
+                    padding = getArr(obj["padding"].array).get!(int[]);
+
+                Font font = m_font;
+                if (fontname != "")
+                    font = loadFont(fontname, fontsize);
+                else
+                    font = loadFont(font, fontsize);
+
+                auto widget = root.create!WidgetLabel(this,
+                                                  "id", id,
+                                                  "font", font,
+                                                  "text", label,
+                                                  "padding", padding,
+                                                  "halign", WidgetText.HAlign.CENTER,
+                                                  "textcolor", RGBA(1,1,1,1),
+                                                  "background", RGBA(.5,.5,.5,.5),
+                                                  "textbgcolor", RGBA(0,0,0,0));
+
+                add(parent, widget, Flag!"NoUpdate".yes);
+            }
+            updateTree();
+        }
 
         override Widget add(Widget wparent, string label, Font font, Flag!"NoUpdate" noUpdate = Flag!"NoUpdate".no)
         {
@@ -393,8 +459,8 @@ class WidgetMenu : WidgetTree
                 {
                     Node n = null;
                     foreach(node; m_tree)
-                    if (findParentNode(node, focus, n))
-                        break;
+                        if (findParentNode(node, focus, n))
+                            break;
 
                     if (n !is null && n !is m_lastHovered)
                     {
@@ -412,6 +478,8 @@ class WidgetMenu : WidgetTree
                             {
                                 collapseBranch(m_lastHovered);
                                 collapseOld = false;
+                                while(n.parent !is null)
+                                    n = n.parent;
                             }
 
                             if (collapseOld)
@@ -424,9 +492,9 @@ class WidgetMenu : WidgetTree
 
                         m_lastHovered = n;
                         n.expanded = true;
+
                         foreach(child; n.children)
                             setVisibility(child);
-
                         updateTree();
                     }
                 }
@@ -523,11 +591,13 @@ class WidgetMenu : WidgetTree
                 recurseHorizontal(node);
 
             if (m_autoResize)
-                setDim(width, height+1);
+                setDim(width+1, height+1);
 
             needRender();
         }
 
         Node m_lastHovered;
+        Font m_font;
+        int m_xpad, m_ypad;
 }
 

@@ -76,11 +76,6 @@ struct RGBA
         return o;
     }
 
-    static RGBA opCall(float[4] v)
-    {
-        return RGBA(v[0], v[1], v[2], v[3]);
-    }
-
     static RGBA opCall(float[] v) in { assert(v.length == 4); } body
     {
         return RGBA(v[0], v[1], v[2], v[3]);
@@ -188,6 +183,7 @@ abstract class Widget
             {
                 switch(key.toLower())
                 {
+                    case "id": m_id.grab(val); break;
                     case "dim": m_dim.grab(val); break;
                     case "pos": m_pos.grab(val); break;
                     case "cornerradius": m_cornerRadius.grab(val); break;
@@ -243,6 +239,7 @@ abstract class Widget
         long lastFocused() const { return m_lastFocused; }
         @property string type() const { return m_type; }
         @property int cornerRadius() const { return m_cornerRadius; }
+        @property string id() { return m_id; }
 
         // Set
         @property void canDrag(bool v) { m_canDrag = v; }
@@ -485,21 +482,23 @@ abstract class Widget
 
             m_resizing = EdgeFlag.NONE;
 
+            auto d = Distance(this, pos);
+
             if (m_resize & ResizeFlag.X)
             {
-                if (abs(pos.x - m_screenPos.x) < 4)
+                if (d.left >0 && d.left < 5)
                     m_resizing |= EdgeFlag.LEFT;
 
-                if (abs(pos.x - (m_screenPos.x + m_dim.x)) < 4)
+                if (d.right > 0 && d.right < 5)
                     m_resizing |= EdgeFlag.RIGHT;
             }
 
             if (m_resize & ResizeFlag.Y)
             {
-                if (abs(pos.y - m_screenPos.y) < 4)
+                if (d.top >0 && d.top < 5)
                     m_resizing |= EdgeFlag.TOP;
 
-                if (abs(pos.y - (m_screenPos.y + m_dim.y)) < 4)
+                if (d.bottom > 0 && d.bottom < 5)
                     m_resizing |= EdgeFlag.BOTTOM;
             }
 
@@ -637,8 +636,12 @@ abstract class Widget
         bool focus(int[2] pos, ref Widget finalFocus)
         {
             // If click was inside my bounds, list me as focused
-            if (m_visible && this.isInside(pos) && m_focusable)
+            if (this.isInside(pos) && m_focusable)
             {
+                if (type == "WIDGETLABEL")
+                    writeln("Inside: ", (cast(WidgetLabel)this).textArea().getText());
+                else writeln("Inside: ", this);
+
                 // Give parent a chance to steal the focus
                 if (m_parent)
                 {
@@ -653,10 +656,15 @@ abstract class Widget
 
                 // If I have children, give them a chance at getting the focus
                 foreach(widget; m_children)
-                    widget.focus(pos, finalFocus);
+                    if (widget.focus(pos, finalFocus))
+                        return true;
 
                 return true;
             }
+
+            if (type == "WIDGETLABEL")
+                writeln("Not inside: ", (cast(WidgetLabel)this).textArea().getText());
+            else writeln("Not inside: ", this);
             return false;
         }
 
@@ -849,6 +857,7 @@ abstract class Widget
         AdaptY m_onParentResizeY = AdaptY.MAINTAIN_TOP;
 
         string m_type = "WIDGET";
+        string m_id;
 }
 
 
@@ -878,6 +887,17 @@ class WidgetRoot : Widget
             setViewport();
         }
 
+        private this() // for headless testing only
+        {
+            super(this, this);
+            Window("testWindow", WindowState(0,0,10,10));
+            Window.makeCurrent("testWindow");
+            m_window = Window("testWindow");
+            m_root = this;
+            m_parent = null;
+            m_type = "WIDGETROOT";
+        }
+
         // Poll for events, and put the current thread to sleep if needed
         void poll()
         {
@@ -895,12 +915,68 @@ class WidgetRoot : Widget
                 Thread.sleep( dur!("msecs")( delay ) );
         }
 
+
+        /**
+        * Load a widgets from a JSON text string.
+        */
         void load(string text)
         {
             parseUI(this, text);
         }
 
-        // Render all widgets which have this root
+
+        /**
+        * Find a widget from the global list using an ID string.
+        */
+        Widget findByID(string id)
+        {
+            auto f = find!("a.id == b")(m_widgetList, id);
+            if (!f.empty)
+                return f.front;
+            else
+                return null;
+        }
+
+        /**
+        * Find a widget under the given parent (i.e. in the same
+        * heirarchy as 'parent') based on an ID string.
+        */
+        Widget findByID(Widget parent, string id)
+        {
+            auto f = find!("a.id == b")(parent.children, id);
+            if (!f.empty)
+                return f.front;
+            else
+            {
+                foreach(child; parent.children)
+                {
+                    auto w = findByID(child, id);
+                    if (w)
+                        return w;
+                }
+            }
+            return null;
+        }
+
+        unittest /** findByID **/
+        {
+            auto root = new WidgetRoot();
+            auto p = root.create!WidgetWindow(null);
+            auto c1 = root.create!WidgetWindow(p, "id", "a");
+            auto c2 = root.create!WidgetWindow(c1, "id", "b");
+            auto c3 = root.create!WidgetWindow(p, "id", "c");
+            assert(root.findByID("a") !is null);
+            assert(root.findByID(p, "a") !is null);
+            assert(root.findByID(c1, "b") !is null);
+            assert(root.findByID(p, "b") !is null);
+            assert(root.findByID(c1, "c") is null);
+            root.window.destroy();
+        }
+
+
+        /**
+        * Render all widgets which have this root.
+        */
         override void render(Flag!"RenderChildren" recurse)
         {
             // Update screen positions
@@ -1011,6 +1087,7 @@ class WidgetRoot : Widget
                 {
                     m_recieveDrag = null;
                     m_recieveResize = null;
+                    break;
                 }
 
                 default:
@@ -1128,31 +1205,28 @@ class WidgetRoot : Widget
                 return;
 
             Widget newHover = null;
+            bool hovered = false;
             foreach(widget; retro(m_children))
-                if (widget.visible)
-                    if (widget.focus(pos, newHover))
-                        break;
+                if (widget.focus(pos, newHover))
+                    break;
 
-            if (m_hovered !is null && newHover is m_hovered)
+            if (newHover is m_hovered)
                 return; // currently hovered widget is still hovered
 
-            if (newHover !is m_hovered)
-            {
-                auto oldHover = m_hovered;
-                m_hovered = newHover; // set this here, so widgets can check children hovered in lostHover()
+            auto oldHover = m_hovered;
+            m_hovered = newHover; // set this here, so widgets can check children hovered in lostHover()
 
-                // Fire a global focus change event
-                eventSignal.emit(this, WidgetEvent(GlobalHoverChange(newHover, oldHover)));
-                if (oldHover !is null)
-                {
-                    oldHover.lostHover();
-                    oldHover.eventSignal.emit(oldHover, WidgetEvent(LostHover()));
-                }
-                if (newHover !is null)
-                {
-                    newHover.gainedHover();
-                    newHover.eventSignal.emit(newHover, WidgetEvent(GainedHover()));
-                }
+            // Fire a global focus change event
+            eventSignal.emit(this, WidgetEvent(GlobalHoverChange(newHover, oldHover)));
+            if (oldHover !is null)
+            {
+                oldHover.lostHover();
+                oldHover.eventSignal.emit(oldHover, WidgetEvent(LostHover()));
+            }
+            if (newHover !is null)
+            {
+                newHover.gainedHover();
+                newHover.eventSignal.emit(newHover, WidgetEvent(GainedHover()));
             }
         }
 
@@ -2081,10 +2155,69 @@ float distance(int[2] p1, int[2] p2)
     return sqrt( cast(float)((p1.x - p2.x)*(p1.x - p2.x) + (p1.y - p2.y)*(p1.y - p2.y)));
 }
 
+struct Distance
+{
+    float top, bottom, left, right;
+
+    static Distance opCall(Widget w, int[2] pos)
+    {
+        Distance d;
+
+        int[4] clip = w.clip;
+
+        if (w.parent) // Allow the widgets container to transform the clip box
+        {
+            w.parent.transformPos(w, pos);
+            w.parent.transformClip(w, clip);
+        }
+
+        d.top = pos.y - clip[1];
+        d.bottom = (clip[1] + clip[3]) - pos.y;
+        d.left = pos.x - clip[0];
+        d.right = (clip[0] + clip[2]) - pos.x;
+
+        if (w.cornerRadius != 0)
+        {
+            auto r = cast(float)(w.cornerRadius);
+
+            void func(ref float a, ref float b)
+            {
+                auto temp = a - (r - sqrt(r*r -  (r - b)*(r - b)));
+                b -= r - sqrt(r*r -  (r - a)*(r - a));
+                a = temp;
+            }
+
+            if (d.left > 0 && d.left < r && d.top > 0 && d.top < r) // top left corner
+                func(d.top, d.left);
+
+            if (d.right > 0 && d.right < r && d.top > 0 && d.top < r) // top right corner
+                func(d.top, d.right);
+
+            if (d.right > 0 && d.right < r && d.bottom > 0 && d.bottom < r) // lower right corner
+                func(d.bottom, d.right);
+
+            if (d.left > 0 && d.left < r && d.bottom > 0 && d.bottom < r) // lower left corner
+                func(d.bottom, d.left);
+        }
+        return d;
+    }
+
+    bool inside()
+    {
+        return top >= 0 &&
+               bottom >= 0 &&
+               left >= 0 &&
+               right >= 0;
+    }
+}
+
 
 // Check if a given point is within a widgets boundary
 bool isInside(Widget w, int[2] point)
 {
+    return Distance(w, point).inside();
+
+    /++
     int[4] clip = w.clip;
 
     if (w.parent) // Allow the widgets container to transform the clip box
@@ -2110,6 +2243,7 @@ bool isInside(Widget w, int[2] point)
             return true;
     else
         return false;
+    ++/
 }
 
 
@@ -2176,7 +2310,7 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 
 
 /**
-* Helper for grabbing a typed value from a variant, base on
+* Helper for grabbing a typed value from a variant, based on
 * a reference to a variable.
 */
 void grab(T)(ref T member, Variant val)

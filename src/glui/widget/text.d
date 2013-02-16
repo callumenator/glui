@@ -499,7 +499,7 @@ class WidgetText : WidgetWindow
         */
         void resetXCoord()
         {
-            glTranslatef(0*m_pos.x + 5, 0, 0);
+            glTranslatef(5, 0, 0);
 
             // Translate by the scroll amounts as well...
             if (m_allowHScroll)
@@ -511,7 +511,7 @@ class WidgetText : WidgetWindow
         */
         void resetYCoord()
         {
-            glTranslatef(0, 0*m_pos.y + textOffsetY() + m_font.m_lineHeight, 0);
+            glTranslatef(0, textOffsetY() + m_font.m_lineHeight, 0);
         }
 
         /**
@@ -1338,6 +1338,7 @@ class WidgetLabel : WidgetText
                     case "fixedwidth": m_fixedWidth.grab(val); break;
                     case "fixedheight": m_fixedHeight.grab(val); break;
                     case "fixeddims": m_fixedWidth = m_fixedHeight = val.get!bool; break;
+                    case "padding": m_padding.grab(val); break;
                     case "text": m_text.set(val.get!string); break;
                     default: break;
                 }
@@ -1372,11 +1373,13 @@ class WidgetLabel : WidgetText
                 if (l > xdim)
                     xdim = l;
             }
-            return [cast(int)xdim, cast(int)(lines.length * m_font.m_lineHeight)];
+            return [cast(int)xdim + m_padding.x,
+                    cast(int)(lines.length * m_font.m_lineHeight) + m_padding.y];
         }
 
         bool m_fixedWidth;
         bool m_fixedHeight;
+        int[2] m_padding;
 
 }
 
