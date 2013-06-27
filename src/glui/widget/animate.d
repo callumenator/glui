@@ -54,18 +54,20 @@ class WidgetAnimator : Widget
                 if (m_target)
                 {
                     m_target.setParent(this);
-                    root.requestTimer(10000, &timer);
-                    m_last = timerMsecs();
+                    m_target.clipped = false;
+                    root.requestTimer(10, &timer);
                 }
             }
+
+            setDim(root.dim);
+            m_onParentResizeX = AdaptX.RESIZE;
+            m_onParentResizeY = AdaptY.RESIZE;
             return this;
         }
 
         bool timer()
         {
-            setDim(800,800);
-            m_angle += 1; //(timerMsecs() - m_last)*.1;
-            m_last = timerMsecs();
+            m_angle += 2;
             m_angle %= 360;
             needRender();
             return true;
@@ -73,9 +75,7 @@ class WidgetAnimator : Widget
 
         override void render(Flag!"RenderChildren" recurse = Flag!"RenderChildren".yes)
         {
-            m_target.setClip([0,0,500,500]);
             glPushMatrix();
-            writeln(m_angle);
             auto dx = m_target.screenPos.x + (m_target.dim.x / 2.);
             auto dy = m_target.screenPos.y + (m_target.dim.y / 2.);
             glTranslatef(dx, dy, 0);
@@ -89,6 +89,5 @@ class WidgetAnimator : Widget
         }
 
         float m_angle = 0;
-        long m_last;
         Widget m_target;
 }

@@ -59,7 +59,7 @@ class Timer : Thread
         set(msecs, call);
     }
 
-    Timer set(ulong msecs, CallBack call) nothrow
+    Timer set(ulong msecs, CallBack call)
     {
         mutex.lock(); scope(exit) mutex.unlock();
         this.call = call;
@@ -121,10 +121,10 @@ class TimerPool
     */
     void finalize()
     {
+        _term = true;
+
         foreach(timer; pool)
             timer.term();
-
-        _term = true;
     }
 
     /**

@@ -17,7 +17,8 @@ import
     glui.window,
     glui.event,
     glui.truetype,
-    glui.widget.base;
+    glui.widget.base,
+    glui.widget.tree;
 
 
 
@@ -41,16 +42,17 @@ int main()
 
     //auto highlighter = new DSyntaxHighlighter;
 
-    auto textl = root.create!WidgetText(null, courier, widgetArgs(
+    auto textl = root.create!WidgetText(null,
+                                        "font", courier,
                                         "dim", [480, 680],
                                         "pos", [10,10],
                                         "texture", loadTexture("../media/images/dark1.png"),
                                         "bordercolor", RGBA(1,1,1,1),
                                         "editable", true,
                                         "vscroll", true,
-                                        "candrag", true));
+                                        "candrag", true);
 
-    auto layout = root.create!WidgetTree(null, widgetArgs(
+    auto layout = root.create!WidgetTree(null,
                                           "dim", [300, 400],
                                           "pos", [500,10],
                                           "background", RGBA(0,.9,.3,.3),
@@ -59,34 +61,37 @@ int main()
                                           "clipToScrollBar", false,
                                           "scrollFade", false,
                                           "scrollforeground", RGBA(0,0,0,1),
-                                          "scrollborder", RGBA(1,1,1,1)));
+                                          "scrollborder", RGBA(1,1,1,1));
 
     foreach(i; 0..5)
     {
-        auto branch = layout.root.create!WidgetLabel(null, lacuna, widgetArgs(
+        auto branch = layout.root.create!WidgetLabel(null,
+                                                     "font", lacuna,
                                                       "text", "Level 0, Item " ~ i.to!string,
                                                       "dim", [200,25],
-                                                      "background", RGBA(97,48,145,255)));
+                                                      "background", RGBA(97,48,145,255));
         layout.add(null, branch, Flag!"NoUpdate".yes);
 
         foreach(j; 0..5)
         {
-            auto lab = root.create!WidgetLabel(null, courier, widgetArgs(
+            auto lab = root.create!WidgetLabel(null,
+                                               "font", courier,
                                                 "text", "Level 1, Item " ~ j.to!string,
                                                 "dim", [200,20],
                                                 "fixedwidth", true,
                                                 "cornerRadius", 15,
                                                 "bordercolor", RGBA(0,0,0,1),
-                                                "background", RGBA(96,159,214,255)));
+                                                "background", RGBA(96,159,214,255));
 
             layout.add(branch, lab, Flag!"NoUpdate".yes);
 
             foreach(k; 0..5)
             {
-                auto leaf = root.create!WidgetLabel(null, lacuna, widgetArgs(
-                                                           "text", "Level 2, Item " ~ k.to!string,
-                                                           "dim", [200,25],
-                                                           "background", RGBA(153,31,131,255)));
+                auto leaf = root.create!WidgetLabel(null,
+                                                    "font", courier,
+                                                    "text", "Level 2, Item " ~ k.to!string,
+                                                    "dim", [200,25],
+                                                    "background", RGBA(153,31,131,255));
 
                 layout.add(lab, leaf, Flag!"NoUpdate".yes);
             }

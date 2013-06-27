@@ -1581,7 +1581,7 @@ class PieceTableTextArea : TextArea
 
         override @property size_t row() const { return m_caret.row; }
         override @property size_t col() const { return m_caret.col; }
-        override @property size_t offset() { return m_caret.offset; }
+        override @property size_t offset() const { return m_caret.offset; }
         override @property size_t nLines() const { return m_totalNewLines + 1; }
 
         this()

@@ -420,6 +420,7 @@ class WidgetMenu : WidgetTree
                                                   "font", font,
                                                   "text", label,
                                                   "padding", padding,
+                                                  "clipped", m_clipped,
                                                   "halign", WidgetText.HAlign.CENTER,
                                                   "textcolor", RGBA(1,1,1,1),
                                                   "background", RGBA(.5,.5,.5,.5),
@@ -435,6 +436,7 @@ class WidgetMenu : WidgetTree
             auto widget = root.create!WidgetLabel(this,
                                                   "font", font,
                                                   "text", label,
+                                                  "clipped", m_clipped,
                                                   "textcolor", RGBA(1,1,1,1),
                                                   "background", RGBA(.5,.5,.5,.5),
                                                   "textbgcolor", RGBA(0,0,0,0));

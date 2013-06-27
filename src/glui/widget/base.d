@@ -150,6 +150,13 @@ enum Orientation
 }
 
 
+struct Geometry
+{
+    int[2] pos, scrPos;
+    int[2] dim;
+    int[4] clip; // relative to pos
+}
+
 
 /**
 * Widget base class.
@@ -644,10 +651,6 @@ abstract class Widget
             // If click was inside my bounds, list me as focused
             if (this.isInside(pos) && m_focusable)
             {
-                if (type == "WIDGETLABEL")
-                    writeln("Inside: ", (cast(WidgetLabel)this).textArea().getText());
-                else writeln("Inside: ", this);
-
                 // Give parent a chance to steal the focus
                 if (m_parent)
                 {
@@ -667,10 +670,6 @@ abstract class Widget
 
                 return true;
             }
-
-            if (type == "WIDGETLABEL")
-                writeln("Not inside: ", (cast(WidgetLabel)this).textArea().getText());
-            else writeln("Not inside: ", this);
             return false;
         }
 
@@ -1021,10 +1020,20 @@ class WidgetRoot : Widget
             glViewport(0,0,m_window.windowState.xpix, m_window.windowState.ypix);
             glMatrixMode(GL_PROJECTION);
             glLoadIdentity();
-            glOrtho(0, m_window.windowState.xpix, m_window.windowState.ypix, 0, -1.0, 1.0);
+            glOrtho(0, m_window.windowState.xpix, m_window.windowState.ypix, 0, -500.0, 500.0);
             glMatrixMode(GL_MODELVIEW);
+
+            int[2] delta = [window.windowState.xpix - m_dim.x,
+                            window.windowState.ypix - m_dim.y];
+
             m_dim = [window.windowState.xpix, window.windowState.ypix];
             m_clip = [0,0, m_dim[0], m_dim[1]];
+
+            foreach(child; m_children)
+            {
+                child.m_resizing = EdgeFlag.RIGHT | EdgeFlag.BOTTOM;
+                child.resize([0,0], delta, Flag!"TopLevel".no);
+            }
         }
 
         // Inject an event into the heirarchy
@@ -2321,7 +2330,6 @@ void smallestBox(ref int[4] childbox, int[4] parentbox)
 */
 void grab(T)(ref T member, Variant val)
 {
-    writeln(T.stringof, ", ", val);
     static if (is(T == int[2]))
         member = val.get!(int[]);
     else static if (is(T == RGBA))
