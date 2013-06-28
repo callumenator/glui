@@ -32,6 +32,7 @@ import
     glui.widget.textutil,
     glui.widget.base;
 
+
 /**
 * Prototypes for clipboard copy/paste operations
 */
@@ -69,22 +70,16 @@ class WidgetText : WidgetWindow
     public:
 
         // Text horizontal alignment
-        enum HAlign
-        {
-            LEFT, CENTER, RIGHT
-        }
+        enum HAlign { LEFT, CENTER, RIGHT }
 
         // Text vertical alignment
-        enum VAlign
-        {
-            TOP, CENTER, BOTTOM
-        }
+        enum VAlign { TOP, CENTER, BOTTOM }
 
         // Get
         @property TextArea textArea() { return m_text; }
         @property RGBA textColor() const { return m_textColor; }
         @property RGBA textBgColor() const { return m_textBgColor; }
-        @property uint row() const { return m_text.row; }
+        @property uint line() const { return m_text.line; }
         @property uint col() const { return m_text.col; }
 
         // Set
@@ -175,12 +170,14 @@ class WidgetText : WidgetWindow
 
             m_type = "WIDGETTEXT";
             m_cacheId = glGenLists(1);
-            m_text = new PieceTableTextArea;
+            m_text = new STextArea;
+
+            // Caret defaults
             m_repeatDelayTime = 20;
             m_repeatHoldTime = 500;
             m_caretBlinkDelay = 600;
 
-            // Scroll bar options
+            // Scroll bar defaults
             RGBA scrollBg = RGBA(0,1,0,1);
             RGBA scrollFg = RGBA(1,1,1,1);
             RGBA scrollBd = RGBA(0,0,0,1);
@@ -281,11 +278,10 @@ class WidgetText : WidgetWindow
             return m_alive;
         }
 
-        int scrollEvent(Widget widget, WidgetEvent event)
+        void  scrollEvent(Widget widget, WidgetEvent event)
         {
             m_refreshCache = true;
             needRender();
-            return 0;
         }
 
         override void render(Flag!"RenderChildren" recurse = Flag!"RenderChildren".yes)
@@ -423,18 +419,15 @@ class WidgetText : WidgetWindow
             if (m_allowVScroll)
                 startRow = m_vscroll.current;
 
-            auto r = reduce!(min, max)(m_selectionRange);
-            auto lower = r[0];
-            auto upper = r[1];
-
-            auto lowerCaret = m_text.getCaret(lower);
-            auto upperCaret = m_text.getCaret(upper);
+            auto r = inOrder(m_selectionRange);
+            auto lowerCaret = r[0];
+            auto upperCaret = r[1];
 
             int[2] offset0 = m_text.getCaretPosition(m_font, lowerCaret);
             int[2] offset1 = m_text.getCaretPosition(m_font, upperCaret);
 
             float[4] selectionColor = [0.,0.,1.,1.];
-            if (lowerCaret.row == upperCaret.row)
+            if (lowerCaret.line == upperCaret.line)
             {
                 drawBox(offset0[0], -offset0[1] - m_font.m_maxHoss,
                         offset1[0], -offset0[1] + m_font.m_maxHeight,
@@ -447,13 +440,13 @@ class WidgetText : WidgetWindow
                 auto lineRange1 = startRow + cast(int)(m_dim.y/m_font.m_lineHeight) - 1;
 
                 // Quick rejection tests
-                if (lowerCaret.row > lineRange1 || upperCaret.row < lineRange0)
+                if (lowerCaret.line > lineRange1 || upperCaret.line < lineRange0)
                     return;
 
                 // Draw first selection row
                 drawBox(offset0.x,
                         -offset0.y - m_font.m_maxHoss,
-                        offset0.x + m_text.getLineWidth(m_font, lowerCaret.row),
+                        offset0.x +  m_text.getLineWidth(m_font, lowerCaret.line, lowerCaret.col),
                         -offset0.y + m_font.m_maxHeight,
                         selectionColor);
 
@@ -465,16 +458,14 @@ class WidgetText : WidgetWindow
                         selectionColor);
 
                 // Draw rows in-between
-                if (upperCaret.row > lowerCaret.row + 1)
+                if (upperCaret.line > lowerCaret.line + 1)
                 {
-                    foreach(int row; lowerCaret.row+1..upperCaret.row)
+                    foreach(int row; lowerCaret.line+1..upperCaret.line)
                     {
-                        if (row < lineRange0)
+                        if (row < lineRange0 || row > lineRange1)
                             continue;
-                        if (row > lineRange1)
-                            return;
 
-                        float y0 = -offset0.y - (row - cast(int)(lowerCaret.row))*m_font.m_lineHeight;
+                        float y0 = -offset0.y - (row - cast(int)(lowerCaret.line))*m_font.m_lineHeight;
                         drawBox(0,
                                 y0 - m_font.m_maxHoss,
                                 m_text.getLineWidth(m_font, row),
@@ -591,18 +582,18 @@ class WidgetText : WidgetWindow
                 }
                 case MOUSECLICK:
                 {
-                    auto preOffset = m_text.offset;
+                    auto preCaret = m_text.caret;
                     auto pos = event.get!MouseClick.pos;
                     auto rc = getCaret(pos.x, pos.y);
 
-                    m_text.moveCaret(rc.row, rc.col);
+                    m_text.moveCaret(rc.line, rc.col);
 
                     if (root.shiftIsDown)
                     {
                         if (m_selectionRange[0] == m_selectionRange[1])
                         {
                             clearSelection();
-                            m_selectionRange[0] = preOffset;
+                            m_selectionRange[0] = preCaret;
                         }
 
                         updateSelectionRange();
@@ -817,7 +808,7 @@ class WidgetText : WidgetWindow
                     adjustVisiblePortion();
                     break;
                 }
-                case KC_TAB: // down arrow
+                case KC_TAB: // tab
                 {
                     string tab = '\t'.to!string;
                     m_text.insert(tab);
@@ -851,7 +842,7 @@ class WidgetText : WidgetWindow
                 case KC_SHIFT_RIGHT:
                 {
                     if (!haveSelection())
-                        m_selectionRange[] = [m_text.offset, m_text.offset];
+                        m_selectionRange[] = [m_text.caret, m_text.caret];
 
                     break;
                 }
@@ -917,10 +908,11 @@ class WidgetText : WidgetWindow
                         {
                             case KC_A: // select all
                             {
-                                m_selectionRange[0] = 0;
+                                m_selectionRange[0] = TextArea.Caret(0,0);
                                 m_text.gotoEndOfText();
                                 updateSelectionRange();
                                 adjustVisiblePortion();
+                                needRender();
                                 break;
                             }
                             case KC_C: // copy selection to clipboard
@@ -928,17 +920,21 @@ class WidgetText : WidgetWindow
                                 copyToClipboard();
                                 break;
                             }
-                            case KC_V: // copy selection to clipboard
+                            case KC_V: // paste from clipboard
                             {
+                                deleteSelectedText();
                                 pasteFromClipboard();
                                 adjustVisiblePortion();
                                 break;
                             }
                             case KC_X: // copy selection to clipboard and delete selection
                             {
-                                copyToClipboard();
-                                deleteSelectedText();
-                                adjustVisiblePortion();
+                                if (haveSelection())
+                                {
+                                    copyToClipboard();
+                                    deleteSelectedText();
+                                    adjustVisiblePortion();
+                                }
                                 break;
                             }
                             case KC_Z: // undo or redo, depending on shift
@@ -1004,15 +1000,15 @@ class WidgetText : WidgetWindow
             {
                 auto minRow = m_vscroll.current;
                 auto maxRow = minRow + (m_dim.y / m_font.m_lineHeight) - 1;
-                if (m_text.row > maxRow)
+                if (m_text.line > maxRow)
                 {
-                    m_vscroll.current = m_vscroll.current + (m_text.row - maxRow);
+                    m_vscroll.current = m_vscroll.current + (m_text.line - maxRow);
                     m_refreshCache = true;
                     needRender();
                 }
-                else if (m_text.row < minRow)
+                else if (m_text.line  < minRow)
                 {
-                    m_vscroll.current = m_text.row;
+                    m_vscroll.current = m_text.line;
                     m_refreshCache = true;
                     needRender();
                 }
@@ -1024,7 +1020,16 @@ class WidgetText : WidgetWindow
         */
         override bool requestDrag(int[2] pos)
         {
-            m_pendingDrag = true;
+            if (pos.y - m_screenPos.y < 10)
+            {
+                m_properDrag = true; // window drag
+            }
+            else
+            {
+                m_pendingDrag = true; // text selection drag
+                m_properDrag = false; // window drag
+            }
+
             return true;
         }
 
@@ -1033,21 +1038,27 @@ class WidgetText : WidgetWindow
         */
         override void drag(int[2] pos, int[2] delta)
         {
+            if (m_properDrag)
+            {
+                super.drag(pos, delta);
+                return;
+            }
+
             auto loc = getCaret(pos.x, pos.y);
 
             if (m_pendingDrag)
             {
-                m_selectionRange[] = [loc.offset, loc.offset];
+                m_selectionRange[] = [loc, loc];
                 m_pendingDrag = false;
             }
             else
             {
-                m_selectionRange[1] = loc.offset;
+                m_selectionRange[1] = loc;
                 m_refreshCache = true;
                 needRender();
             }
 
-            m_text.moveCaret(loc.row, loc.col);
+            m_text.moveCaret(loc.line, loc.col);
             m_caretPos = m_text.getCaretPosition(m_font);
         }
 
@@ -1056,7 +1067,7 @@ class WidgetText : WidgetWindow
         */
         void updateSelectionRange()
         {
-            m_selectionRange[1] = m_text.offset;
+            m_selectionRange[1] = m_text.caret;
             m_refreshCache = true;
         }
 
@@ -1068,7 +1079,7 @@ class WidgetText : WidgetWindow
             if (!haveSelection())
                 return;
 
-            m_selectionRange[] = [0,0];
+            m_selectionRange[] = [TextArea.Caret(0,0),TextArea.Caret(0,0)];
             m_refreshCache = true;
             needRender();
         }
@@ -1089,8 +1100,8 @@ class WidgetText : WidgetWindow
             if (!haveSelection())
                 return;
 
-            auto r = reduce!(min, max)(m_selectionRange);
-            auto deleted = m_text.remove(r[0], r[1]-1);
+            auto r = inOrder(m_selectionRange);
+            auto deleted = m_text.remove(r[0], r[1]);
             eventSignal.emit(this, WidgetEvent(TextRemove(deleted)));
             clearSelection();
         }
@@ -1105,8 +1116,27 @@ class WidgetText : WidgetWindow
         }
         body
         {
-            auto r = reduce!(min, max)(m_selectionRange);
-            return m_text.getTextBetween(r[0],r[1]);
+            auto sr = inOrder(m_selectionRange);
+            return m_text.getTextBetween(sr[0], sr[1]);
+        }
+
+        TextArea.Caret[2] inOrder(TextArea.Caret[2] i)
+        {
+            if (i[0].line != i[1].line)
+            {
+                if (i[0].line < i[1].line)
+                    return [i[0],i[1]];
+                else
+                    return [i[1],i[0]];
+            }
+            else
+            {
+                if (i[0].col < i[1].col)
+                    return [i[0],i[1]];
+                else
+                    return [i[1],i[0]];
+            }
+            return [i[0],i[1]];
         }
 
         void copyToClipboard()
@@ -1188,11 +1218,11 @@ class WidgetText : WidgetWindow
         void closeBraceIndent()
         {
             auto cLine = m_text.getCurrentLine();
-            if (m_text.row > 0 && m_autoBraceIndent && strip(cLine).empty) // check for auto indent
+            if (m_text.line  > 0 && m_autoBraceIndent && strip(cLine).empty) // check for auto indent
             {
                 bool found = false;
                 int depth = 0;
-                int lineNum = m_text.row-1;
+                int lineNum = m_text.line-1;
                 auto pLine = m_text.getLine(lineNum);
                 while(lineNum >= 0)
                 {
@@ -1295,7 +1325,8 @@ class WidgetText : WidgetWindow
         RGBA[int] m_lineHighlights;
 
         bool m_pendingDrag = false;
-        uint[2] m_selectionRange;
+        bool m_properDrag = false; // true indicates the window is dragging, not text selection
+        TextArea.Caret[2] m_selectionRange;
 
         bool m_autoBraceIndent = true;
 }

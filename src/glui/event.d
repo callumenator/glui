@@ -336,113 +336,11 @@ enum Priority
 * I wrap the PSignal in a struct so that classes which have signals and inheriting
 * from other classes which define signals work - basically giving the signal a scope.
 */
-struct PrioritySignal(T...)
+struct WidgetSignal(T...)
 {
-    mixin PSignal!(T) signal;
+    mixin Signal!(T) signal;
     alias signal this;
 }
-
-/**
-* This is a modified version of the std.signals signal. It allows associating
-* a priority with a slot, and also for slots to return a non-zero integer to stop
-* further event processing (i.e. stop the signal being sent to the rest of the
-* slots in the list).
-*/
-template PSignal(T1...)
-{
-    /// Delegates must return an integer: 0 to continue event signalling, -1 to stop.
-    alias int delegate(T1) slot_t;
-
-    /// Each slot consists of a delegate and a priority. Slots are called in order of priority.
-    struct Slot
-    {
-        slot_t dgt = null; /// The delegate.
-        Priority priority = Priority.LOWEST;  /// Slot event queue priority.
-
-        /// Comparison function for sorting by priority (HIGHEST to LOWEST).
-        int opCmp(ref const Slot rhs) const
-        {
-            return (rhs.priority - priority);
-        }
-    }
-
-    /** Emit event signal. **/
-    void emit( T1 i )
-    {
-        /// Send signal to all slots, unless the event is consumed (a slot returns -1).
-        foreach (slot; slots)
-        {
-            if (slot.dgt !is null)
-            {
-                if (slot.dgt(i) == -1)
-                    break;
-            }
-        }
-    }
-
-    /** Connect a given delegate, with the given priority. **/
-    void connect(slot_t slot, Priority p = Priority.NORMAL)
-    {
-        Slot newSlot = {slot, p};
-        slots ~= newSlot;
-
-        /// Sort them by priority.
-        slots.sort;
-
-        /// Hook in to be alerted when the delegate's object is deleted.
-        Object o = _d_toObject(slot.ptr);
-        rt_attachDisposeEvent(o, &unhook);
-    }
-
-    /** Disconnect a delegate. **/
-    void disconnect(slot_t slot)
-    {
-        foreach(index, s; slots)
-        {
-            size_t len = slots.length;
-            if (s.dgt == slot)
-            {
-                if (index == 0)
-                    slots = slots[1..len];
-                else if (index == len-1)
-                    slots = slots[0..len-1];
-                else
-                    slots = slots[0..index-1] ~ slots[index+1..len];
-            }
-        }
-    }
-
-    /** Disconnect a delegate when it is deleted. **/
-    void unhook(Object o)
-    {
-        foreach (slot; slots)
-        {
-            if (_d_toObject(slot.dgt.ptr) is o)
-                disconnect(slot.dgt);
-        }
-    }
-
-    /** On destruction, remove the hooks on each delegate. **/
-    ~this()
-    {
-        if (slots.length > 0)
-        {
-            foreach (slot; slots)
-            {
-                if (slot.dgt)
-                {
-                    Object o = _d_toObject(slot.dgt.ptr);
-                    rt_detachDisposeEvent(o, &unhook);
-                }
-            }
-            slots.length = 0;
-        }
-    }
-
-private:
-    Slot[] slots;   /// List of slots.
-}
-
 
 
 version(Windows)

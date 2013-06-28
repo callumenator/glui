@@ -100,7 +100,7 @@ abstract class Window
         bool visible() { return m_visible; }
 
          // Event signal.
-        PrioritySignal!(Event) event;
+        WidgetSignal!(Event) event;
 
         // Create a window and OpenGL context.
         int create(in WindowState ws, in bool show);

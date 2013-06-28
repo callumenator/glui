@@ -506,7 +506,7 @@ class WidgetMenu : WidgetTree
         /**
         * Look for global hover changes, to collapse children when Tree base loses hover.
         */
-        int globalEvent(Widget w, WidgetEvent e)
+        void globalEvent(Widget w, WidgetEvent e)
         {
             if (e.type == WidgetEventType.GLOBALHOVERCHANGE)
             {
@@ -514,10 +514,9 @@ class WidgetMenu : WidgetTree
                 if (isMyChild(change.oldHover) && !isMyChild(change.newHover))
                 {
                     lostHover();
-                    return 0;
+                    return;
                 }
             }
-            return 0;
         }
 
         /**

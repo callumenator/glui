@@ -179,7 +179,7 @@ abstract class Widget
     public:
 
         // All widgets use this event signaler
-        PrioritySignal!(Widget, WidgetEvent) eventSignal;
+        WidgetSignal!(Widget, WidgetEvent) eventSignal;
 
         Widget set(Args args)
         {
@@ -190,18 +190,18 @@ abstract class Widget
             {
                 switch(key.toLower())
                 {
-                    case "id": m_id.grab(val); break;
+                    case "id":  m_id.grab(val); break;
                     case "dim": m_dim.grab(val); break;
                     case "pos": m_pos.grab(val); break;
                     case "cornerradius": m_cornerRadius.grab(val); break;
                     case "showing": m_showing.grab(val); break;
                     case "clipped": m_clipped.grab(val); break;
-                    case "drag": m_canDrag.grab(val); break;
-                    case "resize": m_resize.grab(val); break;
+                    case "drag":    m_canDrag.grab(val); break;
+                    case "resize":  m_resize.grab(val); break;
                     case "xresize": xresize.grab(val); break;
                     case "yresize": yresize.grab(val); break;
-                    case "adaptx": adaptx.grab(val); break;
-                    case "adapty": adapty.grab(val); break;
+                    case "adaptx":  adaptx.grab(val); break;
+                    case "adapty":  adapty.grab(val); break;
                     default: break;
                 }
             }
@@ -1037,7 +1037,7 @@ class WidgetRoot : Widget
         }
 
         // Inject an event into the heirarchy
-        int injectEvent(Event event)
+        void injectEvent(Event event)
         {
             switch(event.type) with(EventType)
             {
@@ -1045,7 +1045,7 @@ class WidgetRoot : Widget
                 {
                     // Check for window paint message, need to rerender
                     render(Flag!"RenderChildren".yes);
-                    return 0;
+                    return;
                 }
                 case KEYPRESS:
                 {
@@ -1117,8 +1117,6 @@ class WidgetRoot : Widget
                 w.event(event);
                 if (event.consumed) break; // A widget can consume an event, terminating this loop
             }
-
-            return 0;
         }
 
         // Check for a change of focus
