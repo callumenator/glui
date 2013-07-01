@@ -260,6 +260,9 @@ class STextArea : TextArea
     */
     override void insert(string s)
     {
+        if (s.length == 0)
+            return;
+
         auto preCaret = caret;
         if (s.length == 1 && s[0] == '\n')
         {
@@ -288,7 +291,7 @@ class STextArea : TextArea
         }
 
         if (!undoing)
-            undoStack.push(Change(Change.Type.insert, preCaret, caret, ""));
+            undoStack.push(Change(Change.Type.insert, preCaret, caret, s));
     }
 
     /**
@@ -407,7 +410,7 @@ class STextArea : TextArea
         saveColumn();
 
         if (!undoing)
-            undoStack.push(Change(Change.Type.remove, start, start, deleted));
+            undoStack.push(Change(Change.Type.remove, start, end, deleted));
 
         return deleted;
     }
@@ -783,11 +786,12 @@ class STextArea : TextArea
         {
             remove(action.caretStart, action.caretEnd);
         }
-        else
+        else if (action.type == Change.Type.remove)
         {
             caret = action.caretStart;
             insert(action.data);
         }
+        redoStack.push(action);
         undoing = false;
     }
 
@@ -795,6 +799,18 @@ class STextArea : TextArea
     {
         if (redoStack.empty)
             return;
+
+        auto action = redoStack.pop();
+
+        if (action.type == Change.Type.remove)
+        {
+            remove(action.caretStart, action.caretEnd);
+        }
+        else if (action.type == Change.Type.insert)
+        {
+            caret = action.caretStart;
+            insert(action.data);
+        }
     }
 
 private:
@@ -891,7 +907,6 @@ struct UndoStack(T, size_t size)
             used++;
 
         _buffer[top] = item;
-        writeln(top);
     }
 
     T pop()
