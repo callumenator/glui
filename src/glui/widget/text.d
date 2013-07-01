@@ -102,7 +102,7 @@ class WidgetText : WidgetWindow
             if (m_allowVScroll)
             {
                 m_vscroll.current = 0;
-                m_vscroll.range = [0, m_text.nLines];
+                m_vscroll.range = [0, m_text.lineCount];
             }
             m_refreshCache = true;
             needRender();
@@ -148,7 +148,7 @@ class WidgetText : WidgetWindow
         /**
         * x and y are absolute screen coords
         */
-        TextArea.Caret getCaret(int x, int y)
+        Caret getCaret(int x, int y)
         {
             auto relx = x - m_screenPos.x - 5;
             if (m_allowHScroll)
@@ -159,9 +159,9 @@ class WidgetText : WidgetWindow
                 rely += m_vscroll.current * m_font.m_lineHeight;
 
             if (relx < 0 || rely < 0)
-                return TextArea.Caret();
+                return Caret();
 
-            return m_text.getCaret(m_font, relx, rely);
+            return m_text.caretAtXY(m_font, relx, rely);
         }
 
         override WidgetText set(Args args)
@@ -309,7 +309,7 @@ class WidgetText : WidgetWindow
 
                 auto startRow = m_allowVScroll ? m_vscroll.current : 0;
                 auto stopRow = m_dim.y / m_font.m_lineHeight;
-                auto _text = m_text.getTextLines(startRow, stopRow);
+                auto _text = m_text.getText(startRow, stopRow);
 
                 if (m_highlighter)
                 {
@@ -423,8 +423,8 @@ class WidgetText : WidgetWindow
             auto lowerCaret = r[0];
             auto upperCaret = r[1];
 
-            int[2] offset0 = m_text.getCaretPosition(m_font, lowerCaret);
-            int[2] offset1 = m_text.getCaretPosition(m_font, upperCaret);
+            int[2] offset0 = m_text.xyAtCaret(m_font, lowerCaret);
+            int[2] offset1 = m_text.xyAtCaret(m_font, upperCaret);
 
             float[4] selectionColor = [0.,0.,1.,1.];
             if (lowerCaret.line == upperCaret.line)
@@ -516,14 +516,14 @@ class WidgetText : WidgetWindow
             {
                 case CENTER:
                 {
-                    auto lines = m_text.nLines;
+                    auto lines = m_text.lineCount;
                     auto height = lines * m_font.m_lineHeight;
                     yoffset = m_dim.y/2.0f + m_font.m_maxHoss/2.0f - height/2.0f - m_font.m_lineHeight/2.0f;
                     break;
                 }
                 case BOTTOM:
                 {
-                    auto lines = m_text.nLines;
+                    auto lines = m_text.lineCount;
                     auto height = lines * m_font.m_lineHeight;
                     yoffset = (cast(float)m_dim.y - height)/2;
                     if (yoffset < 0) yoffset = 0;
@@ -603,7 +603,7 @@ class WidgetText : WidgetWindow
                         clearSelection();
                     }
 
-                    m_caretPos = m_text.getCaretPosition(m_font);
+                    m_caretPos = m_text.xyAtCaret(m_font);
                     m_drawCaret = true;
                     needRender();
                     break;
@@ -908,7 +908,7 @@ class WidgetText : WidgetWindow
                         {
                             case KC_A: // select all
                             {
-                                m_selectionRange[0] = TextArea.Caret(0,0);
+                                m_selectionRange[0] = Caret(0,0);
                                 m_text.gotoEndOfText();
                                 updateSelectionRange();
                                 adjustVisiblePortion();
@@ -982,7 +982,7 @@ class WidgetText : WidgetWindow
         */
         void adjustVisiblePortion()
         {
-            m_caretPos = m_text.getCaretPosition(m_font);
+            m_caretPos = m_text.xyAtCaret(m_font);
 
             // If text insert moves caret off screen horizontally, adjust hscroll
             if (m_allowHScroll)
@@ -1059,7 +1059,7 @@ class WidgetText : WidgetWindow
             }
 
             m_text.moveCaret(loc.line, loc.col);
-            m_caretPos = m_text.getCaretPosition(m_font);
+            m_caretPos = m_text.xyAtCaret(m_font);
         }
 
         /**
@@ -1079,7 +1079,7 @@ class WidgetText : WidgetWindow
             if (!haveSelection())
                 return;
 
-            m_selectionRange[] = [TextArea.Caret(0,0),TextArea.Caret(0,0)];
+            m_selectionRange[] = [Caret(0,0),Caret(0,0)];
             m_refreshCache = true;
             needRender();
         }
@@ -1117,10 +1117,10 @@ class WidgetText : WidgetWindow
         body
         {
             auto sr = inOrder(m_selectionRange);
-            return m_text.getTextBetween(sr[0], sr[1]);
+            return m_text.getText(sr[0], sr[1]);
         }
 
-        TextArea.Caret[2] inOrder(TextArea.Caret[2] i)
+        Caret[2] inOrder(Caret[2] i)
         {
             if (i[0].line != i[1].line)
             {
@@ -1326,7 +1326,7 @@ class WidgetText : WidgetWindow
 
         bool m_pendingDrag = false;
         bool m_properDrag = false; // true indicates the window is dragging, not text selection
-        TextArea.Caret[2] m_selectionRange;
+        Caret[2] m_selectionRange;
 
         bool m_autoBraceIndent = true;
 }

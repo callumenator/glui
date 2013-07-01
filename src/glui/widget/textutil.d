@@ -18,16 +18,34 @@ import
     glui.truetype;
 
 
+
+/**
+*The caret defines the input/operation point in the text sequence.
+*/
+struct Caret
+{
+    size_t line, col;
+
+    this(size_t _line, size_t _col)
+    {
+        line = _line;
+        col = _col;
+    }
+
+    this(Caret _caret)
+    {
+        line = _caret.line;
+        col = _caret.col;
+    }
+}
+
+
 /**
 * This interface defines a TextArea, a class which manages text sequences,
 * insertion, deletion, and caret operations.
 */
 abstract class TextArea
 {
-    /**
-    *The caret defines the input/operation point in the text sequence.
-    */
-    struct Caret { size_t line, col; }
 
     Caret caret;
 
@@ -44,7 +62,7 @@ abstract class TextArea
     /**
     * Return the number of lines in the text.
     */
-    @property size_t nLines() const;
+    @property size_t lineCount() const;
 
     /**
     * Set the text to the given string. This implies a clear().
@@ -87,6 +105,18 @@ abstract class TextArea
     string getText();
 
     /**
+    * Get all text between lines [from, from + n_lines] (inclusive). If
+    * n_lines is not set, all lines beginning at from are returned. Text
+    * is returned as a single string.
+    */
+    string getText(size_t from = 0, int n_lines = -1);
+
+    /**
+    * Return the text between the given caret positions.
+    */
+    string getText(Caret s, Caret e);
+
+    /**
     * Return the text to the left of the caret.
     */
     char leftText();
@@ -107,32 +137,20 @@ abstract class TextArea
     string getCurrentLine();
 
     /**
-    * Get all text between lines [from, from + n_lines] (inclusive). If
-    * n_lines is not set, all lines beginning at from are returned. Text
-    * is returned as a single string.
-    */
-    string getTextLines(size_t from = 0, int n_lines = -1);
-
-    /**
-    * Return the text between the given caret positions.
-    */
-    string getTextBetween(Caret s, Caret e);
-
-    /**
     * Get the caret corresponding to the given (x,y) coordinates relative
     * to the first character in the text sequence, assuming the given font.
     */
-    Caret getCaret(ref const(Font) font, int x, int y);
+    Caret caretAtXY(ref const(Font) font, int x, int y);
 
     /**
     * Assuming the given font, return the coordinates (x,y) of the current caret location.
     */
-    int[2] getCaretPosition(ref const(Font) font);
+    int[2] xyAtCaret(ref const(Font) font);
 
     /**
     * Assuming the given font, return the coordinates (x,y) of the given caret.
     */
-    int[2] getCaretPosition(ref const(Font) font, Caret caret);
+    int[2] xyAtCaret(ref const(Font) font, Caret caret);
 
     /**
     * Move the caret left one character.
@@ -229,7 +247,7 @@ class STextArea : TextArea
     /**
     * Return the number of lines in the text.
     */
-    override @property size_t nLines() const { return lines.length; }
+    override @property size_t lineCount() const { return lines.length; }
 
     /**
     * Set the text to the given string. This implies a clear().
@@ -424,6 +442,48 @@ class STextArea : TextArea
     }
 
     /**
+    * Get all text between lines [from, from + n_lines] (inclusive). If
+    * n_lines is not set, all lines beginning at from are returned. Text
+    * is returned as a single string.
+    */
+    override string getText(size_t from = 0, int n_lines = -1)
+    {
+        auto _from = min(from, lines.length - 1);
+        auto _to = min(from + n_lines + 1, lines.length);
+
+        if (n_lines == -1)
+            return lines[_from..$].join("\n");
+        else
+            return lines[_from.._to].join("\n");
+    }
+
+    /**
+    * Return the text between the given caret positions.
+    */
+    override string getText(Caret s, Caret e)
+    {
+        if (s.line == e.line)
+        {
+            return lines[s.line][s.col..e.col];
+        }
+        else
+        {
+            auto first = lines[s.line][s.col..$];
+            auto last = lines[e.line][0..e.col];
+
+            if (e.line - s.line == 1)
+            {
+                return first ~ "\n" ~ last;
+            }
+            else
+            {
+                auto middle = lines[s.line+1..e.line].join("\n");
+                return first ~ "\n" ~ middle ~ "\n" ~ last;
+            }
+        }
+    }
+
+    /**
     * Return the text to the left of the caret.
     */
     override char leftText()
@@ -470,52 +530,10 @@ class STextArea : TextArea
     }
 
     /**
-    * Get all text between lines [from, from + n_lines] (inclusive). If
-    * n_lines is not set, all lines beginning at from are returned. Text
-    * is returned as a single string.
-    */
-    override string getTextLines(size_t from = 0, int n_lines = -1)
-    {
-        auto _from = min(from, lines.length - 1);
-        auto _to = min(from + n_lines + 1, lines.length);
-
-        if (n_lines == -1)
-            return lines[_from..$].join("\n");
-        else
-            return lines[_from.._to].join("\n");
-    }
-
-    /**
-    * Return the text between the given caret positions.
-    */
-    override string getTextBetween(Caret s, Caret e)
-    {
-        if (s.line == e.line)
-        {
-            return lines[s.line][s.col..e.col];
-        }
-        else
-        {
-            auto first = lines[s.line][s.col..$];
-            auto last = lines[e.line][0..e.col];
-
-            if (e.line - s.line == 1)
-            {
-                return first ~ "\n" ~ last;
-            }
-            else
-            {
-                auto middle = lines[s.line+1..e.line].join("\n");
-                return first ~ "\n" ~ middle ~ "\n" ~ last;
-            }
-        }
-    }
-
-    /**
     * Get the caret corresponding to the given (x,y) coordinates relative
     * to the first character in the text sequence, assuming the given font.
     */
-    override Caret getCaret(ref const(Font) font, int x, int y)
+    override Caret caretAtXY(ref const(Font) font, int x, int y)
     {
         Caret _loc;
 
@@ -547,7 +565,7 @@ class STextArea : TextArea
     /**
     * Assuming the given font, return the coordinates (x,y) of the current caret location.
     */
-    override int[2] getCaretPosition(ref const(Font) font)
+    override int[2] xyAtCaret(ref const(Font) font)
     {
         int x, y = font.m_lineHeight * caret.line;
 
@@ -567,11 +585,11 @@ class STextArea : TextArea
     /**
     * Assuming the given font, return the coordinates (x,y) of the given caret.
     */
-    override int[2] getCaretPosition(ref const(Font) font, Caret thisCaret)
+    override int[2] xyAtCaret(ref const(Font) font, Caret thisCaret)
     {
         auto temp = caret;
         caret = thisCaret;
-        auto result = getCaretPosition(font);
+        auto result = xyAtCaret(font);
         caret = temp;
         return result;
     }
