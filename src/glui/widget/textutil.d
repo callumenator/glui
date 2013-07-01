@@ -260,30 +260,35 @@ class STextArea : TextArea
     */
     override void insert(string s)
     {
+        auto preCaret = caret;
         if (s.length == 1 && s[0] == '\n')
         {
             breakLine();
-            return;
         }
-
-        auto newLines = s.splitLines();
-        auto lastLineHasNewline = (s[$-1] == '\n' || s[$-1] == '\r' || (s.length >= 2 && s[$-2..$] == "\r\n"));
-
-        lines[caret.line].insertInPlace(caret.col, newLines[0]);
-        moveRight(newLines[0].length);
-
-        if (newLines.length > 1)
+        else
         {
-            foreach(l; newLines[1..$])
+            auto newLines = s.splitLines();
+            auto lastLineHasNewline = (s[$-1] == '\n' || s[$-1] == '\r' || (s.length >= 2 && s[$-2..$] == "\r\n"));
+
+            lines[caret.line].insertInPlace(caret.col, newLines[0]);
+            moveRight(newLines[0].length);
+
+            if (newLines.length > 1)
             {
-                newLine();
-                lines[caret.line].insertInPlace(caret.col, l);
-                moveRight(l.length);
+                foreach(l; newLines[1..$])
+                {
+                    newLine();
+                    lines[caret.line].insertInPlace(caret.col, l);
+                    moveRight(l.length);
+                }
             }
+
+            if (lastLineHasNewline)
+                newLine();
         }
 
-        if (lastLineHasNewline)
-            newLine();
+        if (!undoing)
+            undoStack.push(Change(Change.Type.insert, preCaret, caret, ""));
     }
 
     /**
@@ -291,6 +296,7 @@ class STextArea : TextArea
     */
     override string del()
     {
+        string deleted;
         if (caret.col == lines[caret.line].length)
         {
             if (caret.line == lines.length - 1)
@@ -302,14 +308,18 @@ class STextArea : TextArea
             if (removed.length > 0)
                 insert(removed);
 
-            return "\n";
+            deleted = "\n";
         }
         else
         {
-            auto removed = lines[caret.line][caret.col].to!string();
+            deleted = lines[caret.line][caret.col].to!string();
             lines[caret.line] = lines[caret.line][0..caret.col] ~ lines[caret.line][caret.col+1..$];
-            return removed;
         }
+
+        if (!undoing)
+            undoStack.push(Change(Change.Type.remove, caret, caret, deleted));
+
+        return deleted;
     }
 
     /**
@@ -348,7 +358,12 @@ class STextArea : TextArea
                                 lines[caret.line][caret.col..$];
             caret.col--;
         }
+
         saveColumn();
+
+        if (!undoing)
+            undoStack.push(Change(Change.Type.remove, caret, caret, deleted));
+
         return deleted;
     }
 
@@ -364,22 +379,37 @@ class STextArea : TextArea
     }
     body
     {
-        string removed;
+        string deleted;
+
         if (start.line == end.line)
         {
-            removed = lines[start.line][start.col..end.col];
+            deleted = lines[start.line][start.col..end.col];
             lines[start.line] = lines[start.line][0..start.col] ~
                                 lines[start.line][end.col..$];
         }
-        else
+        else if (end.line - start.line == 1)
         {
-            removed = lines[start.line][start.col..$] ~ lines[end.line][0..end.col];
+            deleted = lines[start.line][start.col..$] ~ "\n" ~ lines[end.line][0..end.col];
             auto joined = lines[start.line][0..start.col] ~ lines[end.line][end.col..$];
             lines = lines[0..start.line] ~ joined ~ lines[end.line+1..$];
         }
+        else // end.line > (start.line + 1)
+        {
+            deleted = lines[start.line][start.col..$] ~ "\n" ~
+                      lines[start.line + 1..end.line].join("\n") ~ "\n" ~
+                      lines[end.line][0..end.col];
+
+            auto joined = lines[start.line][0..start.col] ~ lines[end.line][end.col..$];
+            lines = lines[0..start.line] ~ joined ~ lines[end.line+1..$];
+        }
+
         caret = start;
         saveColumn();
-        return removed;
+
+        if (!undoing)
+            undoStack.push(Change(Change.Type.remove, start, start, deleted));
+
+        return deleted;
     }
 
     /**
@@ -741,8 +771,31 @@ class STextArea : TextArea
     }
 
 
-    override void undo() {}
-    override void redo() {}
+    override void undo()
+    {
+        if (undoStack.empty)
+            return;
+
+        undoing = true;
+        auto action = undoStack.pop();
+
+        if (action.type == Change.Type.insert)
+        {
+            remove(action.caretStart, action.caretEnd);
+        }
+        else
+        {
+            caret = action.caretStart;
+            insert(action.data);
+        }
+        undoing = false;
+    }
+
+    override void redo()
+    {
+        if (redoStack.empty)
+            return;
+    }
 
 private:
 
@@ -803,9 +856,63 @@ private:
     }
 
 
+    struct Change
+    {
+        enum Type { insert, remove }
+        Type type;
+        Caret caretStart, caretEnd;
+        string data;
+    }
+
     string[] lines = [""];
     uint seekCol; // when moving up and down, seek this column
     bool seeking = false; // true if seeking a column
+
+    UndoStack!(Change,100)  undoStack, redoStack;
+    bool undoing = false; // if true, don't save action on undo stack
+}
+
+
+/**
+* Fixed size stack supporting unlimited push, utilizing
+* a circular buffer. Old items fall off the bottom of the stack.
+*/
+struct UndoStack(T, size_t size)
+{
+    T[size] _buffer;
+    int top = -1, used = 0;
+
+    void push(T item)
+    {
+        top++;
+        top = top % size;
+
+        if (used < size)
+            used++;
+
+        _buffer[top] = item;
+        writeln(top);
+    }
+
+    T pop()
+    {
+        assert(!empty, "Trying to pop empty stack");
+
+        auto item = _buffer[top];
+
+        used--;
+        if (top == 0 && used > 0)
+            top = size - 1;
+        else
+            top--;
+
+        return item;
+    }
+
+    @property bool empty()
+    {
+        return used == 0;
+    }
 }
 
 
