@@ -170,7 +170,7 @@ class WidgetText : WidgetWindow
 
             m_type = "WIDGETTEXT";
             m_cacheId = glGenLists(1);
-            m_text = new STextArea;
+            m_text = new SimpleTextArea;
 
             // Caret defaults
             m_repeatDelayTime = 20;
@@ -582,7 +582,7 @@ class WidgetText : WidgetWindow
                 }
                 case MOUSECLICK:
                 {
-                    auto preCaret = m_text.caret;
+                    auto preCaret = m_text.m_caret;
                     auto pos = event.get!MouseClick.pos;
                     auto rc = getCaret(pos.x, pos.y);
 
@@ -842,7 +842,7 @@ class WidgetText : WidgetWindow
                 case KC_SHIFT_RIGHT:
                 {
                     if (!haveSelection())
-                        m_selectionRange[] = [m_text.caret, m_text.caret];
+                        m_selectionRange[] = [m_text.m_caret, m_text.m_caret];
 
                     break;
                 }
@@ -1067,7 +1067,7 @@ class WidgetText : WidgetWindow
         */
         void updateSelectionRange()
         {
-            m_selectionRange[1] = m_text.caret;
+            m_selectionRange[1] = m_text.m_caret;
             m_refreshCache = true;
         }
 

@@ -47,7 +47,7 @@ struct Caret
 abstract class TextArea
 {
 
-    Caret caret;
+    Caret m_caret;
 
     /**
     * Return the current caret row.
@@ -117,7 +117,7 @@ abstract class TextArea
     string getText(Caret s, Caret e);
 
     /**
-    * Return the text to the left of the caret.
+    * Return the text to the left of the m_caret.
     */
     char leftText();
 
@@ -148,7 +148,7 @@ abstract class TextArea
     int[2] xyAtCaret(ref const(Font) font);
 
     /**
-    * Assuming the given font, return the coordinates (x,y) of the given caret.
+    * Assuming the given font, return the coordinates (x,y) of the given m_caret.
     */
     int[2] xyAtCaret(ref const(Font) font, Caret caret);
 
@@ -212,16 +212,28 @@ abstract class TextArea
     */
     int getLineWidth(ref const(Font) font, size_t line, size_t startCol = 0);
 
+    /**
+    * Undo the previous action.
+    */
     void undo();
 
+    /**
+    * Redo the previously undone action.
+    */
     void redo();
 
+    /**
+    * Return true if char is considered a delimiter for text jumps.
+    */
     bool isDelim(char c)
     {
         return isBlank(c) ||
                !isAlphaNum(c);
     }
 
+    /**
+    * Return true if char is considered a blank.
+    */
     bool isBlank(char c)
     {
         return c == ' ' ||
@@ -230,40 +242,46 @@ abstract class TextArea
 }
 
 
-class STextArea : TextArea
+class SimpleTextArea : TextArea
 {
     import std.string, std.array, std.range, std.algorithm;
+
 
     /**
     * Return the current caret row.
     */
-    override @property size_t line() const { return caret.line; }
+    override @property size_t line() const { return m_caret.line; }
+
 
     /**
     * Return the current caret column.
     */
-    override @property size_t col() const { return caret.col; }
+    override @property size_t col() const { return m_caret.col; }
+
 
     /**
     * Return the number of lines in the text.
     */
-    override @property size_t lineCount() const { return lines.length; }
+    override @property size_t lineCount() const { return m_lines.length; }
+
 
     /**
     * Set the text to the given string. This implies a clear().
     */
     override void set(string s)
     {
-        lines = splitLines(s);
+        m_lines = splitLines(s);
     }
+
 
     /**
     * Clear all current text, and reset the caret to 0,0,0.
     */
     override void clear()
     {
-        lines.clear();
+        m_lines.clear();
     }
+
 
     /**
     * Insert a char at the current caret location.
@@ -273,6 +291,7 @@ class STextArea : TextArea
         insert([s]);
     }
 
+
     /**
     * Insert a string at the current caret location.
     */
@@ -281,7 +300,7 @@ class STextArea : TextArea
         if (s.length == 0)
             return;
 
-        auto preCaret = caret;
+        auto preCaret = m_caret;
         if (s.length == 1 && s[0] == '\n')
         {
             breakLine();
@@ -291,7 +310,7 @@ class STextArea : TextArea
             auto newLines = s.splitLines();
             auto lastLineHasNewline = (s[$-1] == '\n' || s[$-1] == '\r' || (s.length >= 2 && s[$-2..$] == "\r\n"));
 
-            lines[caret.line].insertInPlace(caret.col, newLines[0]);
+            m_lines[m_caret.line].insertInPlace(m_caret.col, newLines[0]);
             moveRight(newLines[0].length);
 
             if (newLines.length > 1)
@@ -299,7 +318,7 @@ class STextArea : TextArea
                 foreach(l; newLines[1..$])
                 {
                     newLine();
-                    lines[caret.line].insertInPlace(caret.col, l);
+                    m_lines[m_caret.line].insertInPlace(m_caret.col, l);
                     moveRight(l.length);
                 }
             }
@@ -308,9 +327,10 @@ class STextArea : TextArea
                 newLine();
         }
 
-        if (!undoing)
-            undoStack.push(Change(Change.Type.insert, preCaret, caret, s));
+        if (!m_undoing)
+            m_undoStack.push(Change(Change.Type.insert, preCaret, m_caret, s));
     }
+
 
     /**
     * Apply the keyboard delete operation at the current caret location.
@@ -318,13 +338,13 @@ class STextArea : TextArea
     override string del()
     {
         string deleted;
-        if (caret.col == lines[caret.line].length)
+        if (m_caret.col == m_lines[m_caret.line].length)
         {
-            if (caret.line == lines.length - 1)
+            if (m_caret.line == m_lines.length - 1)
                 return "";
 
-            auto removed = lines[caret.line+1];
-            lines = lines[0..caret.line+1] ~ lines[caret.line+2..$];
+            auto removed = m_lines[m_caret.line+1];
+            m_lines = m_lines[0..m_caret.line+1] ~ m_lines[m_caret.line+2..$];
 
             if (removed.length > 0)
                 insert(removed);
@@ -333,15 +353,16 @@ class STextArea : TextArea
         }
         else
         {
-            deleted = lines[caret.line][caret.col].to!string();
-            lines[caret.line] = lines[caret.line][0..caret.col] ~ lines[caret.line][caret.col+1..$];
+            deleted = m_lines[m_caret.line][m_caret.col].to!string();
+            m_lines[m_caret.line] = m_lines[m_caret.line][0..m_caret.col] ~ m_lines[m_caret.line][m_caret.col+1..$];
         }
 
-        if (!undoing)
-            undoStack.push(Change(Change.Type.remove, caret, caret, deleted));
+        if (!m_undoing)
+            m_undoStack.push(Change(Change.Type.remove, m_caret, m_caret, deleted));
 
         return deleted;
     }
+
 
     /**
     * Apply the keyboard backspace operation at the current caret location.
@@ -350,43 +371,44 @@ class STextArea : TextArea
     {
         string deleted;
 
-        if (caret.col == 0) // remove a line from lines
+        if (m_caret.col == 0) // remove a line from lines
         {
-            if (caret.line == 0)
+            if (m_caret.line == 0)
                 return "";
 
-            auto removed = lines[caret.line];
-            lines = lines[0..caret.line] ~ lines[caret.line+1..$];
+            auto removed = m_lines[m_caret.line];
+            m_lines = m_lines[0..m_caret.line] ~ m_lines[m_caret.line+1..$];
 
-            if (caret.line > 0)
+            if (m_caret.line > 0)
             {
-                caret.line --;
-                caret.col = lines[caret.line].length;
+                m_caret.line --;
+                m_caret.col = m_lines[m_caret.line].length;
             }
 
-            auto temp = caret;
+            auto temp = m_caret;
 
             if (removed.length > 0)
                 insert(removed);
 
-            caret = temp;
+            m_caret = temp;
             deleted = "\n";
         }
         else
         {
-            deleted = lines[caret.line][caret.col-1].to!string();
-            lines[caret.line] = lines[caret.line][0..caret.col-1] ~
-                                lines[caret.line][caret.col..$];
-            caret.col--;
+            deleted = m_lines[m_caret.line][m_caret.col-1].to!string();
+            m_lines[m_caret.line] = m_lines[m_caret.line][0..m_caret.col-1] ~
+                                m_lines[m_caret.line][m_caret.col..$];
+            m_caret.col--;
         }
 
         saveColumn();
 
-        if (!undoing)
-            undoStack.push(Change(Change.Type.remove, caret, caret, deleted));
+        if (!m_undoing)
+            m_undoStack.push(Change(Change.Type.remove, m_caret, m_caret, deleted));
 
         return deleted;
     }
+
 
     /**
     * Remove all text between [from,to] (inclusive) offsets into the text sequence.
@@ -394,8 +416,8 @@ class STextArea : TextArea
     override string remove(Caret start, Caret end)
     in
     {
-        assert(start.line < lines.length && end.line < lines.length);
-        assert(start.col <= lines[start.line].length && end.col <= lines[end.line].length);
+        assert(start.line < m_lines.length && end.line < m_lines.length);
+        assert(start.col <= m_lines[start.line].length && end.col <= m_lines[end.line].length);
         if (start.line == end.line) assert(start.col <= end.col);
     }
     body
@@ -404,42 +426,44 @@ class STextArea : TextArea
 
         if (start.line == end.line)
         {
-            deleted = lines[start.line][start.col..end.col];
-            lines[start.line] = lines[start.line][0..start.col] ~
-                                lines[start.line][end.col..$];
+            deleted = m_lines[start.line][start.col..end.col];
+            m_lines[start.line] = m_lines[start.line][0..start.col] ~
+                                m_lines[start.line][end.col..$];
         }
         else if (end.line - start.line == 1)
         {
-            deleted = lines[start.line][start.col..$] ~ "\n" ~ lines[end.line][0..end.col];
-            auto joined = lines[start.line][0..start.col] ~ lines[end.line][end.col..$];
-            lines = lines[0..start.line] ~ joined ~ lines[end.line+1..$];
+            deleted = m_lines[start.line][start.col..$] ~ "\n" ~ m_lines[end.line][0..end.col];
+            auto joined = m_lines[start.line][0..start.col] ~ m_lines[end.line][end.col..$];
+            m_lines = m_lines[0..start.line] ~ joined ~ m_lines[end.line+1..$];
         }
         else // end.line > (start.line + 1)
         {
-            deleted = lines[start.line][start.col..$] ~ "\n" ~
-                      lines[start.line + 1..end.line].join("\n") ~ "\n" ~
-                      lines[end.line][0..end.col];
+            deleted = m_lines[start.line][start.col..$] ~ "\n" ~
+                      m_lines[start.line + 1..end.line].join("\n") ~ "\n" ~
+                      m_lines[end.line][0..end.col];
 
-            auto joined = lines[start.line][0..start.col] ~ lines[end.line][end.col..$];
-            lines = lines[0..start.line] ~ joined ~ lines[end.line+1..$];
+            auto joined = m_lines[start.line][0..start.col] ~ m_lines[end.line][end.col..$];
+            m_lines = m_lines[0..start.line] ~ joined ~ m_lines[end.line+1..$];
         }
 
-        caret = start;
+        m_caret = start;
         saveColumn();
 
-        if (!undoing)
-            undoStack.push(Change(Change.Type.remove, start, end, deleted));
+        if (!m_undoing)
+            m_undoStack.push(Change(Change.Type.remove, start, end, deleted));
 
         return deleted;
     }
+
 
     /**
     * Return the entire text sequence.
     */
     override string getText()
     {
-        return lines.join("\n");
+        return m_lines.join("\n");
     }
+
 
     /**
     * Get all text between lines [from, from + n_lines] (inclusive). If
@@ -448,14 +472,15 @@ class STextArea : TextArea
     */
     override string getText(size_t from = 0, int n_lines = -1)
     {
-        auto _from = min(from, lines.length - 1);
-        auto _to = min(from + n_lines + 1, lines.length);
+        auto _from = min(from, m_lines.length - 1);
+        auto _to = min(from + n_lines + 1, m_lines.length);
 
         if (n_lines == -1)
-            return lines[_from..$].join("\n");
+            return m_lines[_from..$].join("\n");
         else
-            return lines[_from.._to].join("\n");
+            return m_lines[_from.._to].join("\n");
     }
+
 
     /**
     * Return the text between the given caret positions.
@@ -464,12 +489,12 @@ class STextArea : TextArea
     {
         if (s.line == e.line)
         {
-            return lines[s.line][s.col..e.col];
+            return m_lines[s.line][s.col..e.col];
         }
         else
         {
-            auto first = lines[s.line][s.col..$];
-            auto last = lines[e.line][0..e.col];
+            auto first = m_lines[s.line][s.col..$];
+            auto last = m_lines[e.line][0..e.col];
 
             if (e.line - s.line == 1)
             {
@@ -477,57 +502,62 @@ class STextArea : TextArea
             }
             else
             {
-                auto middle = lines[s.line+1..e.line].join("\n");
+                auto middle = m_lines[s.line+1..e.line].join("\n");
                 return first ~ "\n" ~ middle ~ "\n" ~ last;
             }
         }
     }
 
+
     /**
-    * Return the text to the left of the caret.
+    * Return the text to the left of the m_caret.
     */
     override char leftText()
     {
-        if (caret.col == 0 && caret.line > 0)
+        if (m_caret.col == 0 && m_caret.line > 0)
             return '\n';
-        else if (caret.col == 0 && caret.line == 0)
+        else if (m_caret.col == 0 && m_caret.line == 0)
             return '\0';
-        else if (caret.col > 0)
-            return lines[caret.line][caret.col-1];
+        else if (m_caret.col > 0)
+            return m_lines[m_caret.line][m_caret.col-1];
         else
             assert(false);
     }
+
 
     /**
     * Return the text to the right of the caret (i.e. at the caret).
     */
     override char rightText()
     {
-        if (caret.col == lines[caret.line].length && caret.line < lines.length - 1)
+        if (m_caret.col == m_lines[m_caret.line].length && m_caret.line < m_lines.length - 1)
             return '\n';
-        else if (caret.col == lines[caret.line].length && caret.line == lines.length - 1)
+        else if (m_caret.col == m_lines[m_caret.line].length && m_caret.line == m_lines.length - 1)
             return '\0';
-        else if (caret.col < lines[caret.line].length)
-            return lines[caret.line][caret.col];
+        else if (m_caret.col < m_lines[m_caret.line].length)
+            return m_lines[m_caret.line][m_caret.col];
         else
             assert(false);
     }
+
 
     /**
     * Get text in the given line as a string.
     */
     override string getLine(size_t line)
     {
-        return lines[line];
+        return m_lines[line];
     }
+
 
     /**
     * Get the text in the line at the current caret location.
     */
     override string getCurrentLine()
     {
-        return lines[caret.line];
+        return m_lines[m_caret.line];
     }
+
 
     /**
     * Get the caret corresponding to the given (x,y) coordinates relative
@@ -537,17 +567,17 @@ class STextArea : TextArea
     {
         Caret _loc;
 
-        if (lines.length == 0)
+        if (m_lines.length == 0)
             return _loc;
 
         // row is determined solely by font.m_lineHeight
         _loc.line = cast(int) (y / font.m_lineHeight);
 
-        if (_loc.line > lines.length - 1)
-            _loc.line = lines.length - 1;
+        if (_loc.line > m_lines.length - 1)
+            _loc.line = m_lines.length - 1;
 
         float _x = 0;
-        foreach(char c; lines[_loc.line])
+        foreach(char c; m_lines[_loc.line])
         {
             if ((_x + font.width(c)/2.) > x)
                 break;
@@ -562,16 +592,17 @@ class STextArea : TextArea
         return _loc;
     }
 
+
     /**
     * Assuming the given font, return the coordinates (x,y) of the current caret location.
     */
     override int[2] xyAtCaret(ref const(Font) font)
     {
-        int x, y = font.m_lineHeight * caret.line;
+        int x, y = font.m_lineHeight * m_caret.line;
 
-        foreach(i, char c; lines[caret.line])
+        foreach(i, char c; m_lines[m_caret.line])
         {
-            if (i == caret.col)
+            if (i == m_caret.col)
                 break;
 
             if (c == '\t')
@@ -582,38 +613,40 @@ class STextArea : TextArea
         return [x,y];
     }
 
+
     /**
-    * Assuming the given font, return the coordinates (x,y) of the given caret.
+    * Assuming the given font, return the coordinates (x,y) of the given m_caret.
     */
     override int[2] xyAtCaret(ref const(Font) font, Caret thisCaret)
     {
-        auto temp = caret;
-        caret = thisCaret;
+        auto temp = m_caret;
+        m_caret = thisCaret;
         auto result = xyAtCaret(font);
-        caret = temp;
+        m_caret = temp;
         return result;
     }
+
 
     /**
     * Move the caret left one character.
     */
     override bool moveLeft(uint thisMuch = 1)
     {
-        if (caret.line == 0 && caret.col == 0)
+        if (m_caret.line == 0 && m_caret.col == 0)
             return false;
 
         while(thisMuch > 0)
         {
-            auto shift = min(thisMuch, caret.col);
+            auto shift = min(thisMuch, m_caret.col);
 
-            caret.col -= shift;
+            m_caret.col -= shift;
 
             if (shift < thisMuch) // start of line
             {
-                if (caret.line > 0)
+                if (m_caret.line > 0)
                 {
-                    caret.line --;
-                    caret.col = lines[caret.line].length;
+                    m_caret.line --;
+                    m_caret.col = m_lines[m_caret.line].length;
                     shift ++;
                 }
                 else
@@ -626,27 +659,28 @@ class STextArea : TextArea
         saveColumn();
         return true;
     }
+
 
     /**
     * Move the caret right one character.
     */
     override bool moveRight(uint thisMuch = 1)
     {
-        if (caret.line == lines.length - 1 && caret.col == lines[caret.line].length)
+        if (m_caret.line == m_lines.length - 1 && m_caret.col == m_lines[m_caret.line].length)
             return false;
 
         while(thisMuch > 0)
         {
-            auto shift = min(thisMuch, lines[caret.line].length - caret.col);
+            auto shift = min(thisMuch, m_lines[m_caret.line].length - m_caret.col);
 
-            caret.col += shift;
+            m_caret.col += shift;
 
             if (shift < thisMuch) // end of line
             {
-                if (caret.line < lines.length - 1)
+                if (m_caret.line < m_lines.length - 1)
                 {
-                    caret.col = 0;
-                    caret.line ++;
+                    m_caret.col = 0;
+                    m_caret.line ++;
                     shift ++;
                 }
                 else
@@ -660,13 +694,14 @@ class STextArea : TextArea
         return true;
     }
 
+
     /**
     * Move the caret up one line. Try to seek the same column as the current line.
     */
     override bool moveUp()
     {
-        if (caret.line > 0)
-            caret.line --;
+        if (m_caret.line > 0)
+            m_caret.line --;
         seekColumn();
         return true;
     }
@@ -678,8 +713,8 @@ class STextArea : TextArea
     override bool moveDown()
     {
 
-        if (caret.line < lines.length - 1)
-            caret.line ++;
+        if (m_caret.line < m_lines.length - 1)
+            m_caret.line ++;
         seekColumn();
         return true;
     }
@@ -702,6 +737,7 @@ class STextArea : TextArea
         saveColumn();
     }
 
+
     /**
     * Jump the caret right to the next word/symbol.
     */
@@ -719,53 +755,59 @@ class STextArea : TextArea
         saveColumn();
     }
 
+
     /**
     * Place the caret at the start of the current line.
     */
     override void home()
     {
-        caret.col = 0;
+        m_caret.col = 0;
         saveColumn();
     }
+
 
     /**
     * Place the caret at the end of the current line.
     */
     override void end()
     {
-        caret.col = lines[caret.line].length;
+        m_caret.col = m_lines[m_caret.line].length;
         saveColumn();
     }
+
 
     /**
     * Place the caret at the start of the entire text sequence.
     */
     override void gotoStartOfText()
     {
-        caret.col = 0;
-        caret.line = 0;
+        m_caret.col = 0;
+        m_caret.line = 0;
         saveColumn();
     }
+
 
     /**
     * Place the caret at the end of the entire text sequence.
     */
     override void gotoEndOfText()
     {
-        caret.line = lines.length - 1;
-        caret.col = lines[caret.line].length;
+        m_caret.line = m_lines.length - 1;
+        m_caret.col = m_lines[m_caret.line].length;
         saveColumn();
     }
+
 
     /**
     * Move the caret to the given row and column.
     */
     override void moveCaret(size_t newRow, size_t newCol)
     {
-        caret.line = min(newRow, lines.length - 1);
-        caret.col = min(newCol, lines[caret.line].length);
+        m_caret.line = min(newRow, m_lines.length - 1);
+        m_caret.col = min(newCol, m_lines[m_caret.line].length);
         saveColumn();
     }
+
 
     /**
     * Calculate the screen width of a line, given a font, from startCol to end of line.
@@ -773,12 +815,12 @@ class STextArea : TextArea
     override int getLineWidth(ref const(Font) font, size_t line, size_t startCol = 0)
     in
     {
-        assert(line < lines.length);
+        assert(line < m_lines.length);
     }
     body
     {
         int width = font.width(' ');
-        foreach(i, char c; lines[line])
+        foreach(i, char c; m_lines[line])
         {
             if (i < startCol)
                 continue;
@@ -792,13 +834,16 @@ class STextArea : TextArea
     }
 
 
+    /**
+    * Undo the previous action.
+    */
     override void undo()
     {
-        if (undoStack.empty)
+        if (m_undoStack.empty)
             return;
 
-        undoing = true;
-        auto action = undoStack.pop();
+        m_undoing = true;
+        auto action = m_undoStack.pop();
 
         if (action.type == Change.Type.insert)
         {
@@ -806,19 +851,23 @@ class STextArea : TextArea
         }
         else if (action.type == Change.Type.remove)
         {
-            caret = action.caretStart;
+            m_caret = action.caretStart;
             insert(action.data);
         }
-        redoStack.push(action);
-        undoing = false;
+        m_redoStack.push(action);
+        m_undoing = false;
     }
 
+
+    /**
+    * Redo the previously undone action.
+    */
     override void redo()
     {
-        if (redoStack.empty)
+        if (m_redoStack.empty)
             return;
 
-        auto action = redoStack.pop();
+        auto action = m_redoStack.pop();
 
         if (action.type == Change.Type.remove)
         {
@@ -826,35 +875,41 @@ class STextArea : TextArea
         }
         else if (action.type == Change.Type.insert)
         {
-            caret = action.caretStart;
+            m_caret = action.caretStart;
             insert(action.data);
         }
     }
 
+
 private:
 
+
+    /**
+    * Insert a newline at the m_caret.
+    */
     void newLine()
     {
-        caret.line ++;
-        caret.col = 0;
-        if (caret.line >= lines.length)
-            lines ~= iota(1 + (caret.line - lines.length)).map!(a => "").array();
+        m_caret.line ++;
+        m_caret.col = 0;
+        if (m_caret.line >= m_lines.length)
+            m_lines ~= iota(1 + (m_caret.line - m_lines.length)).map!(a => "").array();
         else
-            lines.insertInPlace(caret.line, "");
+            m_lines.insertInPlace(m_caret.line, "");
     }
+
 
     /**
     * Break line at caret, move rest of line to newline
     */
     void breakLine()
     {
-        if (caret.col < lines[caret.line].length)
+        if (m_caret.col < m_lines[m_caret.line].length)
         {
-            auto rest = lines[caret.line][caret.col..$];
-            lines[caret.line] = lines[caret.line][0..caret.col];
+            auto rest = m_lines[m_caret.line][m_caret.col..$];
+            m_lines[m_caret.line] = m_lines[m_caret.line][0..m_caret.col];
             newLine();
             insert(rest);
-            caret.col = 0;
+            m_caret.col = 0;
         }
         else
         {
@@ -862,31 +917,34 @@ private:
         }
     }
 
+
     void adjustCursorColumn()
     {
-        caret.col = min(caret.col, lines[caret.line].length);
+        m_caret.col = min(m_caret.col, m_lines[m_caret.line].length);
     }
+
 
     void saveColumn()
     {
-        if (!seeking)
-            seekCol = caret.col;
+        if (!m_seeking)
+            m_seekCol = m_caret.col;
     }
+
 
     void seekColumn()
     {
-        seeking = true;
-        caret.col = min(caret.col, lines[caret.line].length);
+        m_seeking = true;
+        m_caret.col = min(m_caret.col, m_lines[m_caret.line].length);
 
-        if (caret.col > seekCol)
-            moveLeft(caret.col - seekCol);
-        else if (caret.col < seekCol)
+        if (m_caret.col > m_seekCol)
+            moveLeft(m_caret.col - m_seekCol);
+        else if (m_caret.col < m_seekCol)
         {
-            auto rightShift = seekCol - caret.col;
-            auto maxShift = lines[caret.line].length - caret.col;
+            auto rightShift = m_seekCol - m_caret.col;
+            auto maxShift = m_lines[m_caret.line].length - m_caret.col;
             moveRight(min(rightShift, maxShift));
         }
-        seeking = false;
+        m_seeking = false;
     }
 
 
@@ -898,12 +956,12 @@ private:
         string data;
     }
 
-    string[] lines = [""];
-    uint seekCol; // when moving up and down, seek this column
-    bool seeking = false; // true if seeking a column
+    string[] m_lines = [""];
+    uint m_seekCol; // when moving up and down, seek this column
+    bool m_seeking = false; // true if m_seeking a column
 
-    UndoStack!(Change,100)  undoStack, redoStack;
-    bool undoing = false; // if true, don't save action on undo stack
+    UndoStack!(Change,100)  m_undoStack, m_redoStack;
+    bool m_undoing = false; // if true, don't save action on undo stack
 }
 
 
